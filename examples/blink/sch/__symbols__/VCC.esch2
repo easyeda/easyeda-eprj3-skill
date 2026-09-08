@@ -1,0 +1,8 @@
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","client":"easyeda-pro-skill","uuid":"b9f74dd758b4de76","updateTime":1788863528110,"version":"1788863528110","editVersion":"2.3.0","user":{}}|
+{"type":"META","ticket":2,"id":"META"}||{"title":"VCC","description":"","tags":[],"docType":2,"source":""}|
+{"type":"CANVAS","ticket":3,"id":"CANVAS"}||{"originX":0,"originY":0}|
+{"type":"PART","ticket":4,"id":"pid34af869882852395"}||{"BBOX":[-30,-20,30,20],"title":"VCC"}|
+{"type":"RECT","ticket":5,"id":"ec9efcb06954374ed"}||{"partId":"pid34af869882852395","groupId":"","locked":false,"zIndex":5,"dotX1":-30,"dotY1":-20,"dotX2":30,"dotY2":20,"radiusX":0,"radiusY":0,"rotation":0,"strokeColor":"#000000","strokeStyle":"SOLID","fillColor":null,"strokeWidth":1,"fillStyle":"NONE"}|
+{"type":"PIN","ticket":6,"id":"ef139740d8b000bb9"}||{"partId":"pid34af869882852395","groupId":"","locked":false,"zIndex":6,"display":true,"x":30,"y":0,"length":10,"rotation":180,"color":null,"pinShape":"NONE"}|
+{"type":"ATTR","ticket":7,"id":"eca7afa548cacec74"}||{"partId":"pid34af869882852395","parentId":"ef139740d8b000bb9","key":"Pin Name","value":"VCC","keyVisible":false,"valueVisible":true,"align":"RIGHT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":7}|
+{"type":"ATTR","ticket":8,"id":"ebbf7145c6a3fd84f"}||{"partId":"pid34af869882852395","parentId":"ef139740d8b000bb9","key":"Pin Number","value":"1","keyVisible":false,"valueVisible":true,"align":"LEFT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":8}|

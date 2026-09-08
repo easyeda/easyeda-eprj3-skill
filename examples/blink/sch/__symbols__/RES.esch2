@@ -1,0 +1,11 @@
+{"type":"DOCHEAD"}||{"docType":"SYMBOL","client":"easyeda-pro-skill","uuid":"4a9d890294e01189","updateTime":1788863527358,"version":"1788863527358","editVersion":"2.3.0","user":{}}|
+{"type":"META","ticket":2,"id":"META"}||{"title":"RES","description":"","tags":[],"docType":2,"source":""}|
+{"type":"CANVAS","ticket":3,"id":"CANVAS"}||{"originX":0,"originY":0}|
+{"type":"PART","ticket":4,"id":"pid6546324c30c8aabb"}||{"BBOX":[-60,-20,60,20],"title":"RES"}|
+{"type":"RECT","ticket":5,"id":"ee92a86e8b5550279"}||{"partId":"pid6546324c30c8aabb","groupId":"","locked":false,"zIndex":5,"dotX1":-60,"dotY1":-20,"dotX2":60,"dotY2":20,"radiusX":0,"radiusY":0,"rotation":0,"strokeColor":"#000000","strokeStyle":"SOLID","fillColor":null,"strokeWidth":1,"fillStyle":"NONE"}|
+{"type":"PIN","ticket":6,"id":"ebbce1c4279334083"}||{"partId":"pid6546324c30c8aabb","groupId":"","locked":false,"zIndex":6,"display":true,"x":60,"y":-10,"length":10,"rotation":180,"color":null,"pinShape":"NONE"}|
+{"type":"ATTR","ticket":7,"id":"e17e91e501f046f91"}||{"partId":"pid6546324c30c8aabb","parentId":"ebbce1c4279334083","key":"Pin Name","value":"1","keyVisible":false,"valueVisible":true,"align":"RIGHT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":7}|
+{"type":"ATTR","ticket":8,"id":"ea0d449e08615088b"}||{"partId":"pid6546324c30c8aabb","parentId":"ebbce1c4279334083","key":"Pin Number","value":"1","keyVisible":false,"valueVisible":true,"align":"LEFT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":8}|
+{"type":"PIN","ticket":9,"id":"e8bc42507b00835b2"}||{"partId":"pid6546324c30c8aabb","groupId":"","locked":false,"zIndex":9,"display":true,"x":60,"y":10,"length":10,"rotation":180,"color":null,"pinShape":"NONE"}|
+{"type":"ATTR","ticket":10,"id":"e7ce9661c631d8d93"}||{"partId":"pid6546324c30c8aabb","parentId":"e8bc42507b00835b2","key":"Pin Name","value":"2","keyVisible":false,"valueVisible":true,"align":"RIGHT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":10}|
+{"type":"ATTR","ticket":11,"id":"e960c4d5e0b3a152b"}||{"partId":"pid6546324c30c8aabb","parentId":"e8bc42507b00835b2","key":"Pin Number","value":"2","keyVisible":false,"valueVisible":true,"align":"LEFT_BOTTOM","fontSize":9.72,"locked":false,"zIndex":11}|
