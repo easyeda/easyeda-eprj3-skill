@@ -1,28 +1,9 @@
 # Install for MiniMax Code
 
-MiniMax Code 是 MiniMax 官方推出的命令行 AI 编程助手，基于 MiniMax M2 模型（MIT 开源），提供 Agent 模式：读写文件、执行命令、联网搜索，支持约 200 万 token 上下文。
+MiniMax Code 是 MiniMax 官方推出的命令行 AI 编程助手，基于 MiniMax M2 模型（MIT 开源）。
 
 - 官方页面：[minimax.io/platform/minimax-code](https://www.minimax.io/platform/minimax-code)
 - 开放平台（国内）：[platform.minimaxi.com](https://platform.minimaxi.com) | 国际：[minimax.io](https://www.minimax.io)
-
-## 安装 CLI
-
-```bash
-npm install -g @minimax-ai/cli
-```
-
-配置模型端点（二选一）：
-
-```bash
-# 国内
-export ANTHROPIC_BASE_URL="https://api.minimaxi.com/anthropic"
-# 国际
-export ANTHROPIC_BASE_URL="https://api.minimax.io/anthropic"
-export ANTHROPIC_AUTH_TOKEN="${MINIMAX_API_KEY}"
-export ANTHROPIC_MODEL="MiniMax-M2"
-```
-
-MiniMax Coding Plan 订阅用户可直接登录使用，无需手动配 API Key。
 
 ## 项目本地安装 skill
 
@@ -51,7 +32,3 @@ git clone --depth 1 https://github.com/easyeda/easyeda-eprj3-skill.git skills/ea
 ```
 > 用 easyeda-eprj3 技能创建工程 ~/myboard，含 1k 电阻 + LED，跑 validate 校验
 ```
-
-## 其他后端接入方式
-
-MiniMax M2 也可作为模型后端接入 Claude Code、Cline / Roo Code / Kilo Code、OpenCode 等现有工具（Anthropic 兼容端点 `https://api.minimaxi.com/anthropic`，模型名 `MiniMax-M2`），随后按对应工具的指南（如 [claude-code.md](claude-code.md)、[cline.md](cline.md)）安装本 skill，工作流不变。

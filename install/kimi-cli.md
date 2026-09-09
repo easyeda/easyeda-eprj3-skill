@@ -2,13 +2,6 @@
 
 Kimi CLI 是月之暗面（Moonshot AI）推出的命令行编程 Agent，配合 Kimi K2 模型使用。
 
-## 安装 CLI
-
-```bash
-uv tool install --python 3.13 kimi-cli
-kimi  # 启动交互式会话
-```
-
 ## 项目本地安装 skill
 
 Kimi CLI 沿用 Claude Code 风格的项目上下文约定，读取项目根目录的 `KIMI.md`（兼容 `CLAUDE.md`）：

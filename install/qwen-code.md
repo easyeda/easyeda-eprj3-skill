@@ -2,13 +2,6 @@
 
 Qwen Code 是阿里 Qwen 团队基于 gemini-cli 二次开发的命令行 AI 工作流工具，针对 Qwen3-Coder 优化。
 
-## 安装 CLI
-
-```bash
-npm install -g @qwen-code/qwen-code
-qwen  # 首次运行走 Qwen OAuth（免费 2000 次/天），或配置 DashScope API Key
-```
-
 ## 项目本地安装 skill
 
 Qwen Code 读取项目根目录的 `QWEN.md` 作为上下文（继承自 gemini-cli 的 `GEMINI.md` 约定）：
