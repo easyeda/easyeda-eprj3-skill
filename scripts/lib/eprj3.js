@@ -286,10 +286,12 @@ function buildPowerSymbolDoc(spec) {
     fillColor: null, parentId: PART_ID, partId: PART_ID
   };
   b.add('ATTR', Object.assign({}, nulls, {
+    x: 0, y: nameY,
     value: spec.net, keyVisible: null, valueVisible: false,
     key: 'Global Net Name', zIndex: gnnZ
   }));
   b.add('ATTR', Object.assign({}, nulls, {
+    x: 0, y: nameY,
     value: spec.net, keyVisible: null, valueVisible: down ? false : true,
     key: 'Name', zIndex: nameZ
   }));
@@ -704,10 +706,12 @@ function buildPortSymbolDoc(spec) {
     fillColor: null, parentId: PART_ID, partId: PART_ID
   };
   b.add('ATTR', Object.assign({}, nulls, {
+    x: 0, y: 25,
     value: spec.net, keyVisible: null, valueVisible: false,
     key: 'Global Net Name', zIndex: 11
   }));
   b.add('ATTR', Object.assign({}, nulls, {
+    x: 0, y: 25,
     value: spec.net, keyVisible: null, valueVisible: true,
     key: 'Name', zIndex: 9
   }));
@@ -825,6 +829,7 @@ function wireBlock(v) {
 // fontFamily,fontSize,fontWeight,italic,underline,align,value,fillColor,zIndex
 function schTextLine(v) {
   // v: {x, y, value, rotation?, fontSize?, align?, zIndex, ticketBase}
+  // groupId/locked follow the format-skill TSchText page sample.
   return formatRecord({ type: 'TEXT', ticket: v.ticketBase, id: randId() }, {
     x: v.x, y: v.y,
     rotation: v.rotation !== undefined ? v.rotation : 0,
@@ -834,7 +839,8 @@ function schTextLine(v) {
     align: v.align !== undefined ? v.align : null,
     value: v.value,
     fillColor: null,
-    zIndex: v.zIndex
+    zIndex: v.zIndex,
+    groupId: '', locked: false
   });
 }
 
@@ -995,44 +1001,50 @@ function pcbPolyLine(v) {
 }
 
 // Two-point arc: start + end + signed sweep angle (CCW positive).
+// arcType DOT = two-point arc, CENT = center arc; field order follows the
+// format-skill example.
 function pcbArcLine(v) {
-  // v: {netName?, layerId?, startX, startY, endX, endY, angle, width?, ticketBase}
+  // v: {netName?, layerId?, startX, startY, endX, endY, angle, width?, arcType?, ticketBase}
   return formatRecord({ type: 'ARC', ticket: v.ticketBase, id: randId() }, {
-    partitionId: '', groupId: 0, netName: v.netName || '',
-    layerId: v.layerId !== undefined ? v.layerId : 1,
+    partitionId: '', groupId: 0, layerId: v.layerId !== undefined ? v.layerId : 1,
+    netName: v.netName || '',
     startX: v.startX, startY: v.startY, endX: v.endX, endY: v.endY,
     angle: v.angle,
     width: v.width !== undefined ? v.width : 10,
+    arcType: v.arcType !== undefined ? v.arcType : 'DOT',
     locked: false, zIndex: -1
   });
 }
 
-// PCB text. origin: 0 left-top … 4 center-middle … 8 right-bottom. Bottom-layer
-// text defaults to mirror 1 (per the format docs).
+// PCB text. Body follows the format-skill TPcbString example: x/y (not
+// positionX/Y), EAlign string origin, reverse/expansion, boolean mirror.
+// Bottom-layer text defaults to mirror true.
+const PCB_ALIGN = ['LEFT_BOTTOM', 'CENTER_BOTTOM', 'RIGHT_BOTTOM', 'LEFT_MIDDLE',
+  'CENTER_MIDDLE', 'RIGHT_MIDDLE', 'LEFT_TOP', 'CENTER_TOP', 'RIGHT_TOP'];
 function pcbStringLine(v) {
-  // v: {text, x, y, layerId?, fontSize?, origin?, angle?, mirror?, ticketBase}
+  // v: {text, x, y, layerId?, fontSize?, origin?(0-8), angle?, mirror?, ticketBase}
   const layerId = v.layerId !== undefined ? v.layerId : 1;
   return formatRecord({ type: 'STRING', ticket: v.ticketBase, id: randId() }, {
-    partitionId: '', groupId: 0, locked: false, zIndex: -1,
-    layerId,
-    positionX: v.x, positionY: v.y,
+    partitionId: '', groupId: 0, layerId,
+    x: v.x, y: v.y,
     text: v.text,
     fontFamily: 'default',
     fontSize: v.fontSize !== undefined ? v.fontSize : 60,
     strokeWidth: 6,
     bold: 0, italic: 0,
-    origin: v.origin !== undefined ? v.origin : 4,
+    origin: PCB_ALIGN[v.origin !== undefined ? v.origin : 4],
     angle: v.angle !== undefined ? v.angle : 0,
-    reverse: 0, reverseExpansion: 0,
-    mirror: v.mirror !== undefined ? v.mirror : (layerId === 2 ? 1 : 0),
-    width: null, height: null, path: null
+    reverse: false, expansion: 0,
+    mirror: v.mirror !== undefined ? v.mirror : layerId === 2,
+    locked: false, zIndex: -1
   });
 }
 
-// Via. Defaults follow the example PCB's PREFERENCE lastViaDiameter 24.0158 /
-// lastViaInnerDiameter 12.0078 mil; ruleName refers to the RADIUS "viaSize" rule.
+// Via. Diameters follow the example PCB's PREFERENCE lastViaDiameter 24.0158 /
+// lastViaInnerDiameter 12.0078 mil. viaType is the EViaType string enum
+// (NORMAL/BLIND/SUTURE, default NORMAL); unusedInnerLayers hides pad layers.
 function pcbViaLine(v) {
-  // v: {netName?, x, y, viaDiameter?, holeDiameter?, ruleName?, ticketBase}
+  // v: {netName?, x, y, viaDiameter?, holeDiameter?, ruleName?, viaType?, unusedInnerLayers?, ticketBase}
   return formatRecord({ type: 'VIA', ticket: v.ticketBase, id: randId() }, {
     partitionId: '', groupId: 0,
     netName: v.netName || '',
@@ -1040,8 +1052,9 @@ function pcbViaLine(v) {
     centerX: v.x, centerY: v.y,
     holeDiameter: v.holeDiameter !== undefined ? v.holeDiameter : 12.0078,
     viaDiameter: v.viaDiameter !== undefined ? v.viaDiameter : 24.0158,
-    viaType: 0,
+    viaType: v.viaType !== undefined ? v.viaType : 'NORMAL',
     topSolderExpansion: null, bottomSolderExpansion: null,
+    unusedInnerLayers: v.unusedInnerLayers !== undefined ? v.unusedInnerLayers : [],
     locked: false, zIndex: -1
   });
 }
@@ -1084,27 +1097,22 @@ function pcbFillLine(v) {
   });
 }
 
-// Keepout region. No real sample exists — docs shape with the real records'
-// partitionId ""/locked false/zIndex -1 conventions. prohibitType values:
-// 2 component, 3 via, 5 track, 6 fill, 7 pour, 8 inner plane (1/4 deprecated).
+// Keepout region. prohibitType uses the EProhibitType string enum (COMPONENT,
+// VIA, TRACK, FILL, COPPER, PLANE); regionType: PROHIBIT (keepout) or
+// CONSTRAINT. Field order follows the format-skill example.
 function pcbRegionLine(v) {
-  // v: {layerId?, path, width?, prohibit:[numbers], name?, ticketBase}
+  // v: {layerId?, path, width?, prohibit:[names], regionType?, name?, ticketBase}
   const body = {
-    partitionId: '', groupId: 0, locked: false, zIndex: -1,
+    partitionId: '', groupId: 0,
     layerId: v.layerId !== undefined ? v.layerId : 1,
     width: v.width !== undefined ? v.width : 1,
     prohibitType: v.prohibit,
-    path: v.path
+    path: v.path,
+    locked: false, zIndex: -1,
+    regionType: v.regionType !== undefined ? v.regionType : 'PROHIBIT'
   };
   if (v.name !== undefined) body.name = v.name;
   return formatRecord({ type: 'REGION', ticket: v.ticketBase, id: randId() }, body);
-}
-
-// Extra primitive properties (docs-only). The PROP head id IS the target
-// element's record id; the body currently carries only color.
-function pcbPropLine(v) {
-  // v: {target, color, ticketBase}
-  return formatRecord({ type: 'PROP', ticket: v.ticketBase, id: v.target }, { color: v.color });
 }
 
 // Renumber the main-doc records (after lastDocHead) to consecutive tickets so
@@ -1523,7 +1531,6 @@ module.exports = {
   pcbPourLine,
   pcbFillLine,
   pcbRegionLine,
-  pcbPropLine,
   renumberMainDoc,
   ensurePcbNets,
   lastDocHeadIndex,

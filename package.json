@@ -24,7 +24,6 @@
     "add-pour": "node scripts/add-pour.js",
     "add-fill": "node scripts/add-fill.js",
     "add-region": "node scripts/add-region.js",
-    "add-prop": "node scripts/add-prop.js",
     "add-track": "node scripts/add-track.js",
     "set-refdes": "node scripts/set-refdes.js",
     "generate-symbol": "node scripts/generate-symbol.js",

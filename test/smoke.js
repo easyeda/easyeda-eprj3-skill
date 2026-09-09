@@ -372,14 +372,13 @@ function main() {
       'VIA/POUR nets (SIG/GND) registered as NET records');
     ticketsIncrease(pcb3.main, 'PCB1.epcb2 main doc');
 
-    // ---- fill / region / prop ----
+    // ---- fill / region ----
     run([SCRIPTS + '/add-fill.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
       '--x', '100', '--y', '100', '--w', '400', '--h', '300']);
     run([SCRIPTS + '/add-fill.js', 'poly', '--dir', proj, '--pcb', 'PCB1',
       '--pts', '1000,1000,1400,1000,1400,1300']);
     run([SCRIPTS + '/add-region.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
-      '--prohibit', '2,5', '--name', 'KEEP1', '--x', '200', '--y', '200', '--w', '300', '--h', '200']);
-    run([SCRIPTS + '/add-prop.js', '--dir', proj, '--pcb', 'PCB1', '--last', '--color', '#FF0000']);
+      '--prohibit', 'COMPONENT,TRACK', '--name', 'KEEP1', '--x', '200', '--y', '200', '--w', '300', '--h', '200']);
     const pcb4 = mainDocs(j('pcb', 'PCB1.epcb2'));
     const fills = pcb4.main.records.filter((r) => r.type === 'FILL');
     assert(fills.length === 2 && fills[0].body.netName === 'GND' && fills[1].body.netName === ''
@@ -388,23 +387,20 @@ function main() {
         && Array.isArray(f.body.path[0])),
       'FILL records carry nested paths + SOLID-only fillStyle');
     const region = pcb4.main.records.find((r) => r.type === 'REGION');
-    assert(region && JSON.stringify(region.body.prohibitType) === '[2,5]'
+    assert(region && JSON.stringify(region.body.prohibitType) === '["COMPONENT","TRACK"]'
+      && region.body.regionType === 'PROHIBIT'
       && region.body.name === 'KEEP1' && region.body.width === 1
       && Array.isArray(region.body.path) && Array.isArray(region.body.path[0]),
-      'REGION record carries validated prohibitType + name + nested path');
-    const prop = pcb4.main.records.find((r) => r.type === 'PROP');
-    assert(prop && prop.body.color === '#FF0000'
-      && pcb4.main.records.some((r) => r !== prop && r.id === prop.id),
-      'PROP record id equals its target primitive id and carries color');
+      'REGION record carries enum prohibitType + regionType + name + nested path');
     const rFillBad = run([SCRIPTS + '/add-fill.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
       '--style', 'GRID', '--x', '0', '--y', '0', '--w', '10', '--h', '10'], 1);
     assert(/not sample-backed/.test(rFillBad.stderr + rFillBad.stdout),
       'add-fill rejects non-SOLID style');
     const rRegionBad = run([SCRIPTS + '/add-region.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
-      '--prohibit', '1', '--x', '0', '--y', '0', '--w', '10', '--h', '10'], 1);
-    assert(/deprecated/.test(rRegionBad.stderr + rRegionBad.stdout),
-      'add-region rejects deprecated prohibitType');
-    ticketUnique(pcb4.main, 'PCB1.epcb2 main doc after fill/region/prop');
+      '--prohibit', 'BOGUS', '--x', '0', '--y', '0', '--w', '10', '--h', '10'], 1);
+    assert(/unknown prohibitType/.test(rRegionBad.stderr + rRegionBad.stdout),
+      'add-region rejects unknown prohibitType');
+    ticketUnique(pcb4.main, 'PCB1.epcb2 main doc after fill/region');
 
     // ---- validate: clean + detects corruption ----
     const rVal = run([SCRIPTS + '/validate.js', '--dir', proj]);

@@ -3,25 +3,26 @@
 /**
  * add-region.js — add a keepout region (REGION record) to a PCB document.
  *
- *   add-region rect --dir <project> --pcb PCB1 --prohibit "2,5"
+ *   add-region rect --dir <project> --pcb PCB1 --prohibit "COMPONENT,TRACK"
  *                 --x 100 --y 100 --w 400 --h 300
- *   add-region poly --dir <project> --pcb PCB1 --prohibit 7
+ *   add-region poly --dir <project> --pcb PCB1 --prohibit COPPER
  *                 --pts "100,100,500,100,500,400,100,400"
  *
- * Coordinates are mil. --prohibit is a comma-separated list of rule ids:
- * 2 component, 3 via, 5 track, 6 fill, 7 pour, 8 inner plane
- * (1 and 4 are deprecated and rejected).
+ * Coordinates are mil. --prohibit is a comma-separated list of EProhibitType
+ * names: COMPONENT, VIA, TRACK, FILL, COPPER, PLANE. --region-type PROHIBIT
+ * (default) or CONSTRAINT.
  */
 const fs = require('fs');
 const E = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
-const PROHIBIT = { 2: 'component', 3: 'via', 5: 'track', 6: 'fill', 7: 'pour', 8: 'inner plane' };
+const PROHIBIT = ['COMPONENT', 'VIA', 'TRACK', 'FILL', 'COPPER', 'PLANE'];
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
   { name: 'pcb', desc: 'PCB title', required: true },
-  { name: 'prohibit', desc: 'rule ids: 2 component, 3 via, 5 track, 6 fill, 7 pour, 8 inner plane', required: true },
+  { name: 'prohibit', desc: 'EProhibitType names: COMPONENT, VIA, TRACK, FILL, COPPER, PLANE', required: true },
+  { name: 'region-type', desc: 'PROHIBIT (default) or CONSTRAINT' },
   { name: 'layer', desc: 'layer id (default 1 = top)' },
   { name: 'x', desc: 'rect top-left x (mil)' },
   { name: 'y', desc: 'rect top-left y (mil)' },
@@ -41,13 +42,12 @@ function numList(s, what) {
 }
 
 function parseProhibit(s) {
-  const ids = String(s).split(',').map((t) => Number(t.trim()));
-  for (const id of ids) {
-    if (!Number.isInteger(id)) die(`--prohibit entries must be integers, got "${s}"`);
-    if (id === 1 || id === 4) die(`prohibitType ${id} is deprecated and not emitted`);
-    if (!PROHIBIT[id]) die(`unknown prohibitType ${id} (want one of ${Object.keys(PROHIBIT).join(', ')})`);
+  const names = String(s).split(',').map((t) => t.trim().toUpperCase()).filter(Boolean);
+  if (!names.length) die('--prohibit is empty');
+  for (const n of names) {
+    if (!PROHIBIT.includes(n)) die(`unknown prohibitType "${n}" (want one of ${PROHIBIT.join(', ')})`);
   }
-  return ids;
+  return names;
 }
 
 function main() {
@@ -58,8 +58,12 @@ function main() {
     return;
   }
   const { opts } = parseArgs(argv.slice(1), SCHEMA);
-  if (opts.prohibit === undefined) die('--prohibit is required (e.g. --prohibit "2,5")');
+  if (opts.prohibit === undefined) die('--prohibit is required (e.g. --prohibit "COMPONENT,TRACK")');
   const prohibit = parseProhibit(opts.prohibit);
+  const regionType = opts['region-type'] !== undefined ? opts['region-type'].toUpperCase() : 'PROHIBIT';
+  if (regionType !== 'PROHIBIT' && regionType !== 'CONSTRAINT') {
+    die('--region-type must be PROHIBIT or CONSTRAINT');
+  }
 
   const project = E.Project.load(opts.dir);
   const pcb = project.requirePcb(opts.pcb);
@@ -85,11 +89,12 @@ function main() {
     path,
     width: opts.width !== undefined ? Number(opts.width) : undefined,
     prohibit,
+    regionType,
     name: opts.name,
     ticketBase: E.maxTicketOfLines(lines) + 1
   })]);
   project.save();
-  console.log(`added ${cmd} keepout region (${prohibit.map((id) => PROHIBIT[id]).join(', ')}) on ${opts.pcb}`);
+  console.log(`added ${cmd} ${regionType.toLowerCase()} region (${prohibit.join(', ')}) on ${opts.pcb}`);
 }
 
 main();

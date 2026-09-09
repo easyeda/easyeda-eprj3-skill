@@ -1,6 +1,6 @@
 # eprj3 Format Reference
 
-Compact reference for the records the scripts in this skill produce — verified against the official example at https://github.com/easyeda/easyeda-pro-eprj3-format (its `example/eprj3-example` project is the ground truth). Every JSON snippet below is quoted from a real record.
+Compact reference for the records the scripts in this skill produce — verified against the official example at https://github.com/easyeda/easyeda-pro-eprj3-format (its `example/eprj3-example` project is the ground truth) and cross-checked against the JSON Schemas and real record samples of the **easyeda-pro-format-skill** repo: https://github.com/easyeda/easyeda-pro-format-skill. Every JSON snippet below is quoted from a real record or a sample-backed merge.
 
 ## Project layout (folder format)
 
@@ -127,7 +127,7 @@ Net ports are the third member of the special-device family (no `PORT` record ty
 Free TEXT and non-electrical graphics. The official example carries these records only inside SYMBOL docs (with `partId`); page-level copies omit `partId` and use positive display-order zIndexes:
 
 ```jsonc
-{"type":"TEXT","ticket":109,"id":"..."}||{"x":300,"y":-300,"rotation":0,"color":null,"fontFamily":null,"fontSize":10,"fontWeight":null,"italic":null,"underline":null,"align":null,"value":"5V rail","fillColor":null,"zIndex":97}|
+{"type":"TEXT","ticket":109,"id":"..."}||{"x":300,"y":-300,"rotation":0,"color":null,"fontFamily":null,"fontSize":10,"fontWeight":null,"italic":null,"underline":null,"align":null,"value":"5V rail","fillColor":null,"zIndex":97,"groupId":"","locked":false}|   // groupId/locked per the format skill's SCH_PAGE TEXT sample
 {"type":"RECT","ticket":110,"id":"..."}||{"groupId":"","locked":false,"zIndex":98,"dotX1":200,"dotY1":-200,"dotX2":400,"dotY2":-300,"radiusX":0,"radiusY":0,"rotation":0,"strokeColor":null,"strokeStyle":"SOLID","fillColor":null,"strokeWidth":1,"fillStyle":"NONE"}|
 {"type":"POLY","ticket":111,"id":"..."}||{"groupId":"","locked":false,"zIndex":99,"points":[{"x":200,"y":-200},{"x":300,"y":-100},{"x":400,"y":-200}],"closed":true,"strokeColor":null,"strokeStyle":"SOLID","fillColor":null,"strokeWidth":1,"fillStyle":"NONE"}|
 {"type":"CIRCLE","ticket":112,"id":"..."}||{"groupId":"","locked":false,"zIndex":100,"centerX":300,"centerY":-250,"radius":50,"strokeColor":null,"strokeStyle":"SOLID","fillColor":null,"strokeWidth":1,"fillStyle":"NONE"}|
@@ -218,25 +218,24 @@ per-component blocks (COMPONENT + PAD_NETs + Designator/Footprint/… attrs) →
 {"type":"LINE","ticket":171,"id":"5d3cbdb8d4b54f4b"}||{"partitionId":"","groupId":0,"netName":"SIG","layerId":1,"startX":300,"startY":316.54,"endX":450,"endY":316.54,"width":10,"locked":false,"zIndex":-1}|   // copper track
 ```
 
-### PCB graphics, STRING, VIA, POUR, FILL, REGION, PROP
+### PCB graphics, STRING, VIA, POUR, FILL, REGION
 
-No real example samples exist for POLY/ARC/STRING/VIA/REGION/PROP (the example PCB main doc has only LINE/POLY/POUR/COMPONENT/NET/LAYER; its FILL records live in footprint docs) — shapes follow the format docs, with the real records' `partitionId:""` / `groupId:0` / `locked:false` / `zIndex:-1` conventions. The real POUR record quoted below is authoritative:
+The example PCB main doc has only LINE/POLY/POUR/COMPONENT/NET/LAYER (its FILL records live in footprint docs); STRING/VIA/ARC/REGION follow the real samples in the easyeda-pro-format-skill repo (`examples/PCB`), merged with the official example's `partitionId:""` / `groupId:0` / `locked:false` / `zIndex:-1` conventions. The real POUR record quoted below is authoritative. Where the format skill's JSON Schemas disagree with these samples (numeric `groupId`, `bold/italic: 0`, omitted `propagationDelay`, array `prohibitType`, `pourType` object), the samples win — see `scripts/tools/audit-format.js` for the full list.
 
 ```jsonc
 {"type":"POLY","ticket":172,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"width":2,"path":["R",500,500,400,300,0,0],"locked":false,"zIndex":-1,"polyType":"NORMAL"}|              // rect graphic
 {"type":"POLY","ticket":173,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"width":2,"path":["CIRCLE",700,650,100,1],"locked":false,"zIndex":-1,"polyType":"NORMAL"}|               // circle graphic
-{"type":"ARC","ticket":174,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"startX":500,"startY":500,"endX":900,"endY":500,"angle":90,"width":10,"locked":false,"zIndex":-1}|         // two-point arc, CCW positive
-{"type":"STRING","ticket":175,"id":"..."}||{"partitionId":"","groupId":0,"locked":false,"zIndex":-1,"layerId":3,"positionX":2000,"positionY":2800,"text":"REV A","fontFamily":"default","fontSize":60,"strokeWidth":6,"bold":0,"italic":0,"origin":4,"angle":0,"reverse":0,"reverseExpansion":0,"mirror":0,"width":null,"height":null,"path":null}|   // origin 0-8 align; mirror 1 on bottom
-{"type":"VIA","ticket":176,"id":"..."}||{"partitionId":"","groupId":0,"netName":"SIG","ruleName":"viaSize","centerX":700,"centerY":316.54,"holeDiameter":12.0078,"viaDiameter":24.0158,"viaType":0,"topSolderExpansion":null,"bottomSolderExpansion":null,"locked":false,"zIndex":-1}|   // defaults = example PREFERENCE
+{"type":"ARC","ticket":174,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"netName":"","startX":500,"startY":500,"endX":900,"endY":500,"angle":90,"width":10,"arcType":"DOT","locked":false,"zIndex":-1}|   // two-point arc, CCW positive; arcType DOT|CENT
+{"type":"STRING","ticket":175,"id":"..."}||{"partitionId":"","groupId":0,"layerId":3,"x":2000,"y":2800,"text":"REV A","fontFamily":"default","fontSize":60,"strokeWidth":6,"bold":0,"italic":0,"origin":"CENTER_MIDDLE","angle":0,"reverse":false,"expansion":0,"mirror":false,"locked":false,"zIndex":-1}|   // origin = EAlign string (LEFT_BOTTOM … RIGHT_TOP); mirror true on bottom
+{"type":"VIA","ticket":176,"id":"..."}||{"partitionId":"","groupId":0,"netName":"SIG","ruleName":"viaSize","centerX":700,"centerY":316.54,"holeDiameter":12.0078,"viaDiameter":24.0158,"viaType":"NORMAL","topSolderExpansion":null,"bottomSolderExpansion":null,"unusedInnerLayers":[],"locked":false,"zIndex":-1}|   // viaType NORMAL|BLIND|SUTURE; defaults = example PREFERENCE; propagationDelay omitted as in the sample
 {"type":"POUR","ticket":177,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"name":"POUR1","order":0,"path":[["R",100,100,3800,2800,0,0]],"pourType":{"pourType":"SOLID","fineness":8},"keepIsland":false,"locked":false,"zIndex":-1}|  // real record
 {"type":"FILL","ticket":178,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"fillStyle":"SOLID","path":[["R",100,100,400,300,0,0]],"locked":false,"zIndex":-1,"isBridgingCopper":false,"networkList":[],"refs":[]}|   // body mirrors the real footprint-doc FILL records, main-doc conventions
-{"type":"REGION","ticket":179,"id":"..."}||{"partitionId":"","groupId":0,"locked":false,"zIndex":-1,"layerId":1,"width":1,"prohibitType":[2,5],"path":[["R",200,200,300,200,0,0]],"name":"KEEP1"}|   // docs shape; no real sample
-{"type":"PROP","ticket":180,"id":"<target-record-id>"}||{"color":"#FF0000"}|   // docs shape; the PROP id IS the target element's id
+{"type":"REGION","ticket":179,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"width":1,"prohibitType":["COPPER","TRACK"],"path":[["R",200,200,300,200,0,0]],"locked":false,"zIndex":-1,"regionType":"PROHIBIT","name":"KEEP1"}|   // regionType PROHIBIT|CONSTRAINT
 ```
 
 - FILL field order follows the real footprint-doc records (`groupId,netName,layerId,width,fillStyle,path,locked,zIndex,isBridgingCopper,networkList,refs`) with the main-doc `partitionId:""` prepended. Only `fillStyle:"SOLID"` is sample-backed — grid/inner-plane modes and POUR's line/grid `pourType` variants have no verifiable sample and are rejected by the scripts.
-- REGION `prohibitType` ids: 2 禁止元件, 3 禁止过孔, 5 禁止布线, 6 禁止放置填充区域, 7 禁止覆铜, 8 禁止内电层 (1/4 deprecated, rejected). `name` is optional and only written when provided.
-- PROP head id = the target primitive's record id; the body currently documents only `{color}`.
+- REGION `prohibitType` is an array of string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE`. `name` is optional and only written when provided.
+- The legacy PROP record no longer exists in the format; per-primitive styling such as `specialColor` now lives on the ATTR record.
 
 - PCB path arrays use the docs encoding: `[x0,y0,"L",...]` polyline, `["R",x,y,w,h,rot,isCCW,round]` rect, `["CIRCLE",cx,cy,r,isCCW]`, `"ARC"angle` / `"C"` bezier segments; complex pour outlines are arrays of simple polygons (first CW outer, rest CCW holes).
 - POUR is the region record only — the client recomputes the filled copper (POURED records) on open. `width: 0.2` and `pourType {pourType:"SOLID",fineness:8}` are quoted from the real example.

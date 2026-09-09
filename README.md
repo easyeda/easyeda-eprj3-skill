@@ -16,7 +16,7 @@ The skill ships a complete set of cross-platform Node.js scripts so the AI can:
 
 KiCad → eprj3 conversion is intentionally out of scope — it lives in the separate **kicad-to-easyeda-eprj3** project. `.elibz2` library import is not supported.
 
-The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md). The authoritative source is https://github.com/easyeda/easyeda-pro-eprj3-format.
+The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md). The authoritative, machine-checkable spec is the **easyeda-pro-format-skill** repo: https://github.com/easyeda/easyeda-pro-format-skill (field tables, real record samples, JSON Schemas). The official example project (https://github.com/easyeda/easyeda-pro-eprj3-format) remains the ground truth for record shapes — where a schema and a real record disagree, the record wins.
 
 ## Repository layout
 
@@ -45,11 +45,11 @@ easyeda-eprj3-skill/
 │   ├── add-pour.js        ← copper pour region
 │   ├── add-fill.js        ← static copper fill
 │   ├── add-region.js      ← keepout region
-│   ├── add-prop.js        ← extra primitive property
 │   ├── set-refdes.js
 │   ├── validate.js
 │   ├── open.js
-│   └── lib/               ← shared record parser / writer modules
+│   ├── lib/               ← shared record parser / writer modules
+│   └── tools/             ← audit-format.js (schema cross-check)
 ├── install/               ← per-agent install guides
 ├── docs/
 │   ├── format-reference.md
@@ -97,8 +97,7 @@ node scripts/add-pcb-shape.js rect --dir ./myboard --pcb PCB1 --x 500 --y 500 --
 node scripts/add-pour.js rect --dir ./myboard --pcb PCB1 --net GND --x 100 --y 100 --w 3800 --h 2800
 node scripts/add-pcb-text.js  --dir ./myboard --pcb PCB1 --value "REV A" --x 2000 --y 2800
 node scripts/add-fill.js rect --dir ./myboard --pcb PCB1 --net GND --x 100 --y 100 --w 400 --h 300
-node scripts/add-region.js rect --dir ./myboard --pcb PCB1 --prohibit "2,5" --x 200 --y 200 --w 300 --h 200
-node scripts/add-prop.js --dir ./myboard --pcb PCB1 --last --color "#FF0000"
+node scripts/add-region.js rect --dir ./myboard --pcb PCB1 --prohibit "COMPONENT,TRACK" --x 200 --y 200 --w 300 --h 200
 
 # 5) Validate
 node scripts/validate.js --dir ./myboard

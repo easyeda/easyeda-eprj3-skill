@@ -5,7 +5,7 @@ description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use t
 
 # EasyEDA Pro eprj3 Project Skill
 
-This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format. The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md) and tracked at https://github.com/easyeda/easyeda-pro-eprj3-format.
+This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format. The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md); the authoritative, machine-checkable spec lives in the **easyeda-pro-format-skill** repo at https://github.com/easyeda/easyeda-pro-format-skill (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). The official example project (https://github.com/easyeda/easyeda-pro-eprj3-format) remains the ground truth for record shapes — where a schema and a real record disagree, the record wins.
 
 ## When to invoke
 
@@ -75,8 +75,8 @@ All coordinates are **mil** unless a script's help says otherwise.
     [--layer 1] [--size 60] [--origin 0-8]
     node scripts/add-pour.js <rect|poly> --dir <dir> --pcb <pcb> --net GND ...
     node scripts/add-fill.js <rect|poly> --dir <dir> --pcb <pcb> [--net N] ...
-    node scripts/add-region.js <rect|poly> --dir <dir> --pcb <pcb> --prohibit "2,5" ...
-    node scripts/add-prop.js --dir <dir> --pcb <pcb> (--target <id>|--last) --color "#RRGGBB"
+    node scripts/add-region.js <rect|poly> --dir <dir> --pcb <pcb>
+    --prohibit "COMPONENT,TRACK" ...                        (keepout region)
 12. node scripts/validate.js --dir <dir>            (always run this)
 13. If validation reports errors, fix and re-run until clean.
 14. node scripts/open.js open --dir <dir>           (launch the offline client)
@@ -151,13 +151,16 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 | `scripts/add-pcb-shape.js` | Draw PCB graphics (`rect`/`poly`/`circle` → POLY, `arc` → ARC). |
 | `scripts/add-pour.js` | Add a copper pour region (POUR record) to the PCB. |
 | `scripts/add-fill.js` | Add a static copper fill (FILL record) to the PCB — SOLID style only. |
-| `scripts/add-region.js` | Add a keepout region (REGION record) with `--prohibit` rule ids. |
-| `scripts/add-prop.js` | Attach a PROP record (currently color) to a primitive by record id. |
+| `scripts/add-region.js` | Add a keepout/constraint region (REGION record) with `--prohibit "COMPONENT,TRACK"` style rules. |
 | `scripts/set-refdes.js` | Rename or auto-renumber reference designators (`set`/`renumber`). |
 | `scripts/validate.js` | Check format invariants; exit 1 on errors. |
 | `scripts/open.js` | Launch / locate / register the offline client (`open`/`where`/`set`/`install`). |
 
-The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`).
+The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`). `scripts/tools/audit-format.js` cross-checks every generated record against the easyeda-pro-format-skill JSON Schemas — run it after changing any record builder:
+
+```bash
+node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
+```
 
 ## Output style
 
@@ -170,5 +173,5 @@ The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-
 
 - The generated files follow the official example byte-pattern closely, but full fidelity is only provable in the real client. If the client refuses to open a project, run `node scripts/validate.js --dir <dir>` first, then compare against [`examples/blink`](examples/blink) (a complete, validated sample project).
 - `add-pour` writes the pour region record only — the client recomputes the filled copper (POURED records) when the project is opened. Pour/fill styles are restricted to SOLID, the only mode backed by a real client record. Differential-pair routing, hierarchical multi-sheet navigation, and simulation documents are not authored by these scripts — finish those in the EasyEDA Pro client.
-- Sheet TEXT/shape and PCB STRING/VIA record bodies follow the official format docs (no page-level samples exist in the example); everything else mirrors real example records.
+- Sheet TEXT/shape and PCB STRING/VIA record bodies follow the real samples in the easyeda-pro-format-skill repo (`examples/SCH_PAGE`, `examples/PCB`); everything else mirrors official example records. Known schema-vs-example conflicts (e.g. numeric `groupId`, `pourType` object, POUR/FILL `path` nesting) are documented in `scripts/tools/audit-format.js` — real records win in every case.
 - `<project>/library/` holds the staged entries. The client does not read it; deleting it after generation is harmless.

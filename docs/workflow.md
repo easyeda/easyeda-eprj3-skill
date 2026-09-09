@@ -125,24 +125,23 @@ node scripts/add-pcb-shape.js circle --dir <dir> --pcb PCB1 --cx 700 --cy 650 --
 node scripts/add-pcb-shape.js arc    --dir <dir> --pcb PCB1 \
   --x1 500 --y1 500 --x2 900 --y2 500 --angle 90
 node scripts/add-pour.js rect --dir <dir> --pcb PCB1 --net GND \
-  --x 100 --y 100 --w 3800 --h 2800 [--layer 1] [--style SOLID|GRID]
+  --x 100 --y 100 --w 3800 --h 2800 [--layer 1]     # SOLID style only
 node scripts/add-pour.js poly --dir <dir> --pcb PCB1 --net GND \
   --pts "100,100,3900,100,3900,2900,100,2900" [--name POUR1]
 node scripts/add-pcb-text.js --dir <dir> --pcb PCB1 --value "REV A" \
   --x 2000 --y 2800 [--layer 1] [--origin 4] [--angle 0]
 ```
 
-Static fill, keepout region and primitive properties:
+Static copper fill and keepout regions:
 
 ```bash
 node scripts/add-fill.js rect --dir <dir> --pcb PCB1 [--net GND] \
   --x 100 --y 100 --w 400 --h 300            # or: poly --pts "..."
-node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "2,5" \
-  --x 200 --y 200 --w 300 --h 200 [--name KEEP1]   # or: poly --pts "..."
-node scripts/add-prop.js --dir <dir> --pcb PCB1 (--target <record-id>|--last) --color "#FF0000"
+node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRACK" \
+  --x 200 --y 200 --w 300 --h 200 [--name KEEP1] [--region-type PROHIBIT|CONSTRAINT]
 ```
 
-`--prohibit` ids: 2 component, 3 via, 5 track, 6 fill, 7 pour, 8 inner plane (1/4 deprecated and rejected). PROP's record id is the target primitive's id; the body currently carries only color.
+`--prohibit` accepts the format spec's string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE` (comma-separated, emitted as the `prohibitType` array). The legacy PROP record no longer exists in the format — per-primitive styling such as `specialColor` now lives on the ATTR record.
 
 `add-pour` writes the POUR region record; the client recomputes the filled copper when the file opens. PCB shape arcs use a signed sweep angle (CCW positive).
 
