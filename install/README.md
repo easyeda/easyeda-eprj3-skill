@@ -33,6 +33,6 @@ This folder has a one-page guide per supported agent. Pick yours and follow the 
 | WorkBuddy（AI Agent 办公工具） | 腾讯 | [workbuddy.md](workbuddy.md) |
 | Qwen Code（通义千问 CLI） | 阿里云 | [qwen-code.md](qwen-code.md) |
 | Kimi CLI | 月之暗面 | [kimi-cli.md](kimi-cli.md) |
-| MiniMax M2（模型后端） | MiniMax | [minimax.md](minimax.md) |
+| MiniMax Code | MiniMax | [minimax.md](minimax.md) |
 
 If your agent isn't listed, copy `SKILL.md` into a location where the agent auto-loads instructions, and keep `scripts/` alongside it.
