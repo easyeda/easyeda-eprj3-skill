@@ -1,0 +1,202 @@
+#!/usr/bin/env node
+'use strict';
+/**
+ * extract-example.js — maintenance tool.
+ *
+ * Extracts two byte-faithful structures from the official
+ * easyeda-pro-eprj3-format example project and writes them as committed
+ * JS modules under scripts/lib/:
+ *
+ *   frame-a4.js     the A4 drawing-frame SYMBOL doc + its DEVICE doc
+ *   pcb-preamble.js the PCB document preamble (layers / rules / preferences)
+ *
+ * Usage:
+ *   node scripts/tools/extract-example.js <path-to-eprj3-example-dir>
+ *
+ * Run it again only when rebasing on a newer example. The generated modules
+ * contain __PLACEHOLDER__ slots that eprj3.js fills in at build time.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const exampleDir = process.argv[2];
+if (!exampleDir) {
+  console.error('usage: node extract-example.js <eprj3-example-dir>');
+  process.exit(1);
+}
+
+function head(line) {
+  const i = line.indexOf('}||');
+  if (i < 0) throw new Error('not a record line: ' + line.slice(0, 80));
+  const h = JSON.parse(line.slice(0, i + 1));
+  const rest = line.slice(i + 3); // 'BODY|' or '|' (empty body)
+  h.body = rest === '|' || rest === '||' ? null : JSON.parse(rest.replace(/\|$/, ''));
+  return h;
+}
+
+// ---------------------------------------------------------------- frame (A4)
+const schLines = fs
+  .readFileSync(path.join(exampleDir, 'sch', 'Schematic1', 'P1.esch2'), 'utf8')
+  .split(/\r?\n/)
+  .filter(Boolean);
+
+const FRAME_SYM_UUID = '6941de4f2d2bacf9';
+const FRAME_DEV_UUID = '6679d20e2b3dd5dc';
+
+let start = schLines.findIndex((l) => {
+  const h = head(l);
+  return h.type === 'DOCHEAD' && h.body.uuid === FRAME_SYM_UUID;
+});
+if (start < 0) throw new Error('frame symbol doc not found in example');
+
+const symLines = [schLines[start]];
+start++;
+while (start < schLines.length && head(schLines[start]).type !== 'DOCHEAD') {
+  symLines.push(schLines[start]);
+  start++;
+}
+
+const devStart = schLines.findIndex((l) => {
+  const h = head(l);
+  return h.type === 'DOCHEAD' && h.body.uuid === FRAME_DEV_UUID;
+});
+if (devStart < 0) throw new Error('frame device doc not found in example');
+const devLines = [schLines[devStart], schLines[devStart + 1]];
+
+// drop the embedded logo OBJ (unresolvable blob hash) and empty ATTR stubs
+const keep = (l) => {
+  const h = head(l);
+  if (h.type === 'OBJ') return false;
+  if (h.type === 'ATTR' && l.endsWith('|||')) return false;
+  return true;
+};
+
+const SUBS = [
+  [FRAME_SYM_UUID, '__SYMBOL_UUID__'],
+  [FRAME_DEV_UUID, '__DEVICE_UUID__'],
+  ['ecab056ca49c02e8', '__CLIENT__'],
+  ['1787899965330', '__MS__'],
+  ['1787899965231', '__VERSION__'],
+  ['1787899965090', '__MS__'],
+  ['1787899964976', '__VERSION__'],
+  ['dae013dc9fb24993ad62a51f9f80d9cd|0819f05c4eef4c71ace90d822a990e87', '__SOURCE__'],
+  ['bc676184ec9748d7b372ad543982403a|0819f05c4eef4c71ace90d822a990e87', '__SOURCE__']
+];
+const subst = (l) => SUBS.reduce((acc, [from, to]) => acc.split(from).join(to), l);
+
+const symTpl = symLines.filter(keep).map(subst);
+const devTpl = devLines.map(subst);
+
+// ------------------------------------------------------------- pcb preamble
+const pcbLines = fs
+  .readFileSync(path.join(exampleDir, 'pcb', 'PCB1.epcb2'), 'utf8')
+  .split(/\r?\n/)
+  .filter(Boolean);
+
+const pcbStart = pcbLines.findIndex((l) => {
+  const h = head(l);
+  return h.type === 'DOCHEAD' && h.body.docType === 'PCB';
+});
+if (pcbStart < 0) throw new Error('PCB doc not found in example');
+
+const netEmptyIdx = pcbLines.findIndex(
+  (l, i) => i > pcbStart && head(l).type === 'NET' && l.endsWith('|||')
+);
+const ruleSelIdx = pcbLines.findIndex(
+  (l, i) =>
+    i > pcbStart &&
+    head(l).type === 'RULE_SELECTOR' &&
+    head(l).id === '["RULE_SELECTOR",["NET",""]]'
+);
+const outlineIdx = pcbLines.findIndex((l, i) => {
+  if (i <= ruleSelIdx) return false;
+  const h = head(l);
+  return h.type === 'POLY' && h.body && h.body.polyType === 'BOARD_OUTLINE';
+});
+if (netEmptyIdx < 0 || ruleSelIdx < 0 || outlineIdx < 0)
+  throw new Error('PCB preamble anchors not found in example');
+
+const pcbSel = [
+  ...pcbLines.slice(pcbStart, netEmptyIdx + 1),
+  pcbLines[ruleSelIdx],
+  pcbLines[outlineIdx]
+];
+
+const PCB_SUBS = [
+  ['ecab056ca49c02e8', '__CLIENT__'],
+  ['"uuid":"31fcc6617aca97ff"', '"uuid":"__UUID__"'],
+  ['"updateTime":1787900178075', '"updateTime":__MS__'],
+  ['"version":"1787900178075"', '"version":"__VERSION__"'],
+  ['"title":"PCB1"', '"title":"__TITLE__"'],
+  ['"board":"b928e3404d112d89"', '"board":"__BOARD__"'],
+  ['"path":["R",0,940,1475,940,0,0]', '"path":__OUTLINE__'],
+  // fix the example's invalid Inner10 inactive color
+  ['#a.492f', '#15492f']
+];
+const pcbSubst = (l) => PCB_SUBS.reduce((acc, [from, to]) => acc.split(from).join(to), l);
+const pcbTpl = pcbSel.map(pcbSubst);
+
+if (pcbTpl.some((l) => l.includes('a.492f'))) throw new Error('color typo not patched');
+
+// ------------------------------------------------------------------ emit
+const emit = (name, varName, tpl, extra) => `\
+'use strict';
+// AUTO-GENERATED by scripts/tools/extract-example.js from the official
+// easyeda-pro-eprj3-format example project. Do not edit by hand — re-run the
+// extractor against a newer example instead.
+//
+// Lines contain __PLACEHOLDER__ slots: __SYMBOL_UUID__ __DEVICE_UUID__
+// __CLIENT__ __MS__ __VERSION__ __SOURCE__ __UUID__ __TITLE__ __BOARD__
+// __OUTLINE__ (see build* functions below).
+
+const LINES = [
+${tpl.map((l) => '  ' + JSON.stringify(l)).join(',\n')}
+];
+
+function fill(l, v) {
+  return l
+    .replace(/__SYMBOL_UUID__/g, v.symbolUuid || '')
+    .replace(/__DEVICE_UUID__/g, v.deviceUuid || '')
+    .replace(/__CLIENT__/g, v.client || '')
+    .replace(/__MS__/g, String(v.ms || 0))
+    .replace(/__VERSION__/g, String(v.ms || 0))
+    .replace(/__SOURCE__/g, v.source || '')
+    .replace(/__UUID__/g, v.uuid || '')
+    .replace(/__TITLE__/g, v.title === undefined ? '' : JSON.stringify(v.title).slice(1, -1))
+    .replace(/__BOARD__/g, v.board || '')
+    .replace(/__OUTLINE__/g, JSON.stringify(v.outline || ['R', 0, 0, 4000, 3000, 0, 0]));
+}
+
+${extra}
+`;
+
+fs.writeFileSync(
+  path.join(__dirname, '..', 'lib', 'frame-a4.js'),
+  emit('frame-a4', null, symTpl.concat(devTpl), `\
+const SYM_DOC_LEN = ${symTpl.length};
+
+// Both docs are returned in one array: [A4 frame SYMBOL doc, frame DEVICE doc].
+function buildFrameDocs(v) {
+  return LINES.map((l) => fill(l, v));
+}
+buildFrameDocs.SYM_DOC_LEN = SYM_DOC_LEN;
+
+module.exports = { buildFrameDocs, FRAME_TITLE: 'Drawing-Symbol_A4' };
+`),
+  'utf8'
+);
+
+fs.writeFileSync(
+  path.join(__dirname, '..', 'lib', 'pcb-preamble.js'),
+  emit('pcb-preamble', null, pcbTpl, `\
+function buildPcbPreamble(v) {
+  return LINES.map((l) => fill(l, v));
+}
+
+module.exports = { buildPcbPreamble };
+`),
+  'utf8'
+);
+
+console.log(`frame-a4.js: ${symTpl.length} symbol-doc lines + ${devTpl.length} device-doc lines`);
+console.log(`pcb-preamble.js: ${pcbTpl.length} lines`);

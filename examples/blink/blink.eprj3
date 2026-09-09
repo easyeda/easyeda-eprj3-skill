@@ -1,10 +1,10 @@
 {
   "name": "blink",
-  "owner_uuid": "11365a087429bf75",
-  "creator_uuid": "11365a087429bf75",
-  "created_at": "2026-09-09 11:11:48",
-  "updated_at": "2026-09-09 11:11:48",
-  "modifier_uuid": "11365a087429bf75",
+  "owner_uuid": "1a4010d03b7b8fde443bd3b657826e99",
+  "creator_uuid": "1a4010d03b7b8fde443bd3b657826e99",
+  "created_at": "2026-09-09 13:51:59",
+  "updated_at": "2026-09-09 13:53:01",
+  "modifier_uuid": "1a4010d03b7b8fde443bd3b657826e99",
   "content": "",
   "archive": false,
   "cbb_project": 0,
@@ -19,48 +19,54 @@
   "format": "folder",
   "profile": {
     "boards": {
-      "b6a9d1aa": {
-        "uuid": "b6a9d1aa",
+      "e2efa89108bd9e64": {
+        "uuid": "e2efa89108bd9e64",
         "title": "Board1",
         "zIndex": 1
       }
     },
     "schematics": {
-      "c7bda028": {
-        "uuid": "c7bda028",
+      "387ec59837dbdd30": {
+        "uuid": "387ec59837dbdd30",
         "name": "Schematic1",
-        "board": "b6a9d1aa",
+        "board": "e2efa89108bd9e64",
         "source": "",
-        "version": "1788923508442",
-        "updateTime": 1788923508442
+        "version": "1788933119665",
+        "updateTime": 1788933119665
       }
     },
     "sheets": {
-      "c447c81b": {
-        "uuid": "c447c81b",
+      "1134d243f2f5519f": {
+        "uuid": "1134d243f2f5519f",
         "title": "P1",
-        "schematic_uuid": "c7bda028",
+        "schematic_uuid": "387ec59837dbdd30",
         "zIndex": 1,
         "source": "",
-        "version": "1788923508444",
-        "updateTime": 1788923508444
+        "version": "1788933119668",
+        "updateTime": 1788933119668
       }
     },
     "pcbs": {
-      "eba60b48": {
-        "uuid": "eba60b48",
+      "b23a583ed3fbe1b6": {
+        "uuid": "b23a583ed3fbe1b6",
         "title": "PCB1",
-        "board": "b6a9d1aa",
+        "board": "e2efa89108bd9e64",
         "parent_uuid": "",
         "source": "",
-        "version": "1788923508447",
-        "updateTime": 1788923508447
+        "version": "1788933119673",
+        "updateTime": 1788933119673
       }
     },
-    "panels": {},
+    "panels": {
+      "502bf7c60d21f850": {
+        "uuid": "502bf7c60d21f850",
+        "title": "Panel1",
+        "zIndex": null
+      }
+    },
     "blockSymbols": {},
     "owner": {
-      "uuid": "11365a087429bf75"
+      "uuid": "1a4010d03b7b8fde443bd3b657826e99"
     },
     "simSchematics": {},
     "simulations": {}

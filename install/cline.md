@@ -12,7 +12,7 @@ cat > .clinerules/easyeda-eprj3.md <<'EOF'
 
 Apply this skill whenever the user asks to:
 - Create or edit an EasyEDA Pro (.eprj3) project
-- Import a component from an .elibz2 library
+- Generate symbols, footprints, or devices and place them on a sheet or PCB
 - Validate the format of an existing .eprj3 directory
 
 For the full workflow read `skills/easyeda-eprj3/SKILL.md` and follow it.

@@ -14,8 +14,18 @@
     "add-footprint": "node scripts/add-footprint.js",
     "add-wire": "node scripts/add-wire.js",
     "add-netlabel": "node scripts/add-netlabel.js",
+    "add-power": "node scripts/add-power.js",
     "add-port": "node scripts/add-port.js",
     "add-text": "node scripts/add-text.js",
+    "add-pcb-text": "node scripts/add-pcb-text.js",
+    "add-shape": "node scripts/add-shape.js",
+    "add-pcb-shape": "node scripts/add-pcb-shape.js",
+    "add-via": "node scripts/add-via.js",
+    "add-pour": "node scripts/add-pour.js",
+    "add-fill": "node scripts/add-fill.js",
+    "add-region": "node scripts/add-region.js",
+    "add-prop": "node scripts/add-prop.js",
+    "add-track": "node scripts/add-track.js",
     "set-refdes": "node scripts/set-refdes.js",
     "generate-symbol": "node scripts/generate-symbol.js",
     "generate-footprint": "node scripts/generate-footprint.js",
@@ -24,9 +34,6 @@
     "open": "node scripts/open.js"
   },
   "engines": { "node": ">=18" },
-  "optionalDependencies": {
-    "yauzl": "^3.0.0"
-  },
   "keywords": [
     "easyeda",
     "eprj3",

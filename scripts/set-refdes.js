@@ -1,76 +1,95 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * set-refdes.js — Modify a reference designator (Designator ATTR) on a component.
+ * set-refdes.js — rename or renumber reference designators on a schematic
+ * sheet and/or PCB document.
  *
- * Usage:
- *   node scripts/set-refdes.js set --dir <projectDir> --kind schematic --doc <name> --sheet <sheetTitle> --from R1 --to R5A
- *   node scripts/set-refdes.js renumber --dir <projectDir> --kind schematic --doc <name> --sheet <sheetTitle> --prefix R
+ *   set      --dir <project> (--sch S1 --sheet P1 | --pcb PCB1)
+ *            --designator R1 --value R5
+ *   renumber --dir <project> (--sch S1 --sheet P1 | --pcb PCB1)
+ *            --prefix R [--start 1]
  *
- * The "renumber" subcommand auto-numbers all components whose designator is
- * exactly <prefix><digits> (R1, R2, R3, ...) based on record order.
- * This is a read/modify command: a wrong --doc/--sheet fails instead of
- * silently creating an empty document.
+ * "renumber" reassigns sequential designators (R1, R2, ...) in placement
+ * order to every component whose current designator matches the prefix
+ * ("R1", "R12" or the "R?" placeholder).
  */
-const path = require('path');
-const { Project, readRecords, writeRecords } = require('./lib/eprj3');
+const fs = require('fs');
+const E = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
-const schema = [
-  { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root' },
-  { name: 'kind', alias: 'k', hasValue: true, default: 'schematic', desc: 'schematic or pcb' },
-  { name: 'doc', hasValue: true, required: true, desc: 'Schematic/PCB name' },
-  { name: 'sheet', alias: 'p', hasValue: true, desc: 'Sheet title (schematic only, default P1)' },
-  { name: 'from', hasValue: true, desc: 'Current refdes (set subcommand)' },
-  { name: 'to', hasValue: true, desc: 'New refdes (set subcommand)' },
-  { name: 'prefix', hasValue: true, desc: 'Prefix to renumber (renumber subcommand)' }
+const SCHEMA = [
+  { name: 'dir', desc: 'project directory', required: true },
+  { name: 'sch', desc: 'schematic name (with --sheet)' },
+  { name: 'sheet', desc: 'sheet title (with --sch)' },
+  { name: 'pcb', desc: 'PCB title (schematic OR pcb required)' },
+  { name: 'designator', desc: 'current designator (set)' },
+  { name: 'value', desc: 'new designator (set)' },
+  { name: 'prefix', desc: 'designator prefix (renumber)' },
+  { name: 'start', desc: 'first number (renumber, default 1)' }
 ];
 
-async function main() {
-  const sub = process.argv[2];
-  if (!sub || sub === 'help') { printHelp('set-refdes.js <set|renumber> [options]', schema); process.exit(sub ? 0 : 1); }
-  const { opts } = parseArgs(process.argv.slice(3), schema);
-  if (sub !== 'set' && sub !== 'renumber') die(`Unknown command: ${sub}. Use 'set' or 'renumber'.`);
-
-  const project = await Project.load(path.resolve(opts.dir));
-  let file;
-  if (opts.kind === 'schematic') {
-    const { sheet } = project.requireSheet(opts.doc, opts.sheet || 'P1');
-    file = project.sheetFile(sheet);
-  } else {
-    file = project.pcbFile(project.requirePcb(opts.doc));
+function targetFile(project, opts) {
+  if (opts.sch && opts.sheet) {
+    const { sheet } = project.requireSheet(opts.sch, opts.sheet);
+    const file = project.sheetFile(sheet);
+    if (!fs.existsSync(file)) die(`sheet document missing: ${file}`);
+    return file;
   }
-  const records = readRecords(file);
-
-  if (sub === 'set') {
-    const oldRefdes = opts.from;
-    const newRefdes = opts.to;
-    if (!oldRefdes || !newRefdes) die('--from and --to are required');
-    let changed = 0;
-    for (const r of records) {
-      if (r.type === 'ATTR' && r.body.key === 'Designator' && r.body.value === oldRefdes) {
-        r.body.value = newRefdes;
-        changed++;
-      }
-    }
-    if (!changed) die(`No Designator ATTR with value "${oldRefdes}" found in ${file}`);
-    writeRecords(file, records);
-    console.log(`Renamed ${changed} refdes from ${oldRefdes} to ${newRefdes}`);
-    return;
+  if (opts.pcb) {
+    const pcb = project.requirePcb(opts.pcb);
+    const file = project.pcbFile(pcb);
+    if (!fs.existsSync(file)) die(`PCB document missing: ${file}`);
+    return file;
   }
-
-  // renumber
-  const prefix = opts.prefix;
-  if (!prefix) die('--prefix is required');
-  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d+$`);
-  let counter = 1;
-  for (const r of records) {
-    if (r.type === 'ATTR' && r.body.key === 'Designator' && pattern.test(r.body.value)) {
-      r.body.value = `${prefix}${counter++}`;
-    }
-  }
-  writeRecords(file, records);
-  console.log(`Renumbered ${counter - 1} components with prefix ${prefix}`);
+  die('specify a target: --sch <name> --sheet <title>, or --pcb <title>');
+  return null;
 }
 
-main().catch(err => die(err.message, 1));
+function cmdSet(file, opts) {
+  if (!opts.designator || !opts.value) die('set needs --designator <old> --value <new>');
+  const n = E.updateRecord(file,
+    (r) => r.type === 'ATTR' && r.body && r.body.key === 'Designator'
+      && r.body.parentId && r.body.value === opts.designator,
+    (r) => { r.body.value = opts.value; });
+  if (!n) die(`no component with designator "${opts.designator}" found`);
+  console.log(`renamed ${opts.designator} -> ${opts.value} (${n} record${n === 1 ? '' : 's'})`);
+}
+
+function cmdRenumber(file, opts) {
+  if (!opts.prefix) die('renumber needs --prefix <letter(s)>');
+  const start = Number(opts.start || 1);
+  const pat = new RegExp(`^${opts.prefix}(\\?|\\d*)$`);
+  const lines = E.readLines(file);
+  const headIdx = E.lastDocHeadIndex(lines);
+  const records = lines.map(E.parseRecord).filter(Boolean);
+
+  const targets = [];
+  for (const r of records.slice(headIdx + 1)) {
+    if (r.type === 'ATTR' && r.body && r.body.key === 'Designator'
+      && r.body.parentId && pat.test(String(r.body.value))) {
+      targets.push(r);
+    }
+  }
+  if (!targets.length) die(`no designators matching prefix "${opts.prefix}"`);
+  targets.forEach((r, i) => { r.body.value = `${opts.prefix}${start + i}`; });
+  E.writeRecords(file, records);
+  console.log(`renumbered ${targets.length} component(s): ${opts.prefix}${start} .. ${opts.prefix}${start + targets.length - 1}`);
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  const cmd = argv[0];
+  if (!cmd || cmd === '-h' || cmd === '--help') {
+    printHelp('set-refdes.js <set|renumber> [options]', SCHEMA);
+    return;
+  }
+  const { opts } = parseArgs(argv.slice(1), SCHEMA);
+  const project = E.Project.load(opts.dir);
+  const file = targetFile(project, opts);
+  if (cmd === 'set') cmdSet(file, opts);
+  else if (cmd === 'renumber') cmdRenumber(file, opts);
+  else die(`unknown command "${cmd}" (want: set | renumber)`);
+  project.save();
+}
+
+main();

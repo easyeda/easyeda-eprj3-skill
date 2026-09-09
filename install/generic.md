@@ -19,7 +19,6 @@ read `./skills/easyeda-eprj3/SKILL.md` and follow it.
 ## Required runtime
 
 - Node.js ≥ 18 on `PATH`.
-- (Optional, only for `.elibz2` archives) `npm install yauzl --no-save` inside `skills/easyeda-eprj3`.
 
 ## Updating
 

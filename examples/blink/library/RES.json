@@ -1,0 +1,30 @@
+{
+  "name": "RES",
+  "kind": "symbol",
+  "symbolUuid": "adcd048a65fd5b86",
+  "symbolTitle": "Resistor",
+  "designator": "R?",
+  "description": "",
+  "symbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"d1e91a1d9bdb6534\",\"uuid\":\"adcd048a65fd5b86\",\"updateTime\":1788933120026,\"version\":\"1788933120026\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"Resistor\",\"description\":\"\",\"tags\":[\"电阻\",\"R\"],\"docType\":2,\"source\":\"ff769b09927501759f1c39953b584d24|1a4010d03b7b8fde443bd3b657826e99\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":2,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":3,\"id\":\"pid8a0e77bacb214e\"}||{\"BBOX\":[-10,-5,10,5],\"title\":\"\"}|",
+    "{\"type\":\"RECT\",\"ticket\":4,\"id\":\"e0\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":1,\"dotX1\":-10,\"dotY1\":-5,\"dotX2\":10,\"dotY2\":5,\"radiusX\":0,\"radiusY\":0,\"rotation\":0,\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"NONE\"}|",
+    "{\"type\":\"PIN\",\"ticket\":5,\"id\":\"e1\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":2,\"display\":true,\"x\":-20,\"y\":0,\"length\":10,\"rotation\":0,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":6,\"id\":\"b9585ca55a004fa1\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":3,\"parentId\":\"e1\",\"key\":\"Pin Name\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":9.72222,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":7,\"id\":\"aa9c3688d7211758\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":4,\"parentId\":\"e1\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":9.72222,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":8,\"id\":\"62a094f48a4377eb\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":5,\"parentId\":\"e1\",\"key\":\"Pin Type\",\"value\":\"Undefined\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":6.75,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"PIN\",\"ticket\":9,\"id\":\"e2\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":6,\"display\":true,\"x\":20,\"y\":0,\"length\":10,\"rotation\":180,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":10,\"id\":\"ec53aea6fc7fa895\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":7,\"parentId\":\"e2\",\"key\":\"Pin Name\",\"value\":\"2\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":9.72222,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":11,\"id\":\"7485ddadc226de87\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"parentId\":\"e2\",\"key\":\"Pin Number\",\"value\":\"2\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":9.72222,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":12,\"id\":\"b29fcc927089e30a\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":9,\"parentId\":\"e2\",\"key\":\"Pin Type\",\"value\":\"Undefined\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":6.75,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":13,\"id\":\"a666c9a2116651e6\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":10,\"parentId\":\"\",\"key\":\"Name\",\"value\":\"Resistor\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":6.75,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":14,\"id\":\"1eb84d67c113e1f8\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":11,\"parentId\":\"\",\"key\":\"Designator\",\"value\":\"R?\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":6.75,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|"
+  ],
+  "placement": {
+    "nameZ": 10,
+    "designatorZ": 11,
+    "symbolZ": 12
+  }
+}

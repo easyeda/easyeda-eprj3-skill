@@ -1,58 +1,46 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * init.js — Create a new eprj3 project skeleton.
+ * init.js — create a new eprj3 folder project: index, schematic container
+ * (.ecfg/.evar), sheet document (A4 frame + page), PCB document (preamble +
+ * board outline) and the panel.
  *
- * Usage:
- *   node scripts/init.js init --dir <path> [--name <projectName>] [--with-pcb] [--with-schematic <name>]
+ *   node scripts/init.js --dir <dir> [--name <proj>] [--schematic Schematic1]
+ *                        [--sheet P1] [--pcb PCB1]
  *
- * Side effects:
- *   <dir>/<name>.eprj3            <- project index
- *   <dir>/sch/<schematic>/...     <- if --with-schematic given
- *   <dir>/pcb/<pcb>.epcb2         <- if --with-pcb given
+ * Run the generate / add scripts afterwards to populate it.
  */
-const path = require('path');
-const { Project } = require('./lib/eprj3');
+const E = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
-const schema = [
-  { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root directory' },
-  { name: 'name', alias: 'n', hasValue: true, desc: 'Project name (defaults to folder name)' },
-  { name: 'with-pcb', alias: 'p', hasValue: false, desc: 'Create an empty PCB document' },
-  { name: 'with-schematic', alias: 's', hasValue: true, desc: 'Create a schematic with the given name' },
-  { name: 'pcb-name', hasValue: true, default: 'PCB1', desc: 'PCB document name when --with-pcb is set' },
-  { name: 'help', alias: 'h', hasValue: false, desc: 'Show this help' }
+const SCHEMA = [
+  { name: 'dir', desc: 'project directory (created)', required: true },
+  { name: 'name', desc: 'project name (default: directory name)' },
+  { name: 'schematic', desc: 'schematic name (default Schematic1)' },
+  { name: 'sheet', desc: 'initial sheet title (default P1)' },
+  { name: 'pcb', desc: 'initial PCB title (default PCB1)' }
 ];
 
-async function main() {
-  const sub = process.argv[2];
-  if (!sub || sub === 'help' || sub === '--help' || sub === '-h') {
-    printHelp('init.js <command> [options]', schema, 'Commands: init');
-    process.exit(sub ? 0 : 1);
+function main() {
+  const argv = process.argv.slice(2);
+  if (!argv.length || argv[0] === '-h' || argv[0] === '--help') {
+    printHelp('init.js [options]', SCHEMA);
+    return;
   }
-  const { opts } = parseArgs(process.argv.slice(3), schema);
-  if (opts.help) return printHelp('init.js init [options]', schema);
-  const dir = path.resolve(opts.dir);
-  const name = opts.name || path.basename(dir);
-  if (sub !== 'init') die(`Unknown command: ${sub}. Use 'init'.`);
+  const { opts } = parseArgs(argv, SCHEMA);
+  const project = E.Project.create(opts.dir, opts.name);
+  const schName = opts.schematic || 'Schematic1';
+  const sheetTitle = opts.sheet || 'P1';
+  const pcbName = opts.pcb || 'PCB1';
 
-  const project = await Project.create(dir, name);
-  console.log(`Created project "${name}" at ${dir}`);
-  console.log(`  index: ${project.indexFile}`);
+  const { sch, sheet } = project.ensureSheetDocument(schName, sheetTitle);
+  const { pcb } = project.ensurePcbDocument(pcbName);
+  project.save();
 
-  if (opts['with-schematic']) {
-    const file = project.ensureSheetDocument(opts['with-schematic'], 'P1');
-    const cfg = path.join(dir, 'sch', opts['with-schematic'], `${opts['with-schematic']}.ecfg`);
-    const evar = path.join(dir, 'sch', opts['with-schematic'], `${opts['with-schematic']}.evar`);
-    require('fs').writeFileSync(cfg, '');
-    require('fs').writeFileSync(evar, '');
-    console.log(`  sch:   ${file}`);
-  }
-
-  if (opts['with-pcb']) {
-    const file = project.ensurePcbDocument(opts['pcb-name']);
-    console.log(`  pcb:   ${file}`);
-  }
+  console.log(`created project ${project.indexFile}`);
+  console.log(`  schematic ${sch.name} (${sch.uuid}), sheet ${sheet.title} (${sheet.uuid})`);
+  console.log(`  pcb ${pcb.title} (${pcb.uuid}), panel Panel1`);
+  console.log('next: node scripts/generate-symbol.js from-pins --dir ... ');
 }
 
-main().catch(err => die(err.message, 1));
+main();

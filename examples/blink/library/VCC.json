@@ -1,0 +1,27 @@
+{
+  "name": "VCC",
+  "kind": "power",
+  "net": "VCC",
+  "style": "up",
+  "symbolUuid": "36b465cba41d07da",
+  "deviceUuid": "e376cd00f35262d0",
+  "powerSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"uuid\":\"36b465cba41d07da\",\"updateTime\":1788933140546,\"version\":\"1788933140546\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"Power-VCC\",\"description\":\"\",\"tags\":[],\"docType\":18,\"source\":\"5f1eb4c325e2397e641c041262708672|1a4010d03b7b8fde443bd3b657826e99\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":2,\"id\":\"a92062c451ee858a\"}||{\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"CENTER_BOTTOM\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"partId\":\"pid8a0e77bacb214e\",\"value\":\"VCC\",\"keyVisible\":null,\"valueVisible\":false,\"key\":\"Global Net Name\",\"zIndex\":11}|",
+    "{\"type\":\"ATTR\",\"ticket\":3,\"id\":\"7adceabc8429fe86\"}||{\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"CENTER_BOTTOM\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"partId\":\"pid8a0e77bacb214e\",\"value\":\"VCC\",\"keyVisible\":null,\"valueVisible\":true,\"key\":\"Name\",\"zIndex\":9}|",
+    "{\"type\":\"CANVAS\",\"ticket\":4,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":5,\"id\":\"pid8a0e77bacb214e\"}||{\"BBOX\":[-5,10,5,0],\"title\":\"\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":6,\"id\":\"aec906038316441d\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":1,\"parentId\":\"\",\"key\":\"Symbol\",\"value\":\"Power-VCC\",\"keyVisible\":false,\"valueVisible\":false,\"x\":0,\"y\":30,\"rotation\":360,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":null}|",
+    "{\"type\":\"PIN\",\"ticket\":7,\"id\":\"e0\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":3,\"display\":true,\"x\":0,\"y\":0,\"length\":5,\"rotation\":90,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":8,\"id\":\"2e1fa72d044b0723\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":4,\"parentId\":\"e0\",\"key\":\"Pin Name\",\"value\":\"Pin1\",\"keyVisible\":false,\"valueVisible\":false,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"rotation\":90,\"x\":0,\"y\":-5,\"align\":\"LEFT_MIDDLE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":9,\"id\":\"d1e87ac30b48754f\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":5,\"parentId\":\"e0\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"rotation\":90,\"x\":0,\"y\":-4.5,\"align\":null}|",
+    "{\"type\":\"ATTR\",\"ticket\":10,\"id\":\"768ad9d4234712b7\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":6,\"parentId\":\"e0\",\"key\":\"Pin Type\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"rotation\":90,\"x\":-14,\"y\":2,\"align\":null}|",
+    "{\"type\":\"POLY\",\"ticket\":11,\"id\":\"e1\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":7,\"points\":[{\"x\":-5,\"y\":-10},{\"x\":5,\"y\":-10}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":null,\"fillStyle\":null}|",
+    "{\"type\":\"POLY\",\"ticket\":12,\"id\":\"e2\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"points\":[{\"x\":0,\"y\":-10},{\"x\":0,\"y\":-5}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":null,\"fillStyle\":null}|"
+  ],
+  "powerDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"d1e91a1d9bdb6534\",\"uuid\":\"e376cd00f35262d0\",\"updateTime\":1788933140546,\"version\":\"1788933140546\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"Power-VCC\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"f0be40f46eadd436d482d19d7f31e9fa|1a4010d03b7b8fde443bd3b657826e99\",\"images\":[],\"attributes\":{\"Symbol\":\"36b465cba41d07da\",\"Name\":\"VCC\",\"Description\":\"\",\"Global Net Name\":\"VCC\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"Power-VCC\\\",\\\"uuid\\\":\\\"36b465cba41d07da\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}

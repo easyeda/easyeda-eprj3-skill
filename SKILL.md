@@ -1,6 +1,6 @@
 ---
 name: easyeda-eprj3
-description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use this skill whenever the user wants to author a schematic/PCB in EasyEDA Pro offline-client format from AI prompts, ingest an EasyEDA library (.elibz2), or run validation. Drives the Node.js scripts under scripts/.
+description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use this skill whenever the user wants to author a schematic/PCB in EasyEDA Pro offline-client format from AI prompts, build symbols/footprints/devices, or run validation. Drives the Node.js scripts under scripts/.
 ---
 
 # EasyEDA Pro eprj3 Project Skill
@@ -11,14 +11,15 @@ This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专�
 
 Trigger this skill when the user wants any of the following:
 
-- Create a new `.eprj3` project (schematic + optional PCB) from scratch.
-- Import symbols / footprints from a local **EasyEDA library** (`.elibz2`).
+- Create a new `.eprj3` project (schematic + PCB) from scratch.
+- Generate symbols / footprints / devices and place them on a sheet or the PCB.
+- Draw wires, net labels, power symbols, net ports, free text, graphic shapes, vias, copper pours, or copper tracks.
 - Validate the format of an existing `.eprj3` directory.
 - Open the resulting project in the EasyEDA Pro (or LCEDA Pro / 嘉立创EDA专业版) offline client.
 
 KiCad → eprj3 conversion is out of scope for this skill — it lives in the separate **kicad-to-easyeda-eprj3** project. Do not invoke this skill for it.
 
-Do not invoke it for the legacy single-file `.eprj`/`.eprj2` SQLite format — that is not supported.
+Do not invoke it for the legacy single-file `.eprj`/`.eprj2` SQLite format, or for `.elibz2` library archives — neither is supported.
 
 ## Required user inputs
 
@@ -26,11 +27,9 @@ Ask the user the following before writing any file. Stop and ask again if a key 
 
 1. **Project storage path** (absolute, must be writable, no existing `.eprj3` there).
 2. **Project name** (defaults to the folder basename).
-3. **Schematic requirements** — components, nets, net labels, power symbols, sheet count.
-4. **Whether to create a PCB** (`--with-pcb`). If yes, ask for board outline, layer count, copper pours, traces.
-5. **Library source**:
-   - If the user provides a path to a `.elibz2` file/directory, **use it**.
-   - If the user does not, **auto-generate** minimal symbols / footprints via `generate-symbol.js` / `generate-footprint.js`.
+3. **Schematic requirements** — components, pin numbers/names, nets, power symbols, sheet count.
+4. **PCB requirements** — board outline size, component placement, which pads join which net, tracks.
+5. **Component library** — the scripts auto-generate minimal symbols/footprints from pin/pad specs (see below). There is no `.elibz2` import; if the user needs a specific vendor part, derive its pin/pad geometry from the datasheet and generate it.
 
 Always confirm the resolved path/name before running `init.js`.
 
@@ -38,25 +37,56 @@ Always confirm the resolved path/name before running `init.js`.
 
 **Path note:** every `node scripts/...` invocation below is relative to **this skill's repository root** (the directory containing SKILL.md) — not the user's project directory. `cd` into the skill directory or use absolute paths. The `docs/` links are relative to the same directory.
 
-Run these steps in order. The first three are mandatory; the rest depend on what the user wants.
+All coordinates are **mil** unless a script's help says otherwise.
 
 ```
-1.  Resolve paths & project name              (AskUserQuestion)
-2.  node scripts/init.js init --dir <dir> --name <name> [--with-schematic <s> --with-pcb]
-3.  Decide on library source                  (AskUserQuestion)
-4a. (Local lib)  node scripts/load-library.js import --dir <dir> --format elibz2 --library <path> --component <name>
-4b. (Auto gen)   node scripts/generate-symbol.js from-pins --dir <dir> --name <sym> --pins "1,A,2,B" ...
-                 node scripts/generate-footprint.js from-pads --dir <dir> --name 0603 --pads "1,-31.5,0,rect,24,16;2,31.5,0,rect,24,16" --silk "rect,-32,-8,32,8"
-5.  node scripts/add-symbol.js add ...        (place each component)
-6.  node scripts/add-wire.js add ...          (wire segments)
-7.  node scripts/add-netlabel.js add ...      (VCC/GND labels)
-8.  node scripts/set-refdes.js renumber ...   (auto number R*, C*, U*, D*)
-9.  node scripts/validate.js check --dir <dir> [--fix]   (always run this)
-10. If validation warns/errors, fix and re-run until clean.
-11. node scripts/open.js open --dir <dir>     (launch EasyEDA Pro / LCEDA Pro offline client)
+1.  Resolve paths & project name                    (AskUserQuestion)
+2.  node scripts/init.js --dir <dir> --name <name>
+    [--schematic Schematic1] [--sheet P1] [--pcb PCB1]
+3.  Stage library entries:
+      node scripts/generate-symbol.js from-pins --dir <dir> --name <sym>
+           [--title T] [--designator R] [--pins "1;2:A;3:x:y:rot"]
+      node scripts/generate-footprint.js from-pads --dir <dir> --name <fp>
+           [--pads "1:x:y:w:h;..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
+      node scripts/load-library.js device --dir <dir> --symbol <sym> --footprint <fp>
+           [--name <dev>] [--title T]
+      node scripts/load-library.js power --dir <dir> --net VCC [--style up|down]
+      node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
+4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p> --lib <device>
+    --x <mil> --y <mil> [--rotation 0|90|180|270] [--refdes R1]
+5.  node scripts/add-power.js --dir <dir> --sch <s> --sheet <p> --lib VCC --x .. --y ..
+    node scripts/add-port.js  --dir <dir> --sch <s> --sheet <p> --lib PORT_SIG --x .. --y ..
+6.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
+    --segs "x1,y1,x2,y2;..." [--net SIG]
+7.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
+8.  node scripts/add-text.js --dir <dir> --sch <s> --sheet <p>
+    --value "text" --x .. --y .. [--size N] [--rotation N]
+    node scripts/add-shape.js <rect|poly|circle|ellipse|arc|bezier> --dir <dir>
+    --sch <s> --sheet <p> <shape options>                    (annotation graphics)
+9.  node scripts/set-refdes.js renumber --dir <dir> --sch <s> --sheet <p> --prefix R
+    (or: set --designator R1 --value R5)
+10. node scripts/add-footprint.js --dir <dir> --pcb <pcb> --lib <device>
+    --x <mil> --y <mil> [--angle 90] [--refdes R1] [--nets "1:VCC,2:GND"]
+11. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
+    [--layer 1] [--width 10]
+    node scripts/add-via.js  --dir <dir> --pcb <pcb> --x .. --y .. [--net SIG]
+    node scripts/add-pcb-shape.js <rect|poly|circle|arc> --dir <dir> --pcb <pcb> ...
+    node scripts/add-pcb-text.js --dir <dir> --pcb <pcb> --value "text" --x .. --y ..
+    [--layer 1] [--size 60] [--origin 0-8]
+    node scripts/add-pour.js <rect|poly> --dir <dir> --pcb <pcb> --net GND ...
+    node scripts/add-fill.js <rect|poly> --dir <dir> --pcb <pcb> [--net N] ...
+    node scripts/add-region.js <rect|poly> --dir <dir> --pcb <pcb> --prohibit "2,5" ...
+    node scripts/add-prop.js --dir <dir> --pcb <pcb> (--target <id>|--last) --color "#RRGGBB"
+12. node scripts/validate.js --dir <dir>            (always run this)
+13. If validation reports errors, fix and re-run until clean.
+14. node scripts/open.js open --dir <dir>           (launch the offline client)
 ```
 
-Steps 9–10 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings` (or the user accepts the warnings in `--strict` mode).
+The staged entries live in `<project>/library/<name>.json` (tooling metadata — the client ignores it; `load-library.js list` shows what is staged, `show --lib <name>` dumps an entry, `remove --lib <name>` deletes one).
+
+`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch 10. Pass `num:name:x:y:rotation` entries for explicit placement.
+
+Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings`.
 
 ### Launching the client — non-default install paths
 
@@ -77,46 +107,68 @@ This writes `<projectDir>/.easyeda-pro-client.json`. Subsequent `open` / `where`
 
 If the user prefers a one-time override without saving, set `$EASYEDA_PRO_CLIENT` or pass `--client` on the command line.
 
-## What every eprj3 project must contain
+## What every eprj3 project contains
 
-- `<dir>/<name>.eprj3`            — project index (JSON)
-- `<dir>/sch/<schematic>/<sheet>.esch2` — schematic source
-- `<dir>/sch/<schematic>/<schematic>.ecfg` — empty file is fine
-- `<dir>/sch/<schematic>/<schematic>.evar` — empty file is fine
-- `<dir>/pcb/<pcb>.epcb2`         — PCB source (only when --with-pcb)
-- `<dir>/sch/__symbols__/*.esch2` — embedded symbol definitions (auto-managed)
-- `<dir>/sch/__footprints__/*.esch2` — embedded footprint definitions (auto-managed)
+```
+<dir>/<name>.eprj3                       project index (pretty JSON, format:"folder")
+<dir>/sch/<schematic>/<sheet>.esch2      sheet docs: frame SYMBOL + embedded SYMBOL/DEVICE docs + SCH_PAGE main
+<dir>/sch/<schematic>/<schematic>.ecfg   4 records: DOCHEAD(META SCH)+META+RULE+RULE
+<dir>/sch/<schematic>/<schematic>.evar   empty (variant data)
+<dir>/pcb/<pcb>.epcb2                    PCB docs: embedded SYMBOL/FOOTPRINT/DEVICE docs + PCB main
+<dir>/panel/Panel1.epan2                 panel document
+<dir>/library/<name>.json                staged library entries (tooling metadata, client-ignored)
+```
+
+Key format invariants (enforced by `validate.js`):
+
+- A placed component embeds its SYMBOL/DEVICE docs in the same file; `Symbol`/`Device` attrs reference those doc uuids. PCB components additionally embed the FOOTPRINT doc.
+- Power symbols and net ports are special devices: the COMPONENT carries `DeviceName: null` and the net lives in `Name` / `Global Net Name` ATTR records. Port symbol docs use META `docType: 19` (NetPort), power uses `docType: 18` (NetFlag).
+- PCB named NET records sit after the empty NET (`["NET",""]`) and before the first PAD_NET.
+- Tickets are unique within each document (not globally monotonic).
+- Every wire carries a NET attr; every LINE references its WIRE via `lineGroup`.
 
 ## Script reference
 
-All scripts accept `--help` and follow the convention `<command> [options]`. The full list is also wired up in `package.json` (`npm run add-symbol`, etc.).
+All scripts accept `--help` and follow the convention `<script> [subcommand] [options]`.
 
 | Script | Purpose |
 | --- | --- |
-| `scripts/init.js` | Create an empty project skeleton. |
-| `scripts/generate-symbol.js` | Build a symbol from a pin list. |
-| `scripts/generate-footprint.js` | Build a footprint from a pad list. |
-| `scripts/load-library.js` | Pull a component out of an `.elibz2` library. |
-| `scripts/add-symbol.js` | Place a COMPONENT on a schematic sheet. |
-| `scripts/add-footprint.js` | Place a footprint on a PCB document. |
-| `scripts/add-wire.js` | Draw a polyline wire (WIRE + LINEs). |
-| `scripts/add-netlabel.js` | Drop a NETLABEL. |
-| `scripts/add-port.js` | Drop a PORT (sheet connector). |
-| `scripts/add-text.js` | Free TEXT annotation. |
-| `scripts/set-refdes.js` | Rename a single refdes, or auto-renumber by prefix. |
-| `scripts/validate.js` | Check format integrity, optionally auto-fix. |
-| `scripts/open.js` | Launch the EasyEDA Pro (`C:\Program Files\easyeda-pro\easyeda-pro.exe`) or LCEDA Pro (`C:\Program Files\lceda-pro\lceda-pro.exe`) offline client. |
+| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB, panel). |
+| `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → `library/<name>.json`. |
+| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → `library/<name>.json`. |
+| `scripts/load-library.js` | Combine symbol+footprint into a device, or stage power symbols / net ports (`device`/`power`/`port`/`list`/`show`/`remove`). |
+| `scripts/add-symbol.js` | Place a staged device on a schematic sheet. |
+| `scripts/add-power.js` | Place a staged power symbol (VCC/GND/...) on a sheet. |
+| `scripts/add-port.js` | Place a staged net port (NetPort symbol, docType 19) on a sheet. |
+| `scripts/add-wire.js` | Draw wires (WIRE + LINE records, optional net). |
+| `scripts/add-netlabel.js` | Label the wire under a point with a net name. |
+| `scripts/add-text.js` | Place free text on a sheet (TEXT record). |
+| `scripts/add-pcb-text.js` | Place text on the PCB (STRING record). |
+| `scripts/add-shape.js` | Draw schematic annotation graphics (`rect`/`poly`/`circle`/`ellipse`/`arc`/`bezier`). |
+| `scripts/add-footprint.js` | Place a staged device on the PCB, wiring pads to nets. |
+| `scripts/add-track.js` | Draw a copper track segment on the PCB. |
+| `scripts/add-via.js` | Place a via on the PCB. |
+| `scripts/add-pcb-shape.js` | Draw PCB graphics (`rect`/`poly`/`circle` → POLY, `arc` → ARC). |
+| `scripts/add-pour.js` | Add a copper pour region (POUR record) to the PCB. |
+| `scripts/add-fill.js` | Add a static copper fill (FILL record) to the PCB — SOLID style only. |
+| `scripts/add-region.js` | Add a keepout region (REGION record) with `--prohibit` rule ids. |
+| `scripts/add-prop.js` | Attach a PROP record (currently color) to a primitive by record id. |
+| `scripts/set-refdes.js` | Rename or auto-renumber reference designators (`set`/`renumber`). |
+| `scripts/validate.js` | Check format invariants; exit 1 on errors. |
+| `scripts/open.js` | Launch / locate / register the offline client (`open`/`where`/`set`/`install`). |
 
-The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `elibz2.js`, `utils.js`).
+The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`).
 
 ## Output style
 
 - Show only the script invocations and the validator summary.
 - Do not narrate the format spec, JSON structure, or "what eprj3 is" to the user unless they ask.
 - Use Markdown link syntax for any file references: `[init.js](scripts/init.js)`.
-- After step 11, summarize the result as a single line: `<name>.eprj3 at <dir> — N components, M wires, validated, opened in EasyEDA Pro.`
+- After step 13, summarize the result as a single line: `<name>.eprj3 at <dir> — N components, M wires, validated, opened in EasyEDA Pro.`
 
 ## Known limitations
 
-- eprj3 is still evolving. Anything the validator cannot guarantee (copper pours, differential-pair routing, hierarchical sheet navigation) needs the EasyEDA Pro client to finalize.
-- `load-library.js` needs the `yauzl` package for zip-based `.elibz2` archives. It is declared as an `optionalDependency` — running `npm install` inside the skill directory pulls it in automatically. If zip support is still missing, run `npm install yauzl --no-save`.
+- The generated files follow the official example byte-pattern closely, but full fidelity is only provable in the real client. If the client refuses to open a project, run `node scripts/validate.js --dir <dir>` first, then compare against [`examples/blink`](examples/blink) (a complete, validated sample project).
+- `add-pour` writes the pour region record only — the client recomputes the filled copper (POURED records) when the project is opened. Pour/fill styles are restricted to SOLID, the only mode backed by a real client record. Differential-pair routing, hierarchical multi-sheet navigation, and simulation documents are not authored by these scripts — finish those in the EasyEDA Pro client.
+- Sheet TEXT/shape and PCB STRING/VIA record bodies follow the official format docs (no page-level samples exist in the example); everything else mirrors real example records.
+- `<project>/library/` holds the staged entries. The client does not read it; deleting it after generation is harmless.

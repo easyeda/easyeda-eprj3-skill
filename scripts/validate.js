@@ -1,146 +1,272 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * validate.js — Check an eprj3 project for the most common format issues.
+ * validate.js — check an eprj3 folder project against the format invariants
+ * derived from the official easyeda-pro-eprj3-format example:
  *
- * Usage:
- *   node scripts/validate.js check --dir <projectDir> [--strict] [--fix]
+ *   - index JSON shape (folder format, 32-hex owner uuids, profile maps)
+ *   - per-schematic container: 4-record .ecfg, .evar, sheet .esch2 files whose
+ *     main doc (SCH_PAGE) uuid matches the index
+ *   - sheet docs: every placed component's Device/Symbol attr must reference
+ *     DEVICE/SYMBOL docs embedded in the same file
+ *   - PCB docs: preamble with layers + empty NET + board outline; components'
+ *     Device/Footprint links; PAD_NET ↔ NET/COMPONENT references
+ *   - panel present; per-doc ticket uniqueness; doc uuid uniqueness
  *
- * Checks:
- *   - <dir>/<name>.eprj3 exists and parses as JSON
- *   - Every schematic folder contains at least one .esch2 sheet
- *   - Every sheet/PCB file has a DOCHEAD record followed by a META record
- *   - Ticket numbers are monotonically increasing
- *   - Every WIRE record has at least one matching LINE record
- *   - No duplicate LINE segments within one wire
- *   - Every ATTR parentId matches an existing COMPONENT id (schematic and PCB)
- *   - COMPONENT DeviceName/FootprintName uuid matches the embedded
- *     __symbols__/__footprints__ doc's DOCHEAD uuid (when that doc exists)
+ *   node scripts/validate.js --dir <project>
  *
- * With --fix the script rewrites auto-correctable problems in place
- * (orphan WIRE records, duplicate LINE segments).
+ * Exit code 0 = clean, 1 = errors found (printed).
  */
 const fs = require('fs');
 const path = require('path');
-const { Project, readRecords, writeRecords, readDocHeadUuid } = require('./lib/eprj3');
+const E = require('./lib/eprj3');
 const { parseArgs, printHelp } = require('./lib/utils');
 
-const schema = [
-  { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root' },
-  { name: 'strict', hasValue: false, desc: 'Treat warnings as errors' },
-  { name: 'fix', hasValue: false, desc: 'Attempt to auto-fix common issues' }
-];
+const errors = [];
+const warnings = [];
+const check = (cond, msg) => { if (!cond) errors.push(msg); };
+const warn = (cond, msg) => { if (!cond) warnings.push(msg); };
+const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
+const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
-async function main() {
-  const sub = process.argv[2];
-  if (!sub || sub === 'help') { printHelp('validate.js check [options]', schema); process.exit(sub ? 0 : 1); }
-  const { opts } = parseArgs(process.argv.slice(3), schema);
-  if (sub !== 'check') { console.error(`Unknown command: ${sub}`); process.exit(2); }
-
-  const project = await Project.load(path.resolve(opts.dir));
-  let problems = 0;
-  let warnings = 0;
-  const warn = msg => { console.warn(`[WARN] ${msg}`); warnings++; };
-  const err = msg => { console.error(`[ERR] ${msg}`); problems++; };
-
-  // Scans one document's records; returns drop-predicates for --fix.
-  function checkDoc(file, records, kind) {
-    const drops = [];
-    if (!records.find(r => r.type === 'DOCHEAD')) err(`${file}: missing DOCHEAD`);
-    if (!records.find(r => r.type === 'META')) err(`${file}: missing META`);
-
-    // 1. tickets monotonic
-    let prevTicket = 0;
-    for (const r of records) {
-      if (r.ticket && r.ticket <= prevTicket) warn(`${file}: ticket ${r.ticket} not greater than previous ${prevTicket}`);
-      if (r.ticket) prevTicket = r.ticket;
-    }
-
-    // 2. WIRE group containers must have LINE segments; no duplicate segments
-    const wireIds = new Set(records.filter(r => r.type === 'WIRE').map(r => r.id));
-    const lineRecs = records.filter(r => r.type === 'LINE');
-    for (const wid of wireIds) {
-      if (!lineRecs.some(l => l.body.lineGroup === wid)) {
-        warn(`${file}: WIRE ${wid} has no matching LINE segments`);
-        if (opts.fix) drops.push(r => r.type === 'WIRE' && r.id === wid);
-      }
-    }
-    const seenSeg = new Set();
-    for (const l of lineRecs) {
-      const key = `${l.body.lineGroup}|${l.body.startX},${l.body.startY}->${l.body.endX},${l.body.endY}`;
-      if (seenSeg.has(key)) {
-        warn(`${file}: duplicate LINE segment in wire ${l.body.lineGroup} (${l.body.startX},${l.body.startY} -> ${l.body.endX},${l.body.endY})`);
-        if (opts.fix) drops.push(r => r === l);
-      } else {
-        seenSeg.add(key);
-      }
-    }
-
-    // 3. ATTR.parentId must match a COMPONENT id
-    const compIds = new Set(records.filter(r => r.type === 'COMPONENT').map(r => r.id));
-    for (const r of records) {
-      if (r.type === 'ATTR' && r.body.parentId && !compIds.has(r.body.parentId) && !wireIds.has(r.body.parentId)) {
-        warn(`${file}: ATTR ${r.id} parentId=${r.body.parentId} has no source component`);
-      }
-    }
-
-    // 4. DeviceName/FootprintName uuid vs embedded doc DOCHEAD uuid
-    const checks = kind === 'pcb'
-      ? [['DeviceName', '__footprints__']]
-      : [['DeviceName', '__symbols__'], ['FootprintName', '__footprints__']];
-    for (const r of records) {
-      if (r.type !== 'COMPONENT') continue;
-      const attrs = r.body.attrs || {};
-      for (const [attrKey, subDir] of checks) {
-        const raw = attrs[attrKey];
-        if (!raw) continue;
-        let meta;
-        try { meta = JSON.parse(raw); } catch { continue; }
-        if (!meta || !meta.name || !meta.uuid) continue;
-        const docFile = path.join(project.rootDir, 'sch', subDir, `${meta.name}.esch2`);
-        if (!fs.existsSync(docFile)) continue; // defined externally (e.g. converter import) — nothing to compare
-        const docUuid = readDocHeadUuid(docFile);
-        if (docUuid && docUuid !== meta.uuid) {
-          warn(`${file}: COMPONENT ${r.id} ${attrKey}.uuid ${meta.uuid} does not match ${subDir}/${meta.name}.esch2 DOCHEAD uuid ${docUuid}`);
-        }
-      }
-    }
-    return drops;
-  }
-
-  // Schematic sheets
-  for (const sch of Object.values(project.profile.profile.schematics)) {
-    if (sch.name.startsWith('__')) continue;
-    const dir = path.join(project.rootDir, 'sch', sch.name);
-    if (!fs.existsSync(dir)) { err(`missing schematic dir: ${dir}`); continue; }
-    const sheets = Object.values(project.profile.profile.sheets).filter(s => s.schematic_uuid === sch.uuid);
-    if (sheets.length === 0) { err(`schematic ${sch.name} has no sheets`); continue; }
-    for (const sheet of sheets) {
-      const file = path.join(dir, `${sheet.title}.esch2`);
-      if (!fs.existsSync(file)) { err(`missing sheet file: ${file}`); continue; }
-      const records = readRecords(file);
-      const drops = checkDoc(file, records, 'sch');
-      if (drops.length) {
-        writeRecords(file, records.filter(r => !drops.some(d => d(r))));
-        console.log(`  fixed: rewrote ${file} (${drops.length} record(s) removed)`);
-      }
+// Split a container file into docs: [{docType, uuid, lines}].
+function docsOf(file) {
+  const lines = E.readLines(file);
+  const docs = [];
+  let cur = null;
+  for (const l of lines) {
+    if (l.startsWith('{"type":"DOCHEAD"}')) {
+      const r = E.parseRecord(l);
+      cur = { docType: r && r.body && r.body.docType, uuid: r && r.body && r.body.uuid, lines: [l] };
+      docs.push(cur);
+    } else if (cur) {
+      cur.lines.push(l);
     }
   }
-
-  // PCB documents
-  for (const pcb of Object.values(project.profile.profile.pcbs)) {
-    const file = path.join(project.rootDir, 'pcb', `${pcb.title}.epcb2`);
-    if (!fs.existsSync(file)) { err(`missing PCB file: ${file}`); continue; }
-    const records = readRecords(file);
-    const drops = checkDoc(file, records, 'pcb');
-    if (drops.length) {
-      writeRecords(file, records.filter(r => !drops.some(d => d(r))));
-      console.log(`  fixed: rewrote ${file} (${drops.length} record(s) removed)`);
-    }
-  }
-
-  console.log(`\nResult: ${problems} errors, ${warnings} warnings`);
-  if (problems > 0 || (opts.strict && warnings > 0)) process.exit(1);
+  return docs;
 }
 
-main().catch(err => { console.error(err.stack || err.message); process.exit(1); });
+function checkTicketsAndRecords(doc, label) {
+  const seen = new Set();
+  for (const l of doc.lines.slice(1)) {
+    const r = E.parseRecord(l);
+    check(r, `${label}: unparseable record ${l.slice(0, 60)}...`);
+    if (!r) continue;
+    if (typeof r.ticket === 'number') {
+      check(!seen.has(r.ticket), `${label}: duplicate ticket ${r.ticket} (${r.type})`);
+      seen.add(r.ticket);
+    }
+  }
+}
+
+function main() {
+  const argv = process.argv.slice(2);
+  if (!argv.length || argv[0] === '-h' || argv[0] === '--help') {
+    printHelp('validate.js [options]', [
+      { name: 'dir', desc: 'project directory', required: true }
+    ]);
+    return;
+  }
+  const { opts } = parseArgs(argv, [
+    { name: 'dir', desc: 'project directory', required: true }
+  ]);
+  const dir = opts.dir;
+
+  // ---------------------------------------------------------------- index
+  const idxFiles = fs.existsSync(dir)
+    ? fs.readdirSync(dir).filter((f) => f.endsWith('.eprj3')) : [];
+  check(idxFiles.length === 1, `exactly one .eprj3 index expected in ${dir}, found: ${idxFiles.join(', ') || 'none'}`);
+  if (idxFiles.length !== 1) return report();
+  const indexFile = path.join(dir, idxFiles[0]);
+  let index = null;
+  try {
+    index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+  } catch (e) {
+    errors.push(`index not valid JSON: ${e.message}`);
+    return report();
+  }
+  check(index.format === 'folder', 'index format must be "folder"');
+  check(hex(index.owner_uuid, 32) && hex(index.creator_uuid, 32) && hex(index.modifier_uuid, 32),
+    'owner/creator/modifier uuid must be 32-hex');
+  check(typeof index.created_at === 'string' && typeof index.updated_at === 'string',
+    'created_at/updated_at must be strings');
+  check(isObj(index.profile), 'index.profile missing');
+  if (!isObj(index.profile)) return report();
+  const profile = index.profile;
+  for (const k of ['boards', 'schematics', 'sheets', 'pcbs', 'panels', 'blockSymbols', 'simSchematics', 'simulations']) {
+    check(isObj(profile[k]), `index.profile.${k} must be an object`);
+  }
+  check(isObj(profile.owner) && hex(profile.owner.uuid, 32), 'profile.owner.uuid must be 32-hex');
+  if (!isObj(profile.boards) || !isObj(profile.schematics) || !isObj(profile.sheets)
+    || !isObj(profile.pcbs)) return report();
+  check(index.pcb_count === Object.keys(profile.pcbs).length,
+    `pcb_count (${index.pcb_count}) != pcbs in profile (${Object.keys(profile.pcbs).length})`);
+
+  // -------------------------------------------------------------- schematic
+  const schDirOf = (sch) => path.join(dir, 'sch', sch.name);
+  for (const sch of Object.values(profile.schematics)) {
+    check(hex(sch.uuid, 16) && !!sch.name, `bad schematic entry: ${JSON.stringify(sch)}`);
+    check(profile.boards[sch.board], `schematic ${sch.name}: board ${sch.board} not in profile.boards`);
+    const d = schDirOf(sch);
+    check(fs.existsSync(d), `missing schematic dir ${d}`);
+    const ecfg = path.join(d, `${sch.name}.ecfg`);
+    if (fs.existsSync(ecfg)) {
+      const docs = docsOf(ecfg);
+      check(docs.length === 1 && docs[0].docType === 'SCH' && docs[0].uuid === sch.uuid,
+        `${ecfg}: want a single SCH doc with uuid ${sch.uuid}`);
+      check(fs.readFileSync(ecfg, 'utf8').trim().split('\n').length === 4,
+        `${ecfg}: want 4 records (DOCHEAD META RULE RULE)`);
+      if (docs.length === 1) checkTicketsAndRecords(docs[0], path.basename(ecfg));
+    } else {
+      errors.push(`missing ${ecfg}`);
+    }
+    warn(fs.existsSync(path.join(d, `${sch.name}.evar`)), `${sch.name}.evar missing (variant data)`);
+  }
+
+  // ----------------------------------------------------------------- sheets
+  for (const sheet of Object.values(profile.sheets)) {
+    const sch = profile.schematics[sheet.schematic_uuid];
+    check(sch, `sheet ${sheet.title}: schematic_uuid ${sheet.schematic_uuid} not in profile`);
+    if (!sch) continue;
+    const file = path.join(schDirOf(sch), `${sheet.title}.esch2`);
+    if (!fs.existsSync(file)) { errors.push(`missing sheet document ${file}`); continue; }
+    const docs = docsOf(file);
+    check(docs.length >= 3, `${file}: want >= 3 docs (frame symbol, device, page), got ${docs.length}`);
+    const uuids = new Set();
+    for (const d of docs) {
+      check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
+      uuids.add(d.uuid);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
+    }
+    const main = docs[docs.length - 1];
+    check(main.docType === 'SCH_PAGE' && main.uuid === sheet.uuid,
+      `${file}: last doc must be SCH_PAGE with uuid ${sheet.uuid}, got ${main.docType} ${main.uuid}`);
+    const symUuids = new Set(docs.filter((d) => d.docType === 'SYMBOL').map((d) => d.uuid));
+    const devUuids = new Set(docs.filter((d) => d.docType === 'DEVICE').map((d) => d.uuid));
+    const wireIds = new Set(main.lines.slice(1)
+      .map((l) => E.parseRecord(l))
+      .filter((r) => r && r.type === 'WIRE' && r.id)
+      .map((r) => r.id));
+    for (const l of main.lines.slice(1)) {
+      const r = E.parseRecord(l);
+      if (!r) continue;
+      if (r.type === 'COMPONENT' && r.body) {
+        const dn = r.body.attrs && r.body.attrs.DeviceName;
+        if (dn) {
+          const parsed = JSON.parse(dn);
+          check(devUuids.has(parsed.uuid), `${file}: component ${r.id} DeviceName uuid ${parsed.uuid} has no DEVICE doc`);
+        }
+      }
+      if (r.type === 'ATTR' && r.body && r.body.key === 'Symbol' && r.body.parentId) {
+        check(symUuids.has(r.body.value), `${file}: Symbol attr references missing SYMBOL doc ${r.body.value}`);
+      }
+      if (r.type === 'ATTR' && r.body && r.body.key === 'Device' && r.body.parentId) {
+        check(devUuids.has(r.body.value), `${file}: Device attr references missing DEVICE doc ${r.body.value}`);
+      }
+      if (r.type === 'LINE' && r.body && r.body.lineGroup) {
+        check(wireIds.has(r.body.lineGroup), `${file}: LINE references missing WIRE ${r.body.lineGroup}`);
+      }
+    }
+    // every WIRE needs its NET attr
+    for (const l of main.lines.slice(1)) {
+      const r = E.parseRecord(l);
+      if (r && r.type === 'WIRE' && r.id) {
+        const hasNet = main.lines.some((x) => {
+          const a = E.parseRecord(x);
+          return a && a.type === 'ATTR' && a.body && a.body.parentId === r.id && a.body.key === 'NET';
+        });
+        check(hasNet, `${file}: wire ${r.id} has no NET attr`);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------- PCB
+  for (const pcb of Object.values(profile.pcbs)) {
+    check(profile.boards[pcb.board], `pcb ${pcb.title}: board ${pcb.board} not in profile.boards`);
+    const file = path.join(dir, 'pcb', `${pcb.title}.epcb2`);
+    if (!fs.existsSync(file)) { errors.push(`missing PCB document ${file}`); continue; }
+    const docs = docsOf(file);
+    const uuids = new Set();
+    for (const d of docs) {
+      check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
+      uuids.add(d.uuid);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
+    }
+    const main = docs[docs.length - 1];
+    check(main.docType === 'PCB' && main.uuid === pcb.uuid,
+      `${file}: last doc must be PCB with uuid ${pcb.uuid}, got ${main.docType} ${main.uuid}`);
+    const mainRecords = main.lines.slice(1).map(E.parseRecord).filter(Boolean);
+    check(mainRecords.some((r) => r.type === 'NET' && r.id === '["NET",""]'),
+      `${file}: main doc lacks the empty NET record`);
+    check(mainRecords.some((r) => r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE'),
+      `${file}: main doc lacks the BOARD_OUTLINE poly`);
+    check(mainRecords.some((r) => r.type === 'LAYER'), `${file}: main doc lacks LAYER records`);
+    const devUuids = new Set(docs.filter((d) => d.docType === 'DEVICE').map((d) => d.uuid));
+    const fpUuids = new Set(docs.filter((d) => d.docType === 'FOOTPRINT').map((d) => d.uuid));
+    const netNames = new Set(mainRecords
+      .filter((r) => r.type === 'NET' && r.id && r.id !== '["NET",""]')
+      .map((r) => { try { return JSON.parse(r.id)[1]; } catch { return null; } }));
+    const compIds = new Set(mainRecords.filter((r) => r.type === 'COMPONENT').map((r) => r.id));
+    for (const r of mainRecords) {
+      if (r.type === 'COMPONENT' && r.body) {
+        const dn = r.body.attrs && r.body.attrs.DeviceName;
+        if (dn) {
+          const parsed = JSON.parse(dn);
+          check(devUuids.has(parsed.uuid), `${file}: component ${r.id} DeviceName uuid ${parsed.uuid} has no DEVICE doc`);
+        }
+      }
+      if (r.type === 'ATTR' && r.body && r.body.key === 'Footprint' && r.body.parentId) {
+        check(fpUuids.has(r.body.value), `${file}: Footprint attr references missing FOOTPRINT doc ${r.body.value}`);
+      }
+      if (r.type === 'PAD_NET' && r.body) {
+        const parts = (() => { try { return JSON.parse(r.id); } catch { return null; } })();
+        check(parts && parts[0] === 'PAD_NET' && compIds.has(parts[1]),
+          `${file}: PAD_NET ${r.id} references missing COMPONENT ${parts && parts[1]}`);
+        if (r.body.padNet) {
+          check(netNames.has(r.body.padNet), `${file}: PAD_NET uses net "${r.body.padNet}" without a NET record`);
+        }
+      }
+      if ((r.type === 'POUR' || r.type === 'VIA' || r.type === 'FILL') && r.body && r.body.netName) {
+        check(netNames.has(r.body.netName),
+          `${file}: ${r.type} ${r.id} uses net "${r.body.netName}" without a NET record`);
+      }
+      if ((r.type === 'POUR' || r.type === 'FILL' || r.type === 'REGION') && r.body) {
+        check(Array.isArray(r.body.path) && r.body.path.length
+          && r.body.path.every((p) => Array.isArray(p)),
+          `${file}: ${r.type} ${r.id} path must be an array of polygon arrays`);
+      }
+    }
+  }
+
+  // ------------------------------------------------------------------ panel
+  const panelDir = path.join(dir, 'panel');
+  check(fs.existsSync(panelDir) && fs.readdirSync(panelDir).some((f) => f.endsWith('.epan2')),
+    'missing panel/Panel1.epan2');
+
+  // ------------------------------------------------------ extra file warning
+  for (const sch of Object.values(profile.schematics)) {
+    const d = schDirOf(sch);
+    if (!fs.existsSync(d)) continue;
+    const known = new Set([`${sch.name}.ecfg`, `${sch.name}.evar`]);
+    for (const sheet of Object.values(profile.sheets)) {
+      if (sheet.schematic_uuid === sch.uuid) known.add(`${sheet.title}.esch2`);
+    }
+    for (const f of fs.readdirSync(d)) {
+      warn(known.has(f), `${d}: unexpected file ${f}`);
+    }
+  }
+
+  return report();
+}
+
+function report() {
+  for (const w of warnings) console.log(`warn: ${w}`);
+  if (errors.length) {
+    for (const e of errors) console.error(`error: ${e}`);
+    console.error(`FAILED: ${errors.length} error(s), ${warnings.length} warning(s)`);
+    process.exit(1);
+  }
+  console.log(`OK (0 errors, ${warnings.length} warning(s))`);
+}
+
+main();
