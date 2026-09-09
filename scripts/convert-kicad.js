@@ -124,15 +124,26 @@ function convertSchematic(src, dst) {
       ticket++;
       records.push({ head: { type: 'NETLABEL', ticket, id: randId() }, body: { x: toMil(x), y: toMil(y), color: '#FF0000', fontFamily: 'Arial', fontSize: 12, align: 'CENTER_MIDDLE', value: val, locked: false, zIndex: ticket } });
     } else if (head === 'symbol') {
-      const [x, y] = findAtXY(node);
+      const [x, y, rot] = findAtXY(node);
       const props = collectProperties(node);
+      const compId = randId();
+      const partId = 'pid' + randId();
       ticket++;
-      records.push({ head: { type: 'COMPONENT', ticket, id: randId() }, body: {
-        partId: 'pid' + randId(),
-        x: toMil(x), y: toMil(y), rotation: 0, isMirror: false,
+      records.push({ head: { type: 'COMPONENT', ticket, id: compId }, body: {
+        id: compId,
+        partId,
+        x: toMil(x), y: toMil(y), rotation: rot || 0, isMirror: false,
         attrs: { Footprints: '[]', Devices: '[]', DeviceName: JSON.stringify({ uuid: uuid(8), name: props.Value || props.Reference || 'Symbol', source: '' }), FootprintName: null, pinClass: {}, differentialPairClass: {}, Symbols: '[]' },
         zIndex: ticket
       } });
+      if (props.Reference) {
+        ticket++;
+        records.push({ head: { type: 'ATTR', ticket, id: randId() }, body: { x: toMil(x) + 10, y: toMil(y) - 10, key: 'Designator', value: props.Reference, keyVisible: false, valueVisible: true, parentId: compId, zIndex: ticket, fontSize: 10, align: 'LEFT_TOP' } });
+      }
+      if (props.Value) {
+        ticket++;
+        records.push({ head: { type: 'ATTR', ticket, id: randId() }, body: { x: toMil(x) + 10, y: toMil(y) + 10, key: 'Value', value: props.Value, keyVisible: false, valueVisible: true, parentId: compId, zIndex: ticket, fontSize: 10, align: 'LEFT_BOTTOM' } });
+      }
     }
   }
   writeRecords(dst, records);
@@ -178,6 +189,17 @@ function convertPcb(src, dst) {
   records.push({ head: { type: 'DOCHEAD' }, body: { docType: 'PCB', client: 'easyeda-pro-skill', uuid: uuid(16), updateTime: Date.now(), version: String(Date.now()), editVersion: '2.3.0', user: {} } });
   records.push({ head: { type: 'META', ticket: ++ticket, id: 'META' }, body: { title: path.basename(src, '.kicad_pcb'), source: '', board: '' } });
   records.push({ head: { type: 'CANVAS', ticket: ++ticket, id: 'CANVAS' }, body: { originX: 0, originY: 0 } });
+  // Define every layer id the converter can emit below (layerToId: F.Cu=1, B.Cu=2, F.SilkS=3, B.SilkS=4).
+  const layers = [
+    [1, 'TOP', 'Top Layer', '#FF0000'],
+    [2, 'BOTTOM', 'Bottom Layer', '#0000FF'],
+    [3, 'SILKTOP', 'Top Silkscreen', '#FFFFFF'],
+    [4, 'SILKBOTTOM', 'Bottom Silkscreen', '#C0C0C0']
+  ];
+  for (const [layerId, layerType, layerName, color] of layers) {
+    ticket++;
+    records.push({ head: { type: 'LAYER', ticket, id: `["LAYER",${layerId}]` }, body: { layerType, layerName, use: true, show: true, locked: false, activeColor: color, activateTransparency: 1, inactiveColor: '#7F0000', inactiveTransparency: 1 } });
+  }
 
   for (const node of root.slice(1)) {
     if (!Array.isArray(node)) continue;
@@ -185,9 +207,11 @@ function convertPcb(src, dst) {
     if (head === 'segment') {
       const start = findSub(node, 'start');
       const end = findSub(node, 'end');
-      const width = findSub(node, 'width') || 1;
-      const layer = findSub(node, 'layer') || 'F.Cu';
-      const layerId = layerToId(layer);
+      if (!start || !end) continue;
+      const widthArr = findSub(node, 'width');
+      const width = widthArr ? parseFloat(widthArr[0]) : 1;
+      const layerArr = findSub(node, 'layer');
+      const layerId = layerToId(layerArr ? layerArr[0] : 'F.Cu');
       ticket++;
       records.push({ head: { type: 'FILL', ticket, id: randId() }, body: {
         groupId: 0, netName: '', layerId, width: toMil(width), fillStyle: 'SOLID',
