@@ -6,7 +6,6 @@
 // KiCad's kicad-cli when available.
 
 const fs = require('fs');
-const { uuid, randId } = require('./eprj3');
 
 function tokenize(text) {
   // S-expression tokenizer
@@ -53,32 +52,33 @@ function parse(text) {
 }
 
 function nodeSymbol(node) {
-  if (node[0].v === 'symbol') {
-    // (symbol "lib_id" ... (property ...) (pin ...) (rect ...) ...)
-    return nodeSymbol(node[2]);
-  }
-  if (node[0].v === 'symbol') {
-    // already nested
-  }
   const out = { name: '', properties: {}, pins: [], shapes: [] };
+  if (!Array.isArray(node) || !node.length || node[0].v !== 'symbol') return out;
   out.name = node[1]?.v || '';
   for (let i = 2; i < node.length; i++) {
     const it = node[i];
-    if (!it || it[0] === undefined) continue;
+    if (!Array.isArray(it) || !it.length || typeof it[0]?.v !== 'string') continue;
     const head = it[0].v;
-    if (head === 'property') {
+    if (head === 'symbol') {
+      // KiCad 6+ nests per-unit graphics in (symbol "NAME_0_1") / (symbol "NAME_1_1")
+      const sub = nodeSymbol(it);
+      out.pins.push(...sub.pins);
+      out.shapes.push(...sub.shapes);
+      if (!out.name && sub.name) out.name = sub.name;
+    } else if (head === 'property') {
       out.properties[it[1]?.v] = it[2]?.v;
     } else if (head === 'pin') {
       const pin = { name: '', number: '', x: 0, y: 0, length: 0, rotation: 0 };
       for (let j = 1; j < it.length; j++) {
         const sub = it[j];
-        if (sub[0]?.v === 'name') pin.name = sub[1]?.v;
-        else if (sub[0]?.v === 'number') pin.number = sub[1]?.v;
-        else if (sub[0]?.v === 'at') {
+        if (!Array.isArray(sub) || !sub.length) continue;
+        if (sub[0].v === 'name') pin.name = sub[1]?.v;
+        else if (sub[0].v === 'number') pin.number = sub[1]?.v;
+        else if (sub[0].v === 'at') {
           pin.x = parseFloat(sub[1]?.v || 0);
           pin.y = parseFloat(sub[2]?.v || 0);
           pin.rotation = parseFloat(sub[3]?.v || 0);
-        } else if (sub[0]?.v === 'length') pin.length = parseFloat(sub[1]?.v || 0);
+        } else if (sub[0].v === 'length') pin.length = parseFloat(sub[1]?.v || 0);
       }
       out.pins.push(pin);
     } else if (head === 'rectangle' || head === 'rect') {

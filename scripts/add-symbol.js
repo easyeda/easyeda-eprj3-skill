@@ -17,7 +17,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { Project, uuid, randId, appendRecord, updateRecord, readRecords } = require('./lib/eprj3');
+const { Project, uuid, randId, appendRecord, readDocHeadUuid } = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const schema = [
@@ -44,13 +44,14 @@ async function main() {
   if (sub !== 'add') die(`Unknown command: ${sub}`);
 
   const project = await Project.load(path.resolve(opts.dir));
-  const sch = project.ensureSchematic(opts.schematic);
-  const sheet = project.ensureSheet(sch, opts.sheet);
-  const file = project.sheetFile(sheet);
-  if (!fs.existsSync(file)) die(`Sheet file missing: ${file}`);
+  const file = project.ensureSheetDocument(opts.schematic, opts.sheet);
 
   const compUuid = opts.uuid || randId();
-  const symMeta = JSON.stringify({ uuid: uuidFromName(opts.symbol), name: opts.symbol, source: '' });
+  const symUuid = readDocHeadUuid(path.join(project.rootDir, 'sch', '__symbols__', `${opts.symbol}.esch2`)) || uuidFromName(opts.symbol);
+  const symMeta = JSON.stringify({ uuid: symUuid, name: opts.symbol, source: '' });
+  const fpUuid = opts.footprint
+    ? (readDocHeadUuid(path.join(project.rootDir, 'sch', '__footprints__', `${opts.footprint}.esch2`)) || uuidFromName(opts.footprint))
+    : null;
   const partId = 'pid' + randId();
   const body = {
     id: compUuid,
@@ -61,7 +62,7 @@ async function main() {
       Footprints: '[]',
       Devices: '[]',
       DeviceName: symMeta,
-      FootprintName: opts.footprint ? JSON.stringify({ uuid: uuidFromName(opts.footprint), name: opts.footprint, source: '' }) : null,
+      FootprintName: opts.footprint ? JSON.stringify({ uuid: fpUuid, name: opts.footprint, source: '' }) : null,
       pinClass: {}, differentialPairClass: {},
       Symbols: '[]'
     },
@@ -79,7 +80,7 @@ async function main() {
 }
 
 function uuidFromName(name) {
-  // Stable pseudo-uuid from name so we get consistent re-runs.
+  // Fallback when no embedded symbol/footprint doc exists for this name.
   const h = require('crypto').createHash('md5').update(name).digest('hex');
   return h.slice(0, 16);
 }

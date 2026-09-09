@@ -4,12 +4,11 @@
 
 const { uuid, randId } = require('./eprj3');
 
-const MIL_PER_MM = 0.0254;
-const MM_TO_EPRJ3 = 10; // eprj3 uses 1 unit = 0.1 mm = 1 mil
+const MM_TO_MIL = 39.3700787; // eprj3 stores positions in mil (1 mm = 39.37 mil)
 
-function kicadToEprj3(val, unit) {
-  // KiCad positions are in mm by default. eprj3 uses mil (0.1mm). Multiply mm by 10.
-  return val * MM_TO_EPRJ3;
+function kicadToEprj3(val) {
+  // KiCad positions are in mm; eprj3 uses mil.
+  return val * MM_TO_MIL;
 }
 
 function buildSymbolRecords(kicadSym) {

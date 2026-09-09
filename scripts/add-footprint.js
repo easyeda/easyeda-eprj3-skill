@@ -11,7 +11,7 @@
  *     --refdes <U1> --x <mil> --y <mil> [--rot 0] [--layer top]
  */
 const path = require('path');
-const { Project, uuid, randId, appendRecord } = require('./lib/eprj3');
+const { Project, uuid, randId, appendRecord, readDocHeadUuid } = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const schema = [
@@ -32,15 +32,16 @@ async function main() {
   if (sub !== 'add') die(`Unknown command: ${sub}`);
 
   const project = await Project.load(path.resolve(opts.dir));
-  const pcb = project.ensurePcb(opts.pcb);
-  const file = project.pcbFile(pcb);
+  const file = project.ensurePcbDocument(opts.pcb);
   const compUuid = uuid(8);
-  const symMeta = JSON.stringify({ uuid: uuidFromName(opts.footprint), name: opts.footprint, source: '' });
+  const fpUuid = readDocHeadUuid(path.join(project.rootDir, 'sch', '__footprints__', `${opts.footprint}.esch2`)) || uuidFromName(opts.footprint);
+  const fpMeta = JSON.stringify({ uuid: fpUuid, name: opts.footprint, source: '' });
   appendRecord(file, 'COMPONENT', {
+    id: compUuid,
     partId: 'pid' + randId(),
     x: parseFloat(opts.x), y: parseFloat(opts.y),
     rotation: parseFloat(opts.rot), isMirror: parseInt(opts.layer) === 2,
-    attrs: { Footprints: '[]', Devices: '[]', DeviceName: symMeta, FootprintName: null },
+    attrs: { Footprints: '[]', Devices: '[]', DeviceName: fpMeta, FootprintName: null },
     zIndex: null
   });
   if (opts.refdes) {
@@ -55,6 +56,7 @@ async function main() {
 }
 
 function uuidFromName(name) {
+  // Fallback when no embedded footprint doc exists for this name.
   return require('crypto').createHash('md5').update(name).digest('hex').slice(0, 16);
 }
 
