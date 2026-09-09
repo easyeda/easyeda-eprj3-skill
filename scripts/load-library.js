@@ -1,30 +1,29 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * load-library.js — Pull a component from a local library (elibz2 or KiCad)
+ * load-library.js — Pull a component from a local EasyEDA library (.elibz2)
  *                   and inject it into the project as a SYMBOL or FOOTPRINT document.
  *
  * Usage:
  *   node scripts/load-library.js import \
  *     --dir <projectDir> \
- *     --format elibz2|kicad \
+ *     --format elibz2 \
  *     --library <fileOrDir> \
  *     --component <nameOrId> \
  *     [--kind symbol|footprint]
  *
  * When --kind is omitted we try symbol first, then footprint.
+ * (KiCad library import lives in the separate kicad-to-easyeda-eprj3 project.)
  */
 const fs = require('fs');
 const path = require('path');
 const { Project, uuid, randId, writeRecords } = require('./lib/eprj3');
-const { openArchive, readIfExists, listEntries, readManifest, loadSymbol, loadFootprint } = require('./lib/elibz2');
-const { parseSymbolFile } = require('./lib/kicad');
-const { buildSymbolRecords, buildFootprintRecords } = require('./lib/kicad-to-eprj3');
+const { openArchive, readManifest, loadSymbol, loadFootprint } = require('./lib/elibz2');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const schema = [
   { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root' },
-  { name: 'format', hasValue: true, required: true, desc: 'elibz2 | kicad' },
+  { name: 'format', hasValue: true, required: true, desc: 'elibz2' },
   { name: 'library', hasValue: true, required: true, desc: 'Path to library file or directory' },
   { name: 'component', hasValue: true, required: true, desc: 'Component name or id' },
   { name: 'kind', hasValue: true, desc: 'symbol | footprint (auto if omitted)' }
@@ -53,21 +52,6 @@ async function main() {
       const sym = await loadSymbol(arch, comp.uuid);
       if (!sym) die(`Symbol "${comp.uuid}" missing in library`);
       writeSymbolFile(project, comp.name || comp.uuid, sym);
-    }
-  } else if (opts.format === 'kicad') {
-    if (fs.statSync(lib).isFile()) {
-      const symbols = parseSymbolFile(lib);
-      const sym = symbols.find(s => s.name === opts.component);
-      if (!sym) die(`Symbol "${opts.component}" not found in ${lib}`);
-      writeKiCadSymbolFile(project, sym.name, sym);
-    } else {
-      const libs = fs.readdirSync(lib).filter(f => f.endsWith('.kicad_sym'));
-      for (const libFile of libs) {
-        const symbols = parseSymbolFile(path.join(lib, libFile));
-        const sym = symbols.find(s => s.name === opts.component);
-        if (sym) return writeKiCadSymbolFile(project, sym.name, sym);
-      }
-      die(`Symbol "${opts.component}" not found in any .kicad_sym under ${lib}`);
     }
   } else {
     die(`Unknown --format: ${opts.format}`);
@@ -133,21 +117,6 @@ function writeFootprintFile(project, name, fpDoc) {
   const file = path.join(outDir, `${name}.esch2`);
   writeRecords(file, records);
   console.log(`Imported footprint "${name}" -> ${file}`);
-}
-
-function writeKiCadSymbolFile(project, name, kicadSym) {
-  const outDir = path.join(project.rootDir, 'sch', '__symbols__');
-  fs.mkdirSync(outDir, { recursive: true });
-  const head = {
-    head: { type: 'DOCHEAD' },
-    body: { docType: 'SYMBOL', client: 'easyeda-pro-skill', uuid: uuid(16), updateTime: Date.now(), version: String(Date.now()), editVersion: '2.3.0', user: {} }
-  };
-  const { records } = buildSymbolRecords(kicadSym);
-  // prepend a META so the file is self-describing
-  const meta = { head: { type: 'META', ticket: 1, id: 'META' }, body: { title: name, description: '', tags: [], docType: 2, source: '' } };
-  const file = path.join(outDir, `${name}.esch2`);
-  writeRecords(file, [head, meta, ...records]);
-  console.log(`Imported KiCad symbol "${name}" -> ${file}`);
 }
 
 main().catch(err => die(err.message, 1));

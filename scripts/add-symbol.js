@@ -24,7 +24,7 @@ const schema = [
   { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root directory' },
   { name: 'schematic', alias: 's', hasValue: true, required: true, desc: 'Schematic name' },
   { name: 'sheet', alias: 'p', hasValue: true, required: true, desc: 'Sheet title (file basename)' },
-  { name: 'symbol', alias: 'y', hasValue: true, required: true, desc: 'Symbol name or uuid (from a SYMBOL doc)' },
+  { name: 'symbol', hasValue: true, required: true, desc: 'Symbol name or uuid (from a SYMBOL doc)' },
   { name: 'refdes', alias: 'r', hasValue: true, desc: 'Reference designator (e.g. R1)' },
   { name: 'value', alias: 'v', hasValue: true, desc: 'Component value/comment' },
   { name: 'footprint', alias: 'f', hasValue: true, desc: 'Footprint name (e.g. 0603)' },

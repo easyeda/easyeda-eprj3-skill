@@ -1,33 +1,36 @@
 # Install for Cline (VS Code)
 
-Cline reads instructions from `.clinerules/` (a plain-text folder of `.md` rules) and `.clinerules.md`.
+Cline reads instructions from `.clinerules/` (a plain-text folder of `.md` rules) and `.clinerules.md`. Rule files become part of the system prompt, so we install a pointer rule that redirects Cline to the full skill.
 
 ## Project-local
 
 ```bash
 mkdir -p .clinerules
-cp SKILL.md .clinerules/easyeda-eprj3.md
 git clone --depth 1 https://github.com/easyeda/easyeda-eprj3-skill.git skills/easyeda-eprj3
-```
-
-Cline will auto-include any file in `.clinerules/` as a system rule. Add a header to `.clinerules/easyeda-eprj3.md` so Cline knows when to trigger it:
-
-```markdown
+cat > .clinerules/easyeda-eprj3.md <<'EOF'
 # EasyEDA Pro eprj3 Skill
 
 Apply this skill whenever the user asks to:
 - Create or edit an EasyEDA Pro (.eprj3) project
-- Convert a KiCad project to EasyEDA Pro
 - Import a component from an .elibz2 library
 - Validate the format of an existing .eprj3 directory
 
-Helper scripts live in `./skills/easyeda-eprj3/scripts/`. See the full
-`SKILL.md` (this file) for the workflow.
+For the full workflow read `skills/easyeda-eprj3/SKILL.md` and follow it.
+Helper scripts live in `skills/easyeda-eprj3/scripts/`.
+EOF
 ```
+
+The clone keeps `scripts/` next to `SKILL.md`, so every `node scripts/...` path in the skill resolves correctly (the skill's own path note says paths are relative to the SKILL.md directory).
 
 ## User-wide
 
-In VS Code: **Settings → Cline → Custom Instructions** → paste the contents of `SKILL.md`.
+In VS Code: **Settings → Cline → Custom Instructions** → paste the pointer line instead of the whole skill:
+
+```markdown
+When the user mentions EasyEDA, 嘉立创EDA, eprj3, schematic, PCB, read `skills/easyeda-eprj3/SKILL.md` and follow it.
+```
+
+The repo clone is project-local (`skills/easyeda-eprj3`), so run the `git clone` above once per project.
 
 ## Verifying
 

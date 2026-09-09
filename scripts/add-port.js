@@ -24,9 +24,7 @@ async function main() {
   if (sub !== 'add') die(`Unknown command: ${sub}`);
 
   const project = await Project.load(path.resolve(opts.dir));
-  const sch = project.ensureSchematic(opts.schematic);
-  const sheet = project.ensureSheet(sch, opts.sheet);
-  const file = project.sheetFile(sheet);
+  const file = project.ensureSheetDocument(opts.schematic, opts.sheet);
 
   appendRecord(file, 'PORT', {
     x: parseFloat(opts.x), y: parseFloat(opts.y),

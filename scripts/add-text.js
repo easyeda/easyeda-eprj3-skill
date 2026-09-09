@@ -28,12 +28,9 @@ async function main() {
   const project = await Project.load(path.resolve(opts.dir));
   let file;
   if (opts.kind === 'schematic') {
-    const sch = project.ensureSchematic(opts.doc);
-    const sheet = project.ensureSheet(sch, opts.sheet || 'P1');
-    file = project.sheetFile(sheet);
+    file = project.ensureSheetDocument(opts.doc, opts.sheet || 'P1');
   } else {
-    const pcb = project.ensurePcb(opts.doc);
-    file = project.pcbFile(pcb);
+    file = project.ensurePcbDocument(opts.doc);
   }
 
   appendRecord(file, 'TEXT', {

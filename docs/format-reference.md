@@ -31,6 +31,8 @@ Compact reference for the records the scripts in this skill produce. The authori
 
 Each line is one record. Blank lines are tolerated. Records are written in `append`-then-`patch` order, so the on-disk ordering is the same as the edit history.
 
+Parsing note: never split a record on every `||` occurrence. The body is one JSON document; an `||` sequence can appear inside a JSON string (e.g. a text annotation `A||B`). Locate the head before the **first** `||`, treat the segment after the **last** `||` as the body candidate, and only accept a middle segment as the ticket/id block when it parses as a JSON object carrying `ticket`/`id`.
+
 | Field | Description |
 | --- | --- |
 | `head.type` | `DOCHEAD` / `META` / `COMPONENT` / `ATTR` / `WIRE` / `LINE` / `NETLABEL` / `PORT` / `TEXT` / `OBJ` / `RECT` / `ARC` / `POLY` / `PIN` / `PAD` / `FILL` / `LAYER` / `CANVAS` / `PART` / `NET` / `RULE` / `TABLE` … |
@@ -111,13 +113,6 @@ Single JSON object. Key fields:
 
 ## Units
 
-- 1 mm = 40 mil. eprj3 stores positions in **mil**, so to convert from mm multiply by 40.
+- 1 mm = 39.37 mil. eprj3 stores positions in **mil**, so to convert from mm multiply by 39.37.
 - Rotation is in degrees, counter-clockwise.
-- Coordinates grow up-and-right (Y axis points up) — that is the same convention KiCad uses after the `mm → mil` conversion.
-
-## Conversion tips
-
-- KiCad wire `pts` → eprj3 `WIRE` + multiple `LINE` records sharing the same `lineGroup` id.
-- KiCad `pad` → eprj3 `PAD` with `layerId` mapped: `F.Cu=1`, `B.Cu=2`, `F.SilkS=3`, `B.SilkS=4`.
-- KiCad `segment` (PCB track) → eprj3 `FILL` with a closed polygon (use the 2 endpoints twice to make a degenerate rect).
-- KiCad `symbol` (with `property` children) → eprj3 `COMPONENT` + `ATTR` records for the `Reference`, `Value`, `Footprint` properties.
+- Coordinates grow up-and-right (Y axis points up).

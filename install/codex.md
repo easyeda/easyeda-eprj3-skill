@@ -14,7 +14,7 @@ Then add a pointer in your project `AGENTS.md`:
 ## Skills
 
 This project uses the EasyEDA Pro eprj3 skill at `skills/easyeda-eprj3/SKILL.md`.
-Read it whenever the user mentions "EasyEDA", "eprj3", "KiCad to EasyEDA",
+Read it whenever the user mentions "EasyEDA", "eprj3",
 or asks to author a schematic/PCB project from scratch.
 ```
 

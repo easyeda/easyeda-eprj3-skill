@@ -12,7 +12,7 @@ Then point your agent at `skills/easyeda-eprj3/SKILL.md` as one of its system-pr
 If your agent does not auto-discover, add the following line to its instruction file:
 
 ```markdown
-When the user mentions EasyEDA, eprj3, schematic, PCB, or KiCad-to-EDA,
+When the user mentions EasyEDA, eprj3, schematic, PCB,
 read `./skills/easyeda-eprj3/SKILL.md` and follow it.
 ```
 

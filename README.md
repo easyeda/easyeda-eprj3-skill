@@ -8,10 +8,11 @@ The skill ships a complete set of cross-platform Node.js scripts so the AI can:
 - Generate symbols / footprints from scratch
 - Place components, wires, net labels, ports, text
 - Renumber reference designators
-- Convert KiCad projects to `.eprj3`
-- Import symbols and footprints from a local **EasyEDA library** (`.elibz2`) or **KiCad library** (`.kicad_sym`)
+- Import symbols and footprints from a local **EasyEDA library** (`.elibz2`)
 - Validate the format and auto-fix common problems
 - Open the finished project in the **EasyEDA Pro / LCEDA Pro offline client**
+
+KiCad → eprj3 conversion is intentionally out of scope — it lives in the separate **kicad-to-easyeda-eprj3** project.
 
 The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md). The authoritative source is https://github.com/easyeda/easyeda-pro-eprj3-format.
 
@@ -34,16 +35,15 @@ easyeda-eprj3-skill/
 │   ├── add-port.js
 │   ├── add-text.js
 │   ├── set-refdes.js
-│   ├── convert-kicad.js
 │   ├── validate.js
 │   ├── open.js
-│   └── lib/               ← shared parser / writer / converter modules
+│   └── lib/               ← shared record parser / writer modules
 ├── install/               ← per-agent install guides
 ├── docs/
 │   ├── format-reference.md
 │   └── workflow.md
 ├── examples/
-│   └── blink/             ← minimal LED + resistor + power symbols project
+│   └── blink/             ← minimal LED + resistor project
 └── templates/             ← minimal blank-project seed files
 ```
 
@@ -80,7 +80,7 @@ Read [`SKILL.md`](SKILL.md). It defines the workflow, the required user inputs, 
 ## Requirements
 
 - Node.js ≥ 18 (tested on Node 24 on Windows 11).
-- (Optional, only for `.elibz2` zip archives) `npm install yauzl --no-save` in this directory.
+- Run `npm install` in this directory once — it pulls in `yauzl` (optional dep, only needed for `.elibz2` zip archives).
 - EasyEDA Pro or LCEDA Pro offline client (only required for the `open.js` step). Both clients share the same `.eprj3` format. The default Windows install puts `easyeda-pro.exe` under `C:\Program Files\easyeda-pro\` (English brand) and `lceda-pro.exe` under `C:\Program Files\lceda-pro\` (Chinese brand). The installer lets the user pick any other path — see [`scripts/open.js`](scripts/open.js) for the probe list and the `set --client <path>` override.
 
 ## License

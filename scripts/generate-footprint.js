@@ -9,8 +9,9 @@
  *     --pads "1,-31.5,0,rect,24,16;2,31.5,0,rect,24,16" \
  *     --silk "rect,-32,-16,32,16"
  *
- * Pad format: number,x,y,shape,width,height   (all units in mil)
- * Silk items: kind,x1,y1,x2,y2   (kind in rect|line|circle)
+ * Pad format: number,x,y,shape,width,height[,holeDiameter]   (all units in mil)
+ *   holeDiameter > 0 makes the pad a plated through-hole.
+ * Silk items: kind,x1,y1,x2,y2   (kind in rect|line)
  */
 const path = require('path');
 const fs = require('fs');
@@ -32,6 +33,12 @@ async function main() {
 
   const project = await Project.load(path.resolve(opts.dir));
   const pads = opts.pads.split(';').map(s => s.split(',').map(v => v.trim()));
+  for (const p of pads) {
+    const [num, cx, cy, , w, h] = p;
+    if (!num || [cx, cy, w, h].some(v => v === undefined || !Number.isFinite(parseFloat(v)))) {
+      die(`Invalid pad spec: "${p.join(',')}" (expected number,x,y,shape,width,height[,holeDiameter])`);
+    }
+  }
   const partId = 'pid' + randId();
   const records = [];
   let ticket = 1;
@@ -53,11 +60,14 @@ async function main() {
   }
 
   for (const p of pads) {
-    const [num, cx, cy, shape, w, h] = p;
+    const [num, cx, cy, shape, w, h, holeD] = p;
+    const hole = holeD !== undefined && Number.isFinite(parseFloat(holeD)) && parseFloat(holeD) > 0
+      ? { shape: 'CIRCLE', diameter: parseFloat(holeD) }
+      : null;
     ticket++;
     records.push({ head: { type: 'PAD', ticket, id: 'e' + randId() }, body: {
       groupId: 0, netName: '', layerId: 1, num,
-      centerX: +cx, centerY: +cy, padAngle: 0, hole: null,
+      centerX: +cx, centerY: +cy, padAngle: 0, hole,
       defaultPad: { padType: (shape || 'rect').toUpperCase(), width: +w, height: +h, radius: 0 },
       specialPad: [], padOffsetX: 0, padOffsetY: 0, relativeAngle: 90,
       plated: true, padType: 'NORMAL', topSolderExpansion: 2, bottomSolderExpansion: 2,

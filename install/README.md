@@ -23,6 +23,7 @@ This folder has a one-page guide per supported agent. Pick yours and follow the 
 | Agent | 厂商 | File |
 | --- | --- | --- |
 | 通义灵码 (Tongyi Lingma) | 阿里云 | [lingma.md](lingma.md) |
+| Qoder | 阿里云 | [qoder.md](qoder.md) |
 | 文心快码 (Baidu Comate) | 百度 | [comate.md](comate.md) |
 | CodeGeeX | 智谱 AI | [codegeex.md](codegeex.md) |
 | 豆包 MarsCode | 字节跳动 | [marscode.md](marscode.md) |
@@ -35,4 +36,4 @@ This folder has a one-page guide per supported agent. Pick yours and follow the 
 | Kimi CLI | 月之暗面 | [kimi-cli.md](kimi-cli.md) |
 | MiniMax Code | MiniMax | [minimax.md](minimax.md) |
 
-If your agent isn't listed, copy `SKILL.md` into a location where the agent auto-loads instructions, and keep `scripts/` alongside it.
+If your agent isn't listed, follow [generic.md](generic.md): clone the whole repo and point your agent's instruction file at `skills/easyeda-eprj3/SKILL.md`.

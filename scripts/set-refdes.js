@@ -7,8 +7,10 @@
  *   node scripts/set-refdes.js set --dir <projectDir> --kind schematic --doc <name> --sheet <sheetTitle> --from R1 --to R5A
  *   node scripts/set-refdes.js renumber --dir <projectDir> --kind schematic --doc <name> --sheet <sheetTitle> --prefix R
  *
- * The "renumber" subcommand auto-numbers all components sharing a given prefix
- * (R1, R2, R3, ...) based on current placement order.
+ * The "renumber" subcommand auto-numbers all components whose designator is
+ * exactly <prefix><digits> (R1, R2, R3, ...) based on record order.
+ * This is a read/modify command: a wrong --doc/--sheet fails instead of
+ * silently creating an empty document.
  */
 const path = require('path');
 const { Project, readRecords, writeRecords } = require('./lib/eprj3');
@@ -18,39 +20,25 @@ const schema = [
   { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root' },
   { name: 'kind', alias: 'k', hasValue: true, default: 'schematic', desc: 'schematic or pcb' },
   { name: 'doc', hasValue: true, required: true, desc: 'Schematic/PCB name' },
-  { name: 'sheet', alias: 'p', hasValue: true, desc: 'Sheet title' },
+  { name: 'sheet', alias: 'p', hasValue: true, desc: 'Sheet title (schematic only, default P1)' },
   { name: 'from', hasValue: true, desc: 'Current refdes (set subcommand)' },
   { name: 'to', hasValue: true, desc: 'New refdes (set subcommand)' },
   { name: 'prefix', hasValue: true, desc: 'Prefix to renumber (renumber subcommand)' }
 ];
 
-function quickOpts(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i++) {
-    if (argv[i].startsWith('--')) {
-      const eq = argv[i].indexOf('=');
-      const key = eq >= 0 ? argv[i].slice(2, eq) : argv[i].slice(2);
-      const v = eq >= 0 ? argv[i].slice(eq + 1) : (argv[i + 1] && !argv[i + 1].startsWith('--') ? argv[++i] : true);
-      out[key] = v;
-    }
-  }
-  return out;
-}
-
 async function main() {
   const sub = process.argv[2];
   if (!sub || sub === 'help') { printHelp('set-refdes.js <set|renumber> [options]', schema); process.exit(sub ? 0 : 1); }
   const { opts } = parseArgs(process.argv.slice(3), schema);
+  if (sub !== 'set' && sub !== 'renumber') die(`Unknown command: ${sub}. Use 'set' or 'renumber'.`);
 
   const project = await Project.load(path.resolve(opts.dir));
   let file;
   if (opts.kind === 'schematic') {
-    const sch = project.ensureSchematic(opts.doc);
-    const sheet = project.ensureSheet(sch, opts.sheet || 'P1');
+    const { sheet } = project.requireSheet(opts.doc, opts.sheet || 'P1');
     file = project.sheetFile(sheet);
   } else {
-    const pcb = project.ensurePcb(opts.doc);
-    file = project.pcbFile(pcb);
+    file = project.pcbFile(project.requirePcb(opts.doc));
   }
   const records = readRecords(file);
 
@@ -65,26 +53,24 @@ async function main() {
         changed++;
       }
     }
+    if (!changed) die(`No Designator ATTR with value "${oldRefdes}" found in ${file}`);
     writeRecords(file, records);
     console.log(`Renamed ${changed} refdes from ${oldRefdes} to ${newRefdes}`);
     return;
   }
 
-  if (sub === 'renumber') {
-    const prefix = opts.prefix;
-    if (!prefix) die('--prefix is required');
-    let counter = 1;
-    for (const r of records) {
-      if (r.type === 'ATTR' && r.body.key === 'Designator' && r.body.value && r.body.value.startsWith(prefix)) {
-        r.body.value = `${prefix}${counter++}`;
-      }
+  // renumber
+  const prefix = opts.prefix;
+  if (!prefix) die('--prefix is required');
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d+$`);
+  let counter = 1;
+  for (const r of records) {
+    if (r.type === 'ATTR' && r.body.key === 'Designator' && pattern.test(r.body.value)) {
+      r.body.value = `${prefix}${counter++}`;
     }
-    writeRecords(file, records);
-    console.log(`Renumbered ${counter - 1} components with prefix ${prefix}`);
-    return;
   }
-
-  die(`Unknown command: ${sub}`);
+  writeRecords(file, records);
+  console.log(`Renumbered ${counter - 1} components with prefix ${prefix}`);
 }
 
 main().catch(err => die(err.message, 1));

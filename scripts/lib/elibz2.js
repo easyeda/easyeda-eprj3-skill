@@ -3,7 +3,6 @@
 const fs = require('fs');
 const zlib = require('zlib');
 const path = require('path');
-const { uuid, randId, writeRecords, appendRecord } = require('./eprj3');
 
 // .elibz2 layout (typical):
 //   manifest.json
@@ -136,50 +135,11 @@ async function loadFootprint(arch, fpId) {
   return JSON.parse(txt);
 }
 
-// Write a symbol definition into a SYMBOL document appended to the project.
-// Returns the new symbol uuid.
-async function writeSymbolRecords(project, symbolName, symbolDoc) {
-  const sch = project.ensureSchematic('__symbols__');
-  // We store each symbol in its own dedicated SYMBOL .esch2 file alongside the schematic
-  // (EasyEDA Pro: symbols are embedded in component placeholders). For maximum portability,
-  // we just place a marker doc under sch/_symbols/<name>.esch2
-  const dir = path.join(project.rootDir, 'sch', '__symbols__');
-  require('fs').mkdirSync(dir, { recursive: true });
-  const file = path.join(dir, `${symbolName}.esch2`);
-  // Build records
-  const headDoc = {
-    type: 'DOCHEAD',
-    ticket: 1,
-    id: uuid(8),
-    body: {
-      docType: 'SYMBOL',
-      client: 'easyeda-pro-skill',
-      uuid: uuid(16),
-      updateTime: Date.now(),
-      version: String(Date.now()),
-      editVersion: '2.3.0',
-      user: {}
-    }
-  };
-  const records = [headDoc];
-  // Convert primitives from symbolDoc (shapes/pins/...) into eprj3 records.
-  const shapes = symbolDoc.shapes || [];
-  let ticket = 1;
-  for (const s of shapes) {
-    ticket++;
-    const body = { ...s, partId: 'pid' + randId() };
-    records.push({ head: { type: (s._type || 'OBJ').toUpperCase(), ticket, id: 'e' + randId() }, body });
-  }
-  writeRecords(file, records);
-  return { file, uuid: headDoc.body.body.uuid };
-}
-
 module.exports = {
   openArchive,
   readManifest,
   loadSymbol,
   loadFootprint,
-  writeSymbolRecords,
   readIfExists,
   listEntries
 };

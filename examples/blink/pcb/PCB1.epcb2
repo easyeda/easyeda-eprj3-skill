@@ -1,9 +1,9 @@
-{"type":"DOCHEAD"}||{"docType":"PCB","client":"easyeda-pro-skill","uuid":"2d3f1d1b","updateTime":1788863526997,"version":"1788863526997","editVersion":"2.3.0","user":{}}|
-{"type":"META","ticket":1,"id":"META"}||{"title":"PCB1","board":"d0ce0d4f","source":""}|
+{"type":"DOCHEAD"}||{"docType":"PCB","client":"easyeda-pro-skill","uuid":"eba60b48","updateTime":1788923508448,"version":"1788923508448","editVersion":"2.3.0","user":{}}|
+{"type":"META","ticket":1,"id":"META"}||{"title":"PCB1","board":"b6a9d1aa","source":""}|
 {"type":"CANVAS","ticket":2,"id":"CANVAS"}||{"originX":0,"originY":0}|
 {"type":"LAYER","ticket":3,"id":"[\"LAYER\",1]"}||{"layerType":"TOP","layerName":"Top Layer","use":true,"show":true,"locked":false,"activeColor":"#FF0000","activateTransparency":1,"inactiveColor":"#7F0000","inactiveTransparency":1}|
 {"type":"LAYER","ticket":4,"id":"[\"LAYER\",2]"}||{"layerType":"BOTTOM","layerName":"Bottom Layer","use":true,"show":true,"locked":false,"activeColor":"#0000FF","activateTransparency":1,"inactiveColor":"#00007F","inactiveTransparency":1}|
-{"type":"COMPONENT","ticket":5,"id":"7722e96d89bfe944"}||{"partId":"pidc3c7351cad7b3885","x":0,"y":0,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":"{\"uuid\":\"c90b7f4378a55a91\",\"name\":\"0603\",\"source\":\"\"}","FootprintName":null},"zIndex":null}|
-{"type":"ATTR","ticket":6,"id":"1f5d0018625cbaa2"}||{"x":10,"y":-10,"key":"Designator","value":"R1","keyVisible":false,"valueVisible":true,"parentId":"2da7027d","zIndex":1,"fontSize":10,"align":"LEFT_TOP"}|
-{"type":"COMPONENT","ticket":7,"id":"5ec39faf39fe0564"}||{"partId":"pid5c2eae6aa07d84c6","x":200,"y":0,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":"{\"uuid\":\"680de0d20aabe46c\",\"name\":\"LED_0603\",\"source\":\"\"}","FootprintName":null},"zIndex":null}|
-{"type":"ATTR","ticket":8,"id":"c111d36c05688990"}||{"x":210,"y":-10,"key":"Designator","value":"D1","keyVisible":false,"valueVisible":true,"parentId":"73a83204","zIndex":1,"fontSize":10,"align":"LEFT_TOP"}|
+{"type":"COMPONENT","ticket":5,"id":"8ef4a6bb"}||{"id":"8ef4a6bb","partId":"pidc3041402400ab623","x":200,"y":100,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":"{\"uuid\":\"cf59b9c2170cb1a9\",\"name\":\"0603\",\"source\":\"\"}","FootprintName":null},"zIndex":null}|
+{"type":"ATTR","ticket":6,"id":"9939b2dfcac50fd9"}||{"x":210,"y":90,"key":"Designator","value":"R1","keyVisible":false,"valueVisible":true,"parentId":"8ef4a6bb","zIndex":1,"fontSize":10,"align":"LEFT_TOP"}|
+{"type":"COMPONENT","ticket":7,"id":"f1f66bc5"}||{"id":"f1f66bc5","partId":"pidb5954003610a9c19","x":300,"y":100,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":"{\"uuid\":\"3a23c565ef3b3ff4\",\"name\":\"LED_0603\",\"source\":\"\"}","FootprintName":null},"zIndex":null}|
+{"type":"ATTR","ticket":8,"id":"5d3d247a85186377"}||{"x":310,"y":90,"key":"Designator","value":"D1","keyVisible":false,"valueVisible":true,"parentId":"f1f66bc5","zIndex":1,"fontSize":10,"align":"LEFT_TOP"}|

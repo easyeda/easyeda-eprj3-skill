@@ -13,7 +13,9 @@ function parseArgs(argv, schema) {
     if (a.startsWith('--')) {
       const eq = a.indexOf('=');
       const key = (eq >= 0 ? a.slice(2, eq) : a.slice(2));
-      const def = schema.find(s => s.name === key || s.alias === key);
+      // Exact option name always wins over an alias — an alias that collides
+      // with another option's name (e.g. --y) must not shadow it.
+      const def = schema.find(s => s.name === key) || schema.find(s => s.alias === key);
       if (!def) throw new Error(`Unknown option: ${a}`);
       if (def.hasValue === false) {
         opts[def.name] = true;

@@ -12,8 +12,8 @@
  *   <dir>/pcb/<pcb>.epcb2         <- if --with-pcb given
  */
 const path = require('path');
-const { Project, uuid, writeRecords } = require('./lib/eprj3');
-const { parseArgs, printHelp, die, ensureDir } = require('./lib/utils');
+const { Project } = require('./lib/eprj3');
+const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const schema = [
   { name: 'dir', alias: 'd', hasValue: true, required: true, desc: 'Project root directory' },
@@ -41,31 +41,16 @@ async function main() {
   console.log(`  index: ${project.indexFile}`);
 
   if (opts['with-schematic']) {
-    const sch = project.ensureSchematic(opts['with-schematic']);
-    const sheet = project.ensureSheet(sch, 'P1');
-    const file = project.sheetFile(sheet);
-    writeRecords(file, [
-      { head: { type: 'DOCHEAD' }, body: { docType: 'SCH', client: 'easyeda-pro-skill', uuid: sch.uuid, updateTime: Date.now(), version: String(Date.now()), editVersion: '2.3.0', user: {} } },
-      { head: { type: 'META', ticket: 1, id: 'META' }, body: { title: sheet.title, source: '', board: sch.board, zIndex: null } },
-      { head: { type: 'CANVAS', ticket: 2, id: 'CANVAS' }, body: { originX: 0, originY: 0 } }
-    ]);
-    const cfg = path.join(dir, 'sch', sch.name, `${sch.name}.ecfg`);
-    const evar = path.join(dir, 'sch', sch.name, `${sch.name}.evar`);
+    const file = project.ensureSheetDocument(opts['with-schematic'], 'P1');
+    const cfg = path.join(dir, 'sch', opts['with-schematic'], `${opts['with-schematic']}.ecfg`);
+    const evar = path.join(dir, 'sch', opts['with-schematic'], `${opts['with-schematic']}.evar`);
     require('fs').writeFileSync(cfg, '');
     require('fs').writeFileSync(evar, '');
     console.log(`  sch:   ${file}`);
   }
 
   if (opts['with-pcb']) {
-    const pcb = project.ensurePcb(opts['pcb-name']);
-    const file = project.pcbFile(pcb);
-    writeRecords(file, [
-      { head: { type: 'DOCHEAD' }, body: { docType: 'PCB', client: 'easyeda-pro-skill', uuid: pcb.uuid, updateTime: Date.now(), version: String(Date.now()), editVersion: '2.3.0', user: {} } },
-      { head: { type: 'META', ticket: 1, id: 'META' }, body: { title: pcb.title, board: pcb.board, source: '' } },
-      { head: { type: 'CANVAS', ticket: 2, id: 'CANVAS' }, body: { originX: 0, originY: 0 } },
-      { head: { type: 'LAYER', ticket: 3, id: '["LAYER",1]' }, body: { layerType: 'TOP', layerName: 'Top Layer', use: true, show: true, locked: false, activeColor: '#FF0000', activateTransparency: 1, inactiveColor: '#7F0000', inactiveTransparency: 1 } },
-      { head: { type: 'LAYER', ticket: 4, id: '["LAYER",2]' }, body: { layerType: 'BOTTOM', layerName: 'Bottom Layer', use: true, show: true, locked: false, activeColor: '#0000FF', activateTransparency: 1, inactiveColor: '#00007F', inactiveTransparency: 1 } }
-    ]);
+    const file = project.ensurePcbDocument(opts['pcb-name']);
     console.log(`  pcb:   ${file}`);
   }
 }

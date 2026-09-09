@@ -12,7 +12,7 @@ git clone --depth 1 https://github.com/easyeda/easyeda-eprj3-skill.git \
   .claude/skills/easyeda-eprj3
 ```
 
-Claude Code auto-loads any `SKILL.md` under `.claude/skills/`. From now on, when you ask Claude Code to "create an EasyEDA Pro project" or "convert my KiCad project to .eprj3", the skill triggers automatically.
+Claude Code auto-loads any `SKILL.md` under `.claude/skills/`. From now on, when you ask Claude Code to "create an EasyEDA Pro project", the skill triggers automatically.
 
 ## B. User-wide (every project on this machine)
 

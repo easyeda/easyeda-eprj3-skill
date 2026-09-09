@@ -11,7 +11,7 @@ WorkBuddy 是腾讯云代码助手（CodeBuddy）团队推出的 AI Agent 办公
 ```markdown
 # AGENTS.md
 
-当用户提到 EasyEDA / eprj3 / 嘉立创EDA / KiCad 转换，或要求创建、
+当用户提到 EasyEDA / eprj3 / 嘉立创EDA，或要求创建、
 转换、校验原理图 / PCB 工程时：
 
 1. 读取 skills/easyeda-eprj3/SKILL.md

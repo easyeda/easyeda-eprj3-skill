@@ -12,7 +12,6 @@ Ask the user:
 4. **PCB?** — yes/no. If yes, ask for board outline, layer count, copper pours, traces.
 5. **Library source**:
    - Path to a local `.elibz2` (file/dir)?
-   - Path to a local KiCad library (`*.kicad_sym`)?
    - Or **auto-generate** from a pin/pad spec.
 
 Refuse to start until all five answers are concrete.
@@ -34,10 +33,6 @@ For each component the user mentioned, run either:
 # From local EasyEDA library
 node scripts/load-library.js import --dir <dir> \
   --format elibz2 --library <path> --component <name>
-
-# From local KiCad library
-node scripts/load-library.js import --dir <dir> \
-  --format kicad --library <path> --component <name>
 
 # Auto-generate
 node scripts/generate-symbol.js from-pins --dir <dir> \
@@ -68,9 +63,9 @@ node scripts/add-netlabel.js add --dir <dir> --schematic <s> --sheet P1 \
 ## 6. Renumber
 
 ```bash
-node scripts/set-refdes.js renumber --dir <dir> --schematic <s> --sheet P1 --prefix R
-node scripts/set-refdes.js renumber --dir <dir> --schematic <s> --sheet P1 --prefix C
-node scripts/set-refdes.js renumber --dir <dir> --schematic <s> --sheet P1 --prefix U
+node scripts/set-refdes.js renumber --dir <dir> --doc <s> --sheet P1 --prefix R
+node scripts/set-refdes.js renumber --dir <dir> --doc <s> --sheet P1 --prefix C
+node scripts/set-refdes.js renumber --dir <dir> --doc <s> --sheet P1 --prefix U
 ```
 
 ## 7. PCB placement (only if --with-pcb)
@@ -90,7 +85,7 @@ node scripts/validate.js check --dir <dir> --strict
 
 If the validator emits warnings or errors, **read them, fix the offending records with the appropriate `add-*` / `set-refdes` script, and re-run**. Do not move on until the result reads `0 errors, 0 warnings`.
 
-The `--fix` flag auto-removes orphan `WIRE` records. Use it only after you have inspected the warnings — it does not understand intent.
+The `--fix` flag auto-removes orphan `WIRE` records and duplicate `LINE` segments. Use it only after you have inspected the warnings — it does not understand intent.
 
 ## 9. Open
 

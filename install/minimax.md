@@ -19,7 +19,7 @@ git clone --depth 1 https://github.com/easyeda/easyeda-eprj3-skill.git skills/ea
 # Skills
 
 本项目使用 EasyEDA Pro eprj3 技能，位于 `skills/easyeda-eprj3/SKILL.md`。
-当用户提到 "EasyEDA"、"eprj3"、"嘉立创EDA"、"KiCad 转 EasyEDA"，
+当用户提到 "EasyEDA"、"eprj3"、"嘉立创EDA"，
 或要求创建 / 转换 / 校验原理图 PCB 工程时，先读取该文件并严格按其工作流执行。
 ```
 

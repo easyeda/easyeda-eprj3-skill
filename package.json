@@ -3,7 +3,12 @@
   "version": "1.0.0",
   "description": "AI agent skill that teaches any coding assistant to author EasyEDA Pro .eprj3 projects",
   "main": "scripts/lib/eprj3.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/easyeda/easyeda-eprj3-skill.git"
+  },
   "scripts": {
+    "test": "node test/smoke.js",
     "init": "node scripts/init.js",
     "add-symbol": "node scripts/add-symbol.js",
     "add-footprint": "node scripts/add-footprint.js",
@@ -14,7 +19,6 @@
     "set-refdes": "node scripts/set-refdes.js",
     "generate-symbol": "node scripts/generate-symbol.js",
     "generate-footprint": "node scripts/generate-footprint.js",
-    "convert-kicad": "node scripts/convert-kicad.js",
     "load-library": "node scripts/load-library.js",
     "validate": "node scripts/validate.js",
     "open": "node scripts/open.js"

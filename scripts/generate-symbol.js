@@ -6,10 +6,10 @@
  * Usage:
  *   node scripts/generate-symbol.js from-pins \
  *     --dir <projectDir> --name <symbolName> \
- *     --pins "1,IN-,2,IN+,3,VCC,4,OUT" --bbox 50,50
+ *     --pins "1,IN-,2,IN+,3,VCC,4,OUT" --bbox-w 60 --bbox-h 40
  *
- * Each pin takes "number,name" pair; default pins sit on the right edge
- * pointing left. Bounding box defaults to 50x50 mil.
+ * --pins takes comma-flattened "number,name" pairs. Pins sit on the right
+ * edge pointing left. Body defaults to 60x40 mil.
  */
 const path = require('path');
 const fs = require('fs');

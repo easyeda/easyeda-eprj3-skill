@@ -1,10 +1,10 @@
 {
   "name": "blink",
-  "owner_uuid": "cd2a3b63b8e33949",
-  "creator_uuid": "cd2a3b63b8e33949",
-  "created_at": "2026-09-08 18:32:06",
-  "updated_at": "2026-09-08 18:32:06",
-  "modifier_uuid": "cd2a3b63b8e33949",
+  "owner_uuid": "11365a087429bf75",
+  "creator_uuid": "11365a087429bf75",
+  "created_at": "2026-09-09 11:11:48",
+  "updated_at": "2026-09-09 11:11:48",
+  "modifier_uuid": "11365a087429bf75",
   "content": "",
   "archive": false,
   "cbb_project": 0,
@@ -19,48 +19,48 @@
   "format": "folder",
   "profile": {
     "boards": {
-      "d0ce0d4f": {
-        "uuid": "d0ce0d4f",
+      "b6a9d1aa": {
+        "uuid": "b6a9d1aa",
         "title": "Board1",
         "zIndex": 1
       }
     },
     "schematics": {
-      "441e2be5": {
-        "uuid": "441e2be5",
+      "c7bda028": {
+        "uuid": "c7bda028",
         "name": "Schematic1",
-        "board": "d0ce0d4f",
+        "board": "b6a9d1aa",
         "source": "",
-        "version": "1788863526990",
-        "updateTime": 1788863526990
+        "version": "1788923508442",
+        "updateTime": 1788923508442
       }
     },
     "sheets": {
-      "77a2ea3a": {
-        "uuid": "77a2ea3a",
+      "c447c81b": {
+        "uuid": "c447c81b",
         "title": "P1",
-        "schematic_uuid": "441e2be5",
+        "schematic_uuid": "c7bda028",
         "zIndex": 1,
         "source": "",
-        "version": "1788863526992",
-        "updateTime": 1788863526992
+        "version": "1788923508444",
+        "updateTime": 1788923508444
       }
     },
     "pcbs": {
-      "2d3f1d1b": {
-        "uuid": "2d3f1d1b",
+      "eba60b48": {
+        "uuid": "eba60b48",
         "title": "PCB1",
-        "board": "d0ce0d4f",
+        "board": "b6a9d1aa",
         "parent_uuid": "",
         "source": "",
-        "version": "1788863526996",
-        "updateTime": 1788863526996
+        "version": "1788923508447",
+        "updateTime": 1788923508447
       }
     },
     "panels": {},
     "blockSymbols": {},
     "owner": {
-      "uuid": "cd2a3b63b8e33949"
+      "uuid": "11365a087429bf75"
     },
     "simSchematics": {},
     "simulations": {}
