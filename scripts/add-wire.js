@@ -8,7 +8,7 @@
  *     --dir <projectDir> --schematic <schName> --sheet <sheetTitle> \
  *     --points "x1,y1;x2,y2;x3,y3"
  *
- * The wire is emitted as one WIRE record (group container) plus N LINE records
+ * The wire is emitted as one WIRE record (group container) plus N-1 LINE records
  * sharing its `lineGroup` id. Coordinates are in mil.
  */
 const path = require('path');
@@ -31,40 +31,21 @@ async function main() {
   if (sub !== 'add') die(`Unknown command: ${sub}`);
 
   const project = await Project.load(path.resolve(opts.dir));
-  const sch = project.ensureSchematic(opts.schematic);
-  const sheet = project.ensureSheet(sch, opts.sheet);
-  const file = project.sheetFile(sheet);
+  const file = project.ensureSheetDocument(opts.schematic, opts.sheet);
 
-  const pts = opts.points.split(';').map(p => p.split(',').map(parseFloat));
+  const pts = opts.points.split(';').map(p => p.split(',').map(Number));
   if (pts.length < 2) die('--points needs at least 2 points');
-  const wireId = randId();
-  const { readRecords, writeRecords } = require('./lib/eprj3');
-  // Insert WIRE with the id we control, then LINEs referencing that id.
-  const records = readRecords(file);
-  const maxTicket = records.reduce((m, r) => Math.max(m, r.ticket || 0), 0);
-  records.push({ head: { type: 'WIRE', ticket: maxTicket + 1, id: wireId }, body: { zIndex: 1 }, ticket: maxTicket + 1, id: wireId, type: 'WIRE' });
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[i + 1];
-    records.push({
-      head: { type: 'LINE', ticket: maxTicket + 2 + i, id: randId() },
-      body: {
-        fillColor: null, fillStyle: null,
-        strokeColor: opts.stroke, strokeStyle: 'SOLID', strokeWidth: parseFloat(opts.width),
-        startX: x1, startY: y1, endX: x2, endY: y2, lineGroup: wireId
-      },
-      ticket: maxTicket + 2 + i, id: randId(), type: 'LINE'
-    });
+  if (pts.some(p => p.length !== 2 || !Number.isFinite(p[0]) || !Number.isFinite(p[1]))) {
+    die(`Invalid --points: "${opts.points}" (expected "x1,y1;x2,y2;..." with numeric mil coordinates)`);
   }
-  writeRecords(file, records);
 
+  const wireId = randId();
+  appendRecord(file, 'WIRE', { zIndex: 1 }, undefined, wireId);
   for (let i = 0; i < pts.length - 1; i++) {
-    const [x1, y1] = pts[i];
-    const [x2, y2] = pts[i + 1];
     appendRecord(file, 'LINE', {
       fillColor: null, fillStyle: null,
       strokeColor: opts.stroke, strokeStyle: 'SOLID', strokeWidth: parseFloat(opts.width),
-      startX: x1, startY: y1, endX: x2, endY: y2, lineGroup: wireId
+      startX: pts[i][0], startY: pts[i][1], endX: pts[i + 1][0], endY: pts[i + 1][1], lineGroup: wireId
     });
   }
   console.log(`Added wire ${wireId} with ${pts.length - 1} segments on ${opts.schematic}/${opts.sheet}`);
