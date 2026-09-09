@@ -8,6 +8,7 @@ This folder has a one-page guide per supported agent. Pick yours and follow the 
 | --- | --- |
 | Claude Code (Anthropic) | [claude-code.md](claude-code.md) |
 | OpenAI Codex CLI | [codex.md](codex.md) |
+| Cherry Studio | [cherrystudio.md](cherrystudio.md) |
 | Cursor | [cursor.md](cursor.md) |
 | GitHub Copilot | [copilot.md](copilot.md) |
 | Cline (VS Code) | [cline.md](cline.md) |
@@ -27,6 +28,11 @@ This folder has a one-page guide per supported agent. Pick yours and follow the 
 | 豆包 MarsCode | 字节跳动 | [marscode.md](marscode.md) |
 | Trae IDE | 字节跳动 | [trae.md](trae.md) |
 | iFlyCode | 科大讯飞 | [iflycode.md](iflycode.md) |
-| 腾讯元宝 / 腾讯云 AI 代码助手 | 腾讯 | [yuanbao.md](yuanbao.md) |
+| 腾讯元宝 / AI 代码助手（插件版） | 腾讯 | [yuanbao.md](yuanbao.md) |
+| CodeBuddy（腾讯云 AI 代码助手） | 腾讯 | [codebuddy.md](codebuddy.md) |
+| WorkBuddy（AI Agent 办公工具） | 腾讯 | [workbuddy.md](workbuddy.md) |
+| Qwen Code（通义千问 CLI） | 阿里云 | [qwen-code.md](qwen-code.md) |
+| Kimi CLI | 月之暗面 | [kimi-cli.md](kimi-cli.md) |
+| MiniMax M2（模型后端） | MiniMax | [minimax.md](minimax.md) |
 
 If your agent isn't listed, copy `SKILL.md` into a location where the agent auto-loads instructions, and keep `scripts/` alongside it.

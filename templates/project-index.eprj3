@@ -1,0 +1,72 @@
+{
+  "name": "MyProject",
+  "owner_uuid": "4cd28efd2c3c38ba",
+  "creator_uuid": "4cd28efd2c3c38ba",
+  "created_at": "2026-09-09 09:26:22",
+  "updated_at": "2026-09-09 09:26:22",
+  "modifier_uuid": "4cd28efd2c3c38ba",
+  "content": "",
+  "archive": false,
+  "cbb_project": 0,
+  "thumb": "",
+  "ticket": 1,
+  "g_ticket": 1,
+  "boards": [],
+  "block_symbol_attrs_groups": {},
+  "default_sheet": "",
+  "branch_uuid": "",
+  "pcb_count": 1,
+  "format": "folder",
+  "profile": {
+    "boards": {
+      "8ddf17ba": {
+        "uuid": "8ddf17ba",
+        "title": "Board1",
+        "zIndex": 1
+      }
+    },
+    "schematics": {
+      "6f9f851e": {
+        "uuid": "6f9f851e",
+        "name": "Schematic1",
+        "board": "8ddf17ba",
+        "source": "",
+        "version": "1788917182767",
+        "updateTime": 1788917182767
+      }
+    },
+    "sheets": {
+      "7db91e2d": {
+        "uuid": "7db91e2d",
+        "title": "P1",
+        "schematic_uuid": "6f9f851e",
+        "zIndex": 1,
+        "source": "",
+        "version": "1788917182768",
+        "updateTime": 1788917182768
+      }
+    },
+    "pcbs": {
+      "d6d4ad22": {
+        "uuid": "d6d4ad22",
+        "title": "PCB1",
+        "board": "8ddf17ba",
+        "parent_uuid": "",
+        "source": "",
+        "version": "1788917182769",
+        "updateTime": 1788917182769
+      }
+    },
+    "panels": {},
+    "blockSymbols": {},
+    "owner": {
+      "uuid": "4cd28efd2c3c38ba"
+    },
+    "simSchematics": {},
+    "simulations": {}
+  },
+  "config": {
+    "defaultSheet": "",
+    "settings": {}
+  }
+}

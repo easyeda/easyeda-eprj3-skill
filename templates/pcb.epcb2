@@ -1,0 +1,5 @@
+{"type":"DOCHEAD"}||{"docType":"PCB","client":"easyeda-pro-skill","uuid":"d6d4ad22","updateTime":1788917182771,"version":"1788917182771","editVersion":"2.3.0","user":{}}|
+{"type":"META","ticket":1,"id":"META"}||{"title":"PCB1","board":"8ddf17ba","source":""}|
+{"type":"CANVAS","ticket":2,"id":"CANVAS"}||{"originX":0,"originY":0}|
+{"type":"LAYER","ticket":3,"id":"[\"LAYER\",1]"}||{"layerType":"TOP","layerName":"Top Layer","use":true,"show":true,"locked":false,"activeColor":"#FF0000","activateTransparency":1,"inactiveColor":"#7F0000","inactiveTransparency":1}|
+{"type":"LAYER","ticket":4,"id":"[\"LAYER\",2]"}||{"layerType":"BOTTOM","layerName":"Bottom Layer","use":true,"show":true,"locked":false,"activeColor":"#0000FF","activateTransparency":1,"inactiveColor":"#00007F","inactiveTransparency":1}|

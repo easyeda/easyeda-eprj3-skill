@@ -44,7 +44,7 @@ easyeda-eprj3-skill/
 │   └── workflow.md
 ├── examples/
 │   └── blink/             ← minimal LED + resistor + power symbols project
-└── templates/
+└── templates/             ← minimal blank-project seed files
 ```
 
 ## Quick start (humans)
