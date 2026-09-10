@@ -229,9 +229,15 @@ function main() {
   }
 
   // ------------------------------------------------------------------ panel
+  // Optional — only created when the user asks (--panel / ensurePanelDocument).
   const panelDir = path.join(dir, 'panel');
-  check(fs.existsSync(panelDir) && fs.readdirSync(panelDir).some((f) => f.endsWith('.epan2')),
-    'missing panel/Panel1.epan2');
+  for (const p of Object.values(profile.panels)) {
+    check(fs.existsSync(path.join(panelDir, `${p.title}.epan2`)),
+      `missing panel/${p.title}.epan2`);
+  }
+  if (fs.existsSync(panelDir) && !fs.readdirSync(panelDir).some((f) => f.endsWith('.epan2'))) {
+    warn(true, `${panelDir}: empty panel directory`);
+  }
 
   // ------------------------------------------------------ extra file warning
   for (const sch of Object.values(profile.schematics)) {

@@ -42,7 +42,7 @@ All coordinates are **mil** unless a script's help says otherwise.
 ```
 1.  Resolve paths & project name                    (AskUserQuestion)
 2.  node scripts/init.js --dir <dir> --name <name>
-    [--schematic Schematic1] [--sheet P1] [--pcb PCB1]
+    [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
 3.  Pick library entries — check the preset templates first:
       node scripts/load-library.js list             (presets; add --dir to also list project staging)
     Place a preset directly (resolved first on every placement), e.g.:
@@ -124,7 +124,7 @@ If the user prefers a one-time override without saving, set `$EASYEDA_PRO_CLIENT
 <dir>/sch/<schematic>/<schematic>.ecfg   4 records: DOCHEAD(META SCH)+META+RULE+RULE
 <dir>/sch/<schematic>/<schematic>.evar   empty (variant data)
 <dir>/pcb/<pcb>.epcb2                    PCB docs: embedded SYMBOL/FOOTPRINT/DEVICE docs + PCB main
-<dir>/panel/Panel1.epan2                 panel document
+<dir>/panel/<panel>.epan2                panel document — optional, only with init --panel
 <dir>/.tmp/library/                      temp library entries (generation-time only; cleanup.js deletes it)
 ```
 
@@ -144,7 +144,7 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 
 | Script | Purpose |
 | --- | --- |
-| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB, panel). |
+| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). Pass `--panel` to also create a panel document. |
 | `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → temp entry `<dir>/.tmp/library/symbol/<name>.json`. |
 | `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
 | `scripts/load-library.js` | Stage power flags / net ports as temp entries; inspect the two-tier library (`power`/`port`/`list`/`show`/`remove`). |

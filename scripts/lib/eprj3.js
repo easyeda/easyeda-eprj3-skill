@@ -560,10 +560,10 @@ function buildEcfgDoc(sch, client, ms) {
 }
 
 // ------------------------------------------------- panel doc
-function buildPanelDoc(panelUuid, client, ms) {
+function buildPanelDoc(panelUuid, client, ms, title = 'Panel1') {
   return [
     docHeadLine('PANEL', client, panelUuid, ms),
-    formatRecord({ type: 'META', ticket: 1, id: 'META' }, { title: 'Panel1', zIndex: null }),
+    formatRecord({ type: 'META', ticket: 1, id: 'META' }, { title, zIndex: null }),
     formatRecord({ type: 'CANVAS', ticket: 2, id: 'CANVAS' }, {
       material: 'acrylic', thickness: '0.8mm', print: 'Bottom Side',
       craft: 'Transparent', desc: '', coverColor: 'white',
@@ -1354,12 +1354,7 @@ class Project {
     };
     fs.mkdirSync(path.join(rootDir, 'sch'), { recursive: true });
     fs.mkdirSync(path.join(rootDir, 'pcb'), { recursive: true });
-    fs.mkdirSync(path.join(rootDir, 'panel'), { recursive: true });
-    // Panel1 always exists in folder projects.
-    const panelUuid = uuid16();
-    p.profile.panels[panelUuid] = { uuid: panelUuid, title: 'Panel1', zIndex: null };
-    writeLines(path.join(rootDir, 'panel', 'Panel1.epan2'),
-      buildPanelDoc(panelUuid, clientIdFrom(owner), now));
+    // No panel by default — it is optional and created on demand (ensurePanelDocument).
     p.save();
     return p;
   }
@@ -1549,6 +1544,22 @@ class Project {
       writeLines(file, lines);
     }
     return { pcb, file };
+  }
+
+  // Optional panel document — only created when requested (init.js --panel).
+  ensurePanelDocument(title = 'Panel1') {
+    let panel = Object.values(this.profile.panels).find((p) => p.title === title);
+    if (!panel) {
+      panel = { uuid: uuid16(), title, zIndex: null };
+      this.profile.panels[panel.uuid] = panel;
+      this.save();
+    }
+    const file = path.join(this.rootDir, 'panel', `${panel.title}.epan2`);
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      writeLines(file, buildPanelDoc(panel.uuid, this.client, this.ms(), panel.title));
+    }
+    return { panel, file };
   }
 
   // ------------------------------------------------------------ get-or-die

@@ -14,8 +14,8 @@ Compact reference for the records the scripts in this skill produce — verified
 │       └── <schematicName>.evar         ← empty file (variant data)
 ├── pcb/
 │   └── <pcbTitle>.epcb2                 ← PCB container (docs + PCB main doc)
-├── panel/
-│   └── Panel1.epan2                     ← panel container
+├── panel/                               ← optional — only when the user asks for a panel
+│   └── <panelTitle>.epan2               ← panel container
 └── .tmp/library/                        ← generation-time only: temp entries staged by
                                             this skill's generate-*/load-library scripts.
                                             Tooling metadata — the client never sees it;
@@ -261,4 +261,4 @@ Invariants:
 
 ## Validation
 
-`scripts/validate.js` checks all of the above mechanically: index shape, `.ecfg`/`.evar` presence, per-doc uuid uniqueness, per-doc ticket uniqueness, `Device`/`Symbol`/`Footprint` attr → embedded doc resolution, `LINE.lineGroup` → `WIRE`, empty NET + BOARD_OUTLINE presence, `PAD_NET` → `COMPONENT`/`NET` references, POUR/VIA/FILL → NET references, and the panel file. Exit code 0 = clean, 1 = errors printed.
+`scripts/validate.js` checks all of the above mechanically: index shape, `.ecfg`/`.evar` presence, per-doc uuid uniqueness, per-doc ticket uniqueness, `Device`/`Symbol`/`Footprint` attr → embedded doc resolution, `LINE.lineGroup` → `WIRE`, empty NET + BOARD_OUTLINE presence, `PAD_NET` → `COMPONENT`/`NET` references, POUR/VIA/FILL → NET references, and the panel file(s) when `profile.panels` is non-empty (panels are optional). Exit code 0 = clean, 1 = errors printed.

@@ -130,12 +130,19 @@ function main() {
     assert(fs.existsSync(j('sch', 'Schematic1', 'Schematic1.ecfg')), 'init creates the 4-record .ecfg');
     assert(fs.readFileSync(j('sch', 'Schematic1', 'Schematic1.evar'), 'utf8') === '', 'init creates an empty .evar');
     assert(fs.existsSync(j('pcb', 'PCB1.epcb2')), 'init creates the PCB document');
-    assert(fs.existsSync(j('panel', 'Panel1.epan2')), 'init creates the panel');
+    assert(!fs.existsSync(j('panel')), 'init does not create a panel unless asked');
     const idx = JSON.parse(fs.readFileSync(j('blink.eprj3'), 'utf8'));
     assert(idx.format === 'folder' && idx.profile && idx.profile.sheets && idx.profile.pcbs,
       'index is folder-format with profile maps');
     const rDup = run([SCRIPTS + '/init.js', '--dir', proj, '--name', 'blink'], null);
     assert(rDup.status !== 0, 'init refuses to overwrite an existing project', `exit ${rDup.status}`);
+
+    // ---- optional panel (only when requested) ----
+    const panelProj = path.join(tmp, 'withpanel');
+    run([SCRIPTS + '/init.js', '--dir', panelProj, '--name', 'withpanel', '--panel']);
+    assert(fs.existsSync(path.join(panelProj, 'panel', 'Panel1.epan2')), '--panel creates the panel document');
+    const rValPanel = run([SCRIPTS + '/validate.js', '--dir', panelProj]);
+    assert(rValPanel.status === 0, 'validate passes with a panel present', rValPanel.stdout);
 
     // ---- temp symbol library (project .tmp staging) ----
     run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'T_RES',

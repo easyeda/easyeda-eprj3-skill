@@ -9,7 +9,7 @@
 | `schematic.ecfg` | 原理图配置（4 条记录：DOCHEAD+META+RULE+RULE），随原理图同名放置：`sch/<原理图名>/<原理图名>.ecfg` |
 | `schematic.evar` | 原理图变量文件（保持为空），同目录放置 |
 | `pcb.epcb2` | 空白 PCB（LAYER 前导 + 空 NET + 板框）。放入 `pcb/` 并重命名为 `<PCB名>.epcb2` |
-| `panel.epan2` | 拼板文件。放入 `panel/Panel1.epan2` |
+| `panel.epan2` | 拼板文件（可选，仅用户要求拼板时才需要）。放入 `panel/<拼板名>.epan2` |
 
 目录约定与记录格式见 [docs/format-reference.md](../docs/format-reference.md)；完整可打开的示例工程见 [examples/blink](../examples/blink)。
 

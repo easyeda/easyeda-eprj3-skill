@@ -20,10 +20,10 @@ Refuse to start until the answers are concrete.
 
 ```bash
 node scripts/init.js --dir <dir> --name <name> \
-  [--schematic Schematic1] [--sheet P1] [--pcb PCB1]
+  [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
 ```
 
-Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet document, the PCB document, and the panel in one shot.
+Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet document and the PCB document in one shot. The panel is optional — only add `--panel` when the user asks for one.
 
 ## 3. Library: presets first, then temp staging
 
@@ -146,7 +146,7 @@ node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRA
 
 `add-pour` writes the POUR region record; the client recomputes the filled copper when the file opens. PCB shape arcs use a signed sweep angle (CCW positive).
 
-`--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when routing: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — the blink example routes pad 1 of R1 (x=300, pad row y=316.54) to D1 pad 2 (y=283.46).
+`--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when routing: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — the blink example routes R1 pad 2 (x=516.54) to C1 pad 1 (x=783.46) on the SIG net.
 
 ## 9. Validate (loop)
 
