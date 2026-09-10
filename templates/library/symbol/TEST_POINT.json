@@ -1,0 +1,31 @@
+{
+  "name": "TEST_POINT",
+  "kind": "symbol",
+  "title": "TEST_POINT",
+  "designator": "TP?",
+  "description": "Test-Point",
+  "symbolUuid": "124705aeec85d398",
+  "symbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"124705aeec85d398\",\"updateTime\":1788956756730,\"version\":\"1767002677485\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":22,\"id\":\"META\"}||{\"title\":\"TEST_POINT\",\"description\":\"\",\"tags\":[],\"docType\":2,\"source\":\"0ef2c756326f421eab3c316c79eda910|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":1,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"Test-Point.1\"}||{\"BBOX\":[0,19,22.000000000000004,0],\"title\":\"Test-Point.1\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":3,\"id\":\"placeholder1\"}||{\"dataType\":\"ATTR\",\"max\":12}|",
+    "{\"type\":\"ATTR\",\"ticket\":4,\"id\":\"e13\"}||{\"partId\":\"Test-Point.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":1,\"parentId\":\"\",\"key\":\"Designator\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":false,\"x\":23,\"y\":2,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":null,\"version\":\"2.0\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"placeholder2\"}||{\"dataType\":\"PIN\",\"max\":23}|",
+    "{\"type\":\"PIN\",\"ticket\":21,\"id\":\"e24\"}||{\"display\":true,\"x\":0,\"y\":0,\"length\":0,\"rotation\":90,\"color\":null,\"pinShape\":\"NONE\",\"zIndex\":2,\"locked\":false,\"partId\":\"Test-Point.1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":18,\"id\":\"e21\"}||{\"x\":-10,\"y\":-11,\"rotation\":90,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"RIGHT_BOTTOM\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Type\",\"fillColor\":null,\"parentId\":\"e24\",\"zIndex\":3,\"locked\":false,\"partId\":\"Test-Point.1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":19,\"id\":\"e22\"}||{\"x\":0,\"y\":-4,\"rotation\":90,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"LEFT_MIDDLE\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Name\",\"fillColor\":null,\"parentId\":\"e24\",\"zIndex\":4,\"locked\":false,\"partId\":\"Test-Point.1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":20,\"id\":\"e23\"}||{\"x\":0,\"y\":-2,\"rotation\":90,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"RIGHT_BOTTOM\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Number\",\"fillColor\":null,\"parentId\":\"e24\",\"zIndex\":5,\"locked\":false,\"partId\":\"Test-Point.1\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":10,\"id\":\"placeholder3\"}||{\"dataType\":\"POLY\",\"max\":30}|",
+    "{\"type\":\"POLY\",\"ticket\":11,\"id\":\"e31\"}||{\"partId\":\"Test-Point.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":6,\"points\":[{\"x\":0,\"y\":0},{\"x\":2,\"y\":-6},{\"x\":2,\"y\":-8},{\"x\":6,\"y\":-17},{\"x\":9,\"y\":-16},{\"x\":5,\"y\":-6},{\"x\":3,\"y\":-5},{\"x\":0,\"y\":0}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":\"none\",\"strokeWidth\":null,\"fillStyle\":null}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":12,\"id\":\"placeholder4\"}||{\"dataType\":\"ARC\",\"max\":31}|",
+    "{\"type\":\"ARC\",\"ticket\":13,\"id\":\"e32\"}||{\"partId\":\"Test-Point.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":7,\"startX\":8,\"startY\":-17,\"referX\":13,\"referY\":-19,\"endX\":15,\"endY\":-15,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":\"none\",\"strokeWidth\":null,\"fillStyle\":null}|",
+    "{\"type\":\"ARC\",\"ticket\":14,\"id\":\"e33\"}||{\"partId\":\"Test-Point.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"startX\":15,\"startY\":-15,\"referX\":18,\"referY\":-11,\"endX\":22,\"endY\":-13,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":\"none\",\"strokeWidth\":null,\"fillStyle\":null}|"
+  ],
+  "placement": {
+    "nameZ": 0,
+    "designatorZ": 1,
+    "symbolZ": 9
+  }
+}

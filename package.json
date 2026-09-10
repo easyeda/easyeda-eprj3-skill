@@ -14,8 +14,6 @@
     "add-footprint": "node scripts/add-footprint.js",
     "add-wire": "node scripts/add-wire.js",
     "add-netlabel": "node scripts/add-netlabel.js",
-    "add-power": "node scripts/add-power.js",
-    "add-port": "node scripts/add-port.js",
     "add-text": "node scripts/add-text.js",
     "add-pcb-text": "node scripts/add-pcb-text.js",
     "add-shape": "node scripts/add-shape.js",
@@ -29,6 +27,8 @@
     "generate-symbol": "node scripts/generate-symbol.js",
     "generate-footprint": "node scripts/generate-footprint.js",
     "load-library": "node scripts/load-library.js",
+    "split-elibu": "node scripts/tools/split-elibu.js",
+    "cleanup": "node scripts/cleanup.js",
     "validate": "node scripts/validate.js",
     "open": "node scripts/open.js"
   },

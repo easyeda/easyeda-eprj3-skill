@@ -1,0 +1,31 @@
+{
+  "name": "RES",
+  "kind": "symbol",
+  "title": "RES",
+  "designator": "R?",
+  "description": "Resistor",
+  "symbolUuid": "dd106a1f05582744",
+  "symbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"dd106a1f05582744\",\"updateTime\":1788956799890,\"version\":\"1763634110389\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":23,\"id\":\"META\"}||{\"title\":\"RES\",\"description\":\"\",\"tags\":[],\"docType\":2,\"source\":\"337f98afd0264cae93d16cc3bf65754a|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":19,\"id\":\"5e1acae23546c1b3\"}|||",
+    "{\"type\":\"ATTR\",\"ticket\":20,\"id\":\"56e6d8d59c3f919c\"}|||",
+    "{\"type\":\"ATTR\",\"ticket\":21,\"id\":\"7d59e4cb665261ea\"}|||",
+    "{\"type\":\"ATTR\",\"ticket\":22,\"id\":\"786a1f713cead457\"}|||",
+    "{\"type\":\"CANVAS\",\"ticket\":1,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"电阻.1\"}||{\"BBOX\":[-10,4,10,-4],\"title\":\"电阻.1\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":3,\"id\":\"placeholder1\"}||{\"dataType\":\"RECT\",\"max\":15}|",
+    "{\"type\":\"RECT\",\"ticket\":4,\"id\":\"e16\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":1,\"dotX1\":-10,\"dotY1\":-4,\"dotX2\":10,\"dotY2\":4,\"radiusX\":0,\"radiusY\":0,\"rotation\":0,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":null,\"fillStyle\":null}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"placeholder2\"}||{\"dataType\":\"PIN\",\"max\":16}|",
+    "{\"type\":\"PIN\",\"ticket\":6,\"id\":\"e17\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":2,\"display\":true,\"x\":20,\"y\":0,\"length\":10,\"rotation\":180,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":7,\"id\":\"e18\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":3,\"parentId\":\"e17\",\"key\":\"Pin Name\",\"value\":\"2\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":8,\"id\":\"e21\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":4,\"parentId\":\"e17\",\"key\":\"Pin Number\",\"value\":\"2\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":9,\"id\":\"e26\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":5,\"parentId\":\"e17\",\"key\":\"Pin Type\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":10,\"id\":\"placeholder3\"}||{\"dataType\":\"PIN\",\"max\":11}|",
+    "{\"type\":\"PIN\",\"ticket\":11,\"id\":\"e29\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":6,\"display\":true,\"x\":-20,\"y\":0,\"length\":10,\"rotation\":0,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":12,\"id\":\"e30\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":7,\"parentId\":\"e29\",\"key\":\"Pin Name\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":13,\"id\":\"e33\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"parentId\":\"e29\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_BOTTOM\",\"version\":\"2.0\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":14,\"id\":\"e38\"}||{\"partId\":\"电阻.1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":9,\"parentId\":\"e29\",\"key\":\"Pin Type\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"x\":null,\"y\":null,\"rotation\":0,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":\"LEFT_BOTTOM\",\"version\":\"2.0\"}|"
+  ],
+  "placement": null
+}

@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * add-footprint.js — place a staged device (kind "device" with a footprint)
- * on a PCB document.
+ * add-footprint.js — place a symbol+footprint pair on a PCB document.
  *
- * Embeds the symbol/footprint/device docs into the PCB file (once), inserts
- * any new named NET records after the empty NET (as the example does), and
- * appends the PAD_NETs + COMPONENT + ATTR block at EOF.
+ * PCB containers embed the SYMBOL + FOOTPRINT + DEVICE docs of every placed
+ * component; both library entries resolve preset-first
+ * (templates/library/, see load-library.js list), then project staging
+ * (<project>/.tmp/library/). The DEVICE doc is composed here — no device
+ * staging. All embedded docs are rewritten to the project's client id first.
  *
- *   add-footprint --dir <project> --pcb PCB1 --lib <entry>
+ *   add-footprint --dir <project> --pcb PCB1 --symbol RES --footprint R0603
  *                 --x 300 --y 300 [--angle 90] [--refdes R1]
- *                 [--nets "1:VCC,2:GND"]
+ *                 [--name <device title>] [--nets "1:VCC,2:GND"]
  *
- * Coordinates are mil.
+ * Coordinates are mil. Named nets are inserted after the empty NET record.
  */
 const fs = require('fs');
 const E = require('./lib/eprj3');
@@ -21,12 +22,14 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
   { name: 'pcb', desc: 'PCB title', required: true },
-  { name: 'lib', desc: 'staged library entry (device with footprint)', required: true },
+  { name: 'symbol', desc: 'symbol library entry', required: true },
+  { name: 'footprint', desc: 'footprint library entry', required: true },
   { name: 'x', desc: 'x (mil)', required: true },
   { name: 'y', desc: 'y (mil)', required: true },
   { name: 'angle', desc: 'rotation (default 90, as the example)' },
-  { name: 'refdes', desc: 'reference designator' },
-  { name: 'nets', desc: 'pad net map num:NET;... e.g. "1:VCC,2:GND"' }
+  { name: 'refdes', desc: 'reference designator (default: symbol placeholder)' },
+  { name: 'name', desc: 'device title (default: footprint entry name)' },
+  { name: 'nets', desc: 'pad net map num:NET,... e.g. "1:VCC,2:GND"' }
 ];
 
 function main() {
@@ -41,10 +44,36 @@ function main() {
   const file = project.pcbFile(pcb);
   if (!fs.existsSync(file)) die(`PCB document missing: ${file} (run init.js first)`);
 
-  const entry = project.loadLibrary(opts.lib);
-  if (entry.kind !== 'device' || !entry.footprintDoc) {
-    die(`library entry "${opts.lib}" must be a device with a footprint (use load-library.js device --footprint ...)`);
+  const sym = project.loadLibrary(opts.symbol);
+  if (!sym || sym.kind !== 'symbol') {
+    die(`symbol entry not found: ${opts.symbol} (see load-library.js list; entry must be kind "symbol")`);
   }
+  const fp = project.loadLibrary(opts.footprint);
+  if (!fp || fp.kind !== 'footprint') {
+    die(`footprint entry not found: ${opts.footprint} (see load-library.js list)`);
+  }
+
+  const deviceTitle = opts.name || fp.name;
+  const client = project.client;
+  const deviceUuid = E.uuid16();
+  const deviceDoc = E.buildDeviceDoc({
+    uuid: deviceUuid,
+    title: deviceTitle,
+    designator: sym.designator || 'U?',
+    symbolUuid: sym.symbolUuid,
+    symbolName: sym.name,
+    footprintUuid: fp.footprintUuid,
+    footprintName: fp.name,
+    tags: [],
+    source: E.makeSource(E.uuid32(), project.index.owner_uuid),
+    client,
+    ms: project.ms()
+  });
+  E.insertDocsBeforeMain(file, [
+    E.rewriteDocHeads(sym.symbolDoc, client),
+    E.rewriteDocHeads(fp.footprintDoc, client),
+    E.rewriteDocHeads(deviceDoc, client)
+  ]);
 
   const netsByNum = {};
   const nets = new Set();
@@ -58,33 +87,29 @@ function main() {
     E.ensurePcbNets(file, [...nets]);
   }
 
-  // The example PCB file embeds the symbol, footprint and device docs of every
-  // placed component.
-  E.insertDocsBeforeMain(file, [entry.symbolDoc, entry.footprintDoc, entry.deviceDoc]);
-
   const lines = E.readLines(file);
   const compId = E.randId();
   const block = E.pcbComponentBlock({
     compId,
     x: Number(opts.x), y: Number(opts.y),
     angle: opts.angle !== undefined ? Number(opts.angle) : 90,
-    deviceUuid: entry.deviceUuid,
-    deviceName: entry.deviceTitle,
-    footprintUuid: entry.footprintUuid,
-    refdes: opts.refdes || entry.designator,
+    deviceUuid,
+    deviceName: deviceTitle,
+    footprintUuid: fp.footprintUuid,
+    refdes: opts.refdes || sym.designator,
     uniqueId: E.nextUniqueId(lines),
-    pads: entry.footprintElems.pads.map((p) => ({
+    pads: fp.footprintElems.pads.map((p) => ({
       num: p.num, elemId: p.elemId, net: netsByNum[p.num] || ''
     })),
-    attrFootprint: entry.footprintElems.attrFootprint,
-    attrDesignator: entry.footprintElems.attrDesignator,
-    zIndexFootprint: entry.attrZ.footprint,
-    zIndexDesignator: entry.attrZ.designator,
+    attrFootprint: fp.footprintElems.attrFootprint,
+    attrDesignator: fp.footprintElems.attrDesignator,
+    zIndexFootprint: fp.attrZ.footprint,
+    zIndexDesignator: fp.attrZ.designator,
     ticketBase: E.maxTicketOfLines(lines) + 1
   });
   E.appendLines(file, block.lines);
   project.save();
-  console.log(`placed ${opts.refdes || entry.designator} (${entry.deviceTitle}) at ${opts.x},${opts.y} on ${opts.pcb}`);
+  console.log(`placed ${opts.refdes || sym.designator} (${deviceTitle}) at ${opts.x},${opts.y} on ${opts.pcb}`);
   console.log(`  component id: ${compId}${nets.size ? `, nets: ${[...nets].join(', ')}` : ''}`);
 }
 

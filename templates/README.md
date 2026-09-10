@@ -13,6 +13,44 @@
 
 目录约定与记录格式见 [docs/format-reference.md](../docs/format-reference.md)；完整可打开的示例工程见 [examples/blink](../examples/blink)。
 
+## Library（预置元件模板）
+
+`library/{symbol,footprint}/` 是随 skill 分发的**预置模板库**。放置元件时**优先**在这里解析（add-symbol/add-footprint 预置优先���；预置没有的才用 generate-*/load-library 生成工程临时条目（写 `<project>/.tmp/library/`，完工后 cleanup.js 删除）。
+
+约定：
+
+- **文件名 = 条目 name = title**（文档内 META title 一致）；自定义条目不得与预置同名（generate-*/load-library 会拒绝，放置时预置优先）
+- `symbol/` 条目 kind：`symbol`（普通元件，symbolDoc+placement）、`power`（电源/地标志，net+style）、`port`（网络端口，net）、`special`（差分对/短路等特殊标志）
+- `footprint/` 条目 kind `footprint`：footprintDoc + footprintElems（PAD elemId 与 Footprint/Designator ATTR id）+ attrZ
+- 普通元件不暂存 DEVICE 文档：add-symbol/add-footprint 放置时现场合成；power/port/special 条目内嵌的 DEVICE doc 在嵌入前改写为工程 client
+- 来源：elibu 为真实客户端导出（`scripts/tools/split-elibu.js` 拆解），blink 为 examples/blink 派生
+
+symbol 预置：
+
+| Name | kind | 说明 |
+| --- | --- | --- |
+| `RES` `CAP` `IND` `DIODE` `TEST_POINT` | symbol | 常用元件（designator R?/C?/L?/D?/TP?） |
+| `LED` | symbol | 发光二极管（designator D?，blink 派生） |
+| `GND` `AGND` `PGND` | power | 地标志（style down，net 同名） |
+| `5V` `VCC` | power | 电源标志（style up，net 同名） |
+| `PORT_IN` `PORT_OUT` `PORT_BI` | port | NetPort（net IN/OUT/BI） |
+| `OFFPAGE_IN` `OFFPAGE_OUT` `OFFPAGE_BI` | port | 离图连接器（net IN/OUT/BI） |
+| `DIFF_PAIR` `SHORT` | special | 差分对标志 / 短路标志（放置未经真机验证） |
+| `A4` `A3` | symbol | 图框符号（仅作参考，图页框架由 init.js 自动放置） |
+
+footprint 预置：
+
+| Name | pads | designator | 说明 |
+| --- | --- | --- | --- |
+| `R0402` `R0603` | 2 | R? | 电阻封装 |
+| `C0402` `C0603` | 2 | C? | 电容封装（0402 为 R0402 几何派生） |
+| `L0402` `L0603` | 2 | L? | 电感封装（0402 为 R0402 几何派生） |
+| `LED0603` | 2 | D? | LED 封装（blink 派生） |
+| `SMA` | 2 | U? | SMA 二极管封装（1N4007 配套） |
+| `TP0.5` | 1 | U? | 测试点 0.5mm |
+
+查看与检索：`node scripts/load-library.js list`（加 `--dir` 同时列出工程临时条目）、`show --name <条目>`。
+
 验证手工搭建的工程：
 
 ```bash

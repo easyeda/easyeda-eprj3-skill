@@ -2,16 +2,16 @@
 
 An AI-agent skill that teaches any coding assistant (Claude Code, Codex, Cursor, Copilot, Continue, Cline, Roo, Windsurf, Trae, Qoder, etc.) to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format.
 
-The skill ships a complete set of cross-platform Node.js scripts so the AI can:
+The skill ships a complete set of cross-platform Node.js scripts plus a **preset template library** (common symbols & footprints split from a real-client export) so the AI can:
 
 - Bootstrap a new `.eprj3` project (schematic + PCB + panel)
-- Generate symbols / footprints from pin & pad specs, combine them into devices
-- Stage power symbols (VCC / GND / ...) and net ports with correct special-device metadata
+- Place preset library templates (RES / CAP / LED / GND / VCC / net ports / R0603 / ...) resolved first on every placement
+- Generate custom symbols / footprints from pin & pad specs into a per-project temp staging area
 - Place components, power symbols and ports on sheets, wire them, label nets
 - Place free text and graphic shapes on sheets (TEXT / RECT / POLY / CIRCLE / ELLIPSE / ARC / BEZIER)
 - Place footprints on the PCB and bind pads to nets, draw copper tracks, vias, graphics, copper pours, static fills and keepout regions
 - Renumber reference designators
-- Validate the format against the invariants of the official example
+- Validate the format against the invariants of the official example, then clean up the temp staging area
 - Open the finished project in the **EasyEDA Pro / LCEDA Pro offline client**
 
 KiCad → eprj3 conversion is intentionally out of scope — it lives in the separate **kicad-to-easyeda-eprj3** project. `.elibz2` library import is not supported.
@@ -29,10 +29,8 @@ easyeda-eprj3-skill/
 │   ├── init.js
 │   ├── generate-symbol.js
 │   ├── generate-footprint.js
-│   ├── load-library.js    ← combine symbol+footprint → device; stage power symbols & net ports
-│   ├── add-symbol.js
-│   ├── add-power.js
-│   ├── add-port.js
+│   ├── load-library.js    ← stage power symbols & net ports; list/show the two-tier library
+│   ├── add-symbol.js      ← unified schematic placement (symbol/power/port/special)
 │   ├── add-footprint.js
 │   ├── add-wire.js
 │   ├── add-netlabel.js
@@ -46,10 +44,14 @@ easyeda-eprj3-skill/
 │   ├── add-fill.js        ← static copper fill
 │   ├── add-region.js      ← keepout region
 │   ├── set-refdes.js
+│   ├── cleanup.js         ← remove the project's .tmp staging area
 │   ├── validate.js
 │   ├── open.js
 │   ├── lib/               ← shared record parser / writer modules
-│   └── tools/             ← audit-format.js (schema cross-check)
+│   └── tools/             ← split-elibu.js, audit-format.js (schema cross-check)
+├── templates/
+│   ├── library/           ← preset symbol/footprint templates (resolved first on placement)
+│   └── *.esch2 / *.epcb2 …← minimal project skeleton files
 ├── install/               ← per-agent install guides
 ├── docs/
 │   ├── format-reference.md
@@ -69,28 +71,31 @@ cd easyeda-eprj3-skill
 # 1) Bootstrap a project
 node scripts/init.js --dir ./myboard --name myboard
 
-# 2) Stage library entries: symbol + footprint -> device, plus power symbols
-node scripts/generate-symbol.js from-pins --dir ./myboard --name RES --designator R --pins "1;2"
-node scripts/generate-footprint.js from-pads --dir ./myboard --name FP0402 --designator R \
-  --pads "1:-16.54:0:31.5:35.43;2:16.54:0:31.5:35.43" \
-  --outline "R,-27.56,-19.69,55.12,39.37" --silk "rect,-27.56,-19.69,27.56,19.69"
-node scripts/load-library.js device --dir ./myboard --symbol RES --footprint FP0402 --name R0402
-node scripts/load-library.js power --dir ./myboard --net VCC
-node scripts/load-library.js power --dir ./myboard --net GND --style down
-node scripts/load-library.js port --dir ./myboard --net SIG
+# 2) Check the preset template library (RES, CAP, LED, GND/VCC, net ports, R0603, ...)
+node scripts/load-library.js list
 
-# 3) Place components / power / ports / wires / labels on the sheet
-node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --lib R0402 --x 300 --y -440
-node scripts/add-power.js  --dir ./myboard --sch Schematic1 --sheet P1 --lib VCC --x 300 --y -500
-node scripts/add-port.js   --dir ./myboard --sch Schematic1 --sheet P1 --lib PORT_SIG --x 460 --y -440
+# 3) Place presets directly — they resolve first, nothing to stage
+node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol RES --footprint R0603 --x 300 --y -440
+node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol VCC --x 300 --y -500
+node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol PORT_IN --x 460 --y -440
+
+# 4) No preset fits? Stage temp entries under ./myboard/.tmp/library/
+node scripts/generate-symbol.js from-pins --dir ./myboard --name MY_CONN --designator J --pins "1:A;2:B"
+node scripts/generate-footprint.js from-pads --dir ./myboard --name MY_FP --designator J \
+  --pads "1:0:0:35:35;2:100:0:35:35" --outline "R,-25,-25,150,50"
+node scripts/load-library.js power --dir ./myboard --net V3P3
+node scripts/load-library.js port  --dir ./myboard --net SIG --name PORT_SIG
+node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol MY_CONN --footprint MY_FP --x 500 --y -440
+
+# 5) Wires / labels / text / shapes
 node scripts/add-wire.js   --dir ./myboard --sch Schematic1 --sheet P1 --segs "300,-420,300,-380" --net SIG
 node scripts/add-netlabel.js --dir ./myboard --sch Schematic1 --sheet P1 --net SIG --at 300,-400
 node scripts/add-text.js   --dir ./myboard --sch Schematic1 --sheet P1 --value "5V rail" --x 300 --y -300
 node scripts/add-shape.js rect --dir ./myboard --sch Schematic1 --sheet P1 --x1 200 --y1 -200 --x2 400 --y2 -300
 node scripts/set-refdes.js renumber --dir ./myboard --sch Schematic1 --sheet P1 --prefix R
 
-# 4) Place the footprint on the PCB, bind pads to nets, route a track
-node scripts/add-footprint.js --dir ./myboard --pcb PCB1 --lib R0402 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
+# 6) Place footprints on the PCB, bind pads to nets, route a track
+node scripts/add-footprint.js --dir ./myboard --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
 node scripts/add-track.js     --dir ./myboard --pcb PCB1 --net SIG --x1 300 --y1 316.54 --x2 450 --y2 316.54
 node scripts/add-via.js       --dir ./myboard --pcb PCB1 --x 700 --y 316.54 --net SIG
 node scripts/add-pcb-shape.js rect --dir ./myboard --pcb PCB1 --x 500 --y 500 --w 400 --h 300
@@ -99,14 +104,15 @@ node scripts/add-pcb-text.js  --dir ./myboard --pcb PCB1 --value "REV A" --x 200
 node scripts/add-fill.js rect --dir ./myboard --pcb PCB1 --net GND --x 100 --y 100 --w 400 --h 300
 node scripts/add-region.js rect --dir ./myboard --pcb PCB1 --prohibit "COMPONENT,TRACK" --x 200 --y 200 --w 300 --h 200
 
-# 5) Validate
+# 7) Validate, then remove the temp staging area
 node scripts/validate.js --dir ./myboard
+node scripts/cleanup.js --dir ./myboard
 
-# 6) Open in EasyEDA Pro
+# 8) Open in EasyEDA Pro
 node scripts/open.js open --dir ./myboard
 ```
 
-A complete worked example lives in [`examples/blink`](examples/blink) — regenerate it with the exact commands above (see [`examples/blink`](examples/blink) and the smoke test).
+A complete worked example lives in [`examples/blink`](examples/blink) (generated by these scripts; its LED / R0402 library entries live on as preset templates).
 
 ## Quick start (AI agents)
 

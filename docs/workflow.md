@@ -25,48 +25,49 @@ node scripts/init.js --dir <dir> --name <name> \
 
 Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet document, the PCB document, and the panel in one shot.
 
-## 3. Stage the library
+## 3. Library: presets first, then temp staging
 
-Entries are staged as JSON under `<project>/library/<name>.json` (tooling metadata — the client never reads it). For each part:
+The skill ships a **preset template library** at `templates/library/{symbol,footprint}/` (committed with the skill — `RES` `CAP` `IND` `DIODE` `LED` `TEST_POINT`, power flags `GND` `AGND` `PGND` `5V` `VCC`, net ports `PORT_IN/OUT/BI` + off-page connectors, `DIFF_PAIR`/`SHORT` flags, footprints `R0402/R0603` `C0402/C0603` `L0402/L0603` `LED0603` `SMA` `TP0.5`). Every placement resolves presets FIRST, so common parts need no staging at all:
 
 ```bash
-node scripts/generate-symbol.js from-pins --dir <dir> --name RES \
-  --title Resistor --designator R --tags "电阻,R" --pins "1;2"
+node scripts/load-library.js list        # preset catalog; add --dir to include project staging
+node scripts/load-library.js show --name RES
+```
+
+No preset fits? Stage a **temp entry** under `<project>/.tmp/library/` (tooling metadata — the client never reads it; deleted by `cleanup.js` at the end). Temp names must not shadow a preset:
+
+```bash
+node scripts/generate-symbol.js from-pins --dir <dir> --name <sym> \
+  --designator R --pins "1;2"
 # pin spec: "num" | "num:name" | "num:name:x:y:rotation" ; ';' separated
 # auto-layout: two columns at x=±20, pin length 10, pitch 10
 
-node scripts/generate-footprint.js from-pads --dir <dir> --name FP0402 \
-  --title R0402 --designator R \
+node scripts/generate-footprint.js from-pads --dir <dir> --name <fp> \
+  --designator R \
   --pads "1:-16.54:0:31.5:35.43;2:16.54:0:31.5:35.43" \
   --outline "R,-27.56,-19.69,55.12,39.37" \
   --silk "rect,-27.56,-19.69,27.56,19.69"    # or path,x1,y1,x2,y2,...
 
-node scripts/load-library.js device --dir <dir> --symbol RES --footprint FP0402 \
-  --name R0402 --title R0402
+node scripts/load-library.js power --dir <dir> --net <NET> [--style up|down]
+node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
 ```
 
-Power symbols are their own kind (special device without a designator):
-
-```bash
-node scripts/load-library.js power --dir <dir> --net VCC            # arrow up
-node scripts/load-library.js power --dir <dir> --net GND --style down
-node scripts/load-library.js port  --dir <dir> --net SIG            # net port flag
-```
-
-Inspect or prune the staging area with `load-library.js list|show|remove`.
+Inspect or prune with `load-library.js list|show|remove` (`remove` only deletes temp entries — presets are committed with the skill).
 
 ## 4. Place on schematic
 
+`add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port, `special` → DIFF_PAIR/SHORT flag):
+
 ```bash
 node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
-  --lib R0402 --x 300 --y -440 --rotation 90 [--refdes R1]
-node scripts/add-power.js  --dir <dir> --sch Schematic1 --sheet P1 \
-  --lib VCC --x 300 --y -500
-node scripts/add-port.js   --dir <dir> --sch Schematic1 --sheet P1 \
-  --lib PORT_SIG --x 460 --y -440
+  --symbol RES --footprint R0603 --x 300 --y -440 --rotation 90 [--refdes R1] [--name <device title>]
+node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
+  --symbol VCC --x 300 --y -500
+node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
+  --symbol PORT_IN --x 460 --y -440
 ```
 
-Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
+`--footprint` pairs the symbol with a footprint entry (preset or temp) and the DEVICE doc is composed on the fly — there is no device staging. Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
 
 ## 5. Annotate (text & graphics)
 
@@ -109,7 +110,7 @@ node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
 ## 8. PCB placement and routing
 
 ```bash
-node scripts/add-footprint.js --dir <dir> --pcb PCB1 --lib R0402 \
+node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0603 \
   --x 300 --y 300 --angle 90 --refdes R1 --nets "1:VCC,2:SIG"
 node scripts/add-track.js --dir <dir> --pcb PCB1 --net SIG \
   --x1 300 --y1 316.54 --x2 450 --y2 316.54 --layer 1 --width 10
@@ -155,7 +156,15 @@ node scripts/validate.js --dir <dir>
 
 Exit code 0 = clean. The validator checks index shape, container structure, doc uuid/ticket uniqueness, Device/Symbol/Footprint reference integrity, wire/net linkage, and PCB pad/net references. Fix the reported records with the appropriate script and re-run — do not hand-edit records unless you have read [`format-reference.md`](format-reference.md).
 
-## 10. Open
+## 10. Clean up
+
+```bash
+node scripts/cleanup.js --dir <dir>
+```
+
+Deletes `<dir>/.tmp/` — the temp library entries staged during authoring. The finished project is self-contained (docs are embedded in the containers) and the preset templates stay in the skill, so nothing references `.tmp/` afterwards. Silent when there is nothing to remove.
+
+## 11. Open
 
 ```bash
 node scripts/open.js open --dir <dir>
@@ -169,7 +178,7 @@ If `open.js` cannot find the client, the script lists every location it searched
 
 Both English (`easyeda-pro`) and Chinese (`lceda-pro`) brand executables are recognized.
 
-## 11. Hand off
+## 12. Hand off
 
 Tell the user:
 

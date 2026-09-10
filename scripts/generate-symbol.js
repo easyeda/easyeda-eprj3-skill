@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * generate-symbol.js — build a schematic SYMBOL doc and stage it under
- * <project>/library/<name>.json (kind "symbol").
+ * generate-symbol.js — build a schematic SYMBOL doc and stage it as a TEMP
+ * library entry: <project>/.tmp/library/symbol/<name>.json (kind "symbol").
  *
- * The staged entry is raw material: combine it with a footprint into a device
- * via load-library.js before placing it with add-symbol.js.
+ * Check the preset templates first (load-library.js list) — stage a custom
+ * symbol only when no preset fits. Entries named like a preset are rejected:
+ * placement resolves presets first, so a shadowing name could never be used.
  *
  * Subcommand:
- *   from-pins --dir <project> --name <lib-name> [--title T] [--designator R]
+ *   from-pins --dir <project> --name <lib-name> [--designator R]
  *             [--description D] [--tags "a,b"] --pins "<spec>"
  *
  * Pin spec, ';'-separated:
@@ -23,8 +24,7 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
-  { name: 'name', desc: 'library entry name', required: true },
-  { name: 'title', desc: 'symbol title (default: entry name)' },
+  { name: 'name', desc: 'library entry name (must not shadow a preset)', required: true },
   { name: 'designator', desc: 'designator prefix, e.g. R -> R?' },
   { name: 'description', desc: 'symbol description' },
   { name: 'tags', desc: 'comma-separated tags' },
@@ -84,10 +84,13 @@ function main() {
   if (cmd !== 'from-pins') die(`unknown subcommand "${cmd}" (want: from-pins)`);
   const { opts } = parseArgs(argv.slice(1), SCHEMA);
   const project = E.Project.load(opts.dir);
+  if (project.presetHas(opts.name)) {
+    die(`entry name "${opts.name}" shadows a preset template; pick another name (placement resolves presets first)`);
+  }
 
   const pins = parsePins(opts.pins);
   const { h } = autoLayout(pins);
-  const title = opts.title || opts.name;
+  const title = opts.name;
   const designator = opts.designator ? `${opts.designator}?` : 'U?';
   const uuid = E.uuid16();
   const symbolDoc = E.buildSymbolDoc({
@@ -113,18 +116,18 @@ function main() {
     designator
   });
 
-  project.saveLibrary(opts.name, {
+  project.saveLibrary({
     name: opts.name,
     kind: 'symbol',
+    title,
     symbolUuid: uuid,
-    symbolTitle: title,
     designator,
     description: opts.description || '',
     symbolDoc,
     placement: readPlacement(symbolDoc)
   });
-  console.log(`staged symbol "${opts.name}" (${symbolDoc.length} doc lines) -> library/${opts.name}.json`);
-  console.log(`next: node scripts/load-library.js device --dir ${opts.dir} --symbol ${opts.name} [--footprint <fp>]`);
+  console.log(`staged symbol "${opts.name}" (${symbolDoc.length} doc lines) -> .tmp/library/symbol/${opts.name}.json`);
+  console.log(`next: node scripts/add-symbol.js --dir ${opts.dir} --sch <sch> --sheet <sheet> --symbol ${opts.name} [--footprint <fp>] --x <x> --y <y>`);
 }
 
 main();

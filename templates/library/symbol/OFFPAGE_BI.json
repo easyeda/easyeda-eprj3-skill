@@ -1,0 +1,32 @@
+{
+  "name": "OFFPAGE_BI",
+  "kind": "port",
+  "title": "OFFPAGE_BI",
+  "net": "BI",
+  "symbolUuid": "599fdcea92c6d60f",
+  "deviceUuid": "d952866fd05df26b",
+  "portSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"599fdcea92c6d60f\",\"updateTime\":1788956720012,\"version\":\"1762175166855\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":49,\"id\":\"META\"}||{\"title\":\"OFFPAGE_BI\",\"description\":\"\",\"tags\":[],\"docType\":25,\"source\":\"3ec62df9c2e645d79cb23429c9f3ba3b|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":39,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"POLY\",\"ticket\":40,\"id\":\"e2\"}||{\"points\":[{\"x\":15,\"y\":0,\"hashed\":1076756480},{\"x\":11,\"y\":-4,\"hashed\":-2143944704}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":3,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"POLY\",\"ticket\":41,\"id\":\"e3\"}||{\"points\":[{\"x\":15,\"y\":0,\"hashed\":1076756480},{\"x\":11,\"y\":4,\"hashed\":3538944}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":4,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"POLY\",\"ticket\":42,\"id\":\"e4\"}||{\"points\":[{\"x\":3,\"y\":0,\"hashed\":1074266112},{\"x\":7,\"y\":-4,\"hashed\":-2146697216}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":5,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"POLY\",\"ticket\":43,\"id\":\"e5\"}||{\"points\":[{\"x\":3,\"y\":0,\"hashed\":1074266112},{\"x\":7,\"y\":4,\"hashed\":786432}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":6,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"POLY\",\"ticket\":44,\"id\":\"e6\"}||{\"points\":[{\"x\":3,\"y\":0,\"hashed\":1074266112},{\"x\":8,\"y\":0,\"hashed\":1075838976}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":7,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"POLY\",\"ticket\":45,\"id\":\"e7\"}||{\"points\":[{\"x\":15,\"y\":0,\"hashed\":1076756480},{\"x\":10,\"y\":0,\"hashed\":1076101120}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":8,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"PIN\",\"ticket\":46,\"id\":\"e8\"}||{\"display\":true,\"x\":0,\"y\":0,\"length\":3,\"rotation\":0,\"color\":null,\"pinShape\":\"NONE\",\"zIndex\":9,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":47,\"id\":\"e0\"}||{\"x\":20,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"LEFT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":true,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"9862630dd50700b8\",\"zIndex\":1,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":48,\"id\":\"e1\"}||{\"x\":100,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"LEFT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Relevance\",\"fillColor\":null,\"parentId\":\"9862630dd50700b8\",\"zIndex\":2,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":17,\"id\":\"e11\"}||{\"x\":-5,\"y\":-10,\"rotation\":0,\"color\":\"#FFFF00\",\"fontFamily\":\"Arial\",\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"RIGHT_TOP\",\"value\":\"BI\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Type\",\"fillColor\":\"#FFFF00\",\"parentId\":\"e8\",\"zIndex\":12,\"locked\":false,\"partId\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"9862630dd50700b8\"}||{\"BBOX\":[2.5,-4.5,15.5,4.5],\"title\":\"9862630dd50700b8\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"9b49c296ceeeb207\"}||{\"dataType\":\"POLY\",\"max\":1}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":12,\"id\":\"57d037e35916e618\"}||{\"dataType\":\"PIN\",\"max\":7}|",
+    "{\"type\":\"ATTR\",\"ticket\":14,\"id\":\"e9\"}||{\"partId\":\"9862630dd50700b8\",\"groupId\":\"\",\"locked\":false,\"zIndex\":10,\"parentId\":\"e8\",\"key\":\"Pin Name\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":6,\"y\":0,\"rotation\":0,\"color\":\"#FFFFFF\",\"fillColor\":null,\"fontFamily\":\"Arial\",\"fontSize\":8,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_MIDDLE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":15,\"id\":\"e10\"}||{\"partId\":\"9862630dd50700b8\",\"groupId\":\"\",\"locked\":false,\"zIndex\":11,\"parentId\":\"e8\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":6.5,\"y\":0,\"rotation\":0,\"color\":\"#FFFF00\",\"fillColor\":null,\"fontFamily\":\"Arial\",\"fontSize\":8,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_TOP\"}|"
+  ],
+  "portDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"0000000000000000\",\"uuid\":\"d952866fd05df26b\",\"updateTime\":1788958715082,\"version\":\"1788958715082\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"OFFPAGE_BI\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"f95ff1eb5a261717a3206ca9f8371081|c2f533bacb4c55ad35a6d31164e91e7a\",\"images\":[],\"attributes\":{\"Symbol\":\"599fdcea92c6d60f\",\"Name\":\"BI\",\"Description\":\"\",\"Global Net Name\":\"BI\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"OFFPAGE_BI\\\",\\\"uuid\\\":\\\"599fdcea92c6d60f\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}

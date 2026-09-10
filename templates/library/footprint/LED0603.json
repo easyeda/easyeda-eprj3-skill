@@ -1,8 +1,7 @@
 {
-  "name": "FP_LED0603",
+  "name": "LED0603",
   "kind": "footprint",
   "footprintUuid": "b157e921d148c061",
-  "footprintTitle": "LED0603",
   "designator": "D?",
   "description": "",
   "footprintDoc": [
@@ -54,5 +53,6 @@
   "attrZ": {
     "footprint": 5,
     "designator": 6
-  }
+  },
+  "title": "LED0603"
 }

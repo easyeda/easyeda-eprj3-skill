@@ -2,7 +2,6 @@
   "name": "LED",
   "kind": "symbol",
   "symbolUuid": "bf65bd99e2012fff",
-  "symbolTitle": "LED",
   "designator": "D?",
   "description": "",
   "symbolDoc": [
@@ -26,5 +25,6 @@
     "nameZ": 10,
     "designatorZ": 11,
     "symbolZ": 12
-  }
+  },
+  "title": "LED"
 }

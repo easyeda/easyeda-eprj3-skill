@@ -16,9 +16,12 @@ Compact reference for the records the scripts in this skill produce — verified
 │   └── <pcbTitle>.epcb2                 ← PCB container (docs + PCB main doc)
 ├── panel/
 │   └── Panel1.epan2                     ← panel container
-└── library/                             ← staged entries written by this skill's
-                                            generate-*/load-library scripts. Tooling
-                                            metadata only — the client does not read it.
+└── .tmp/library/                        ← generation-time only: temp entries staged by
+                                            this skill's generate-*/load-library scripts.
+                                            Tooling metadata — the client never sees it;
+                                            cleanup.js deletes the whole .tmp/ folder when
+                                            authoring ends. Preset templates live in the
+                                            skill repo (templates/library/{symbol,footprint}/).
 ```
 
 The client resolves documents through the index `profile`, following these path conventions. Extra root-level files are tolerated (the official example itself ships README files inside the project directory).

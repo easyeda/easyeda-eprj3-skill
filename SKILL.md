@@ -43,31 +43,39 @@ All coordinates are **mil** unless a script's help says otherwise.
 1.  Resolve paths & project name                    (AskUserQuestion)
 2.  node scripts/init.js --dir <dir> --name <name>
     [--schematic Schematic1] [--sheet P1] [--pcb PCB1]
-3.  Stage library entries:
+3.  Pick library entries — check the preset templates first:
+      node scripts/load-library.js list             (presets; add --dir to also list project staging)
+    Place a preset directly (resolved first on every placement), e.g.:
+      node scripts/add-symbol.js ... --symbol RES --footprint R0603
+      node scripts/add-symbol.js ... --symbol VCC             (power flag)
+      node scripts/add-symbol.js ... --symbol PORT_IN         (net port)
+      node scripts/add-footprint.js ... --symbol RES --footprint R0603
+    No preset fits? Stage a temp entry under <dir>/.tmp/library/
+    (names must not shadow a preset — the scripts reject that):
       node scripts/generate-symbol.js from-pins --dir <dir> --name <sym>
-           [--title T] [--designator R] [--pins "1;2:A;3:x:y:rot"]
+           [--designator R] [--pins "1;2:A;3:x:y:rot"]
       node scripts/generate-footprint.js from-pads --dir <dir> --name <fp>
            [--pads "1:x:y:w:h;..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
-      node scripts/load-library.js device --dir <dir> --symbol <sym> --footprint <fp>
-           [--name <dev>] [--title T]
       node scripts/load-library.js power --dir <dir> --net VCC [--style up|down]
       node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
-4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p> --lib <device>
-    --x <mil> --y <mil> [--rotation 0|90|180|270] [--refdes R1]
-5.  node scripts/add-power.js --dir <dir> --sch <s> --sheet <p> --lib VCC --x .. --y ..
-    node scripts/add-port.js  --dir <dir> --sch <s> --sheet <p> --lib PORT_SIG --x .. --y ..
-6.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
+4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p>
+    --symbol <entry> [--footprint <fp>] --x <mil> --y <mil>
+    [--rotation 0|90|180|270] [--refdes R1] [--name <device title>]
+    (unified placement, dispatched by entry kind: symbol -> component block,
+     power -> power flag, port -> net port, special -> DIFF_PAIR/SHORT flag)
+5.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
     --segs "x1,y1,x2,y2;..." [--net SIG]
-7.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
-8.  node scripts/add-text.js --dir <dir> --sch <s> --sheet <p>
+6.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
+7.  node scripts/add-text.js --dir <dir> --sch <s> --sheet <p>
     --value "text" --x .. --y .. [--size N] [--rotation N]
     node scripts/add-shape.js <rect|poly|circle|ellipse|arc|bezier> --dir <dir>
     --sch <s> --sheet <p> <shape options>                    (annotation graphics)
-9.  node scripts/set-refdes.js renumber --dir <dir> --sch <s> --sheet <p> --prefix R
+8.  node scripts/set-refdes.js renumber --dir <dir> --sch <s> --sheet <p> --prefix R
     (or: set --designator R1 --value R5)
-10. node scripts/add-footprint.js --dir <dir> --pcb <pcb> --lib <device>
-    --x <mil> --y <mil> [--angle 90] [--refdes R1] [--nets "1:VCC,2:GND"]
-11. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
+9.  node scripts/add-footprint.js --dir <dir> --pcb <pcb>
+    --symbol <entry> --footprint <fp> --x <mil> --y <mil>
+    [--angle 90] [--refdes R1] [--nets "1:VCC,2:GND"]
+10. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
     [--layer 1] [--width 10]
     node scripts/add-via.js  --dir <dir> --pcb <pcb> --x .. --y .. [--net SIG]
     node scripts/add-pcb-shape.js <rect|poly|circle|arc> --dir <dir> --pcb <pcb> ...
@@ -77,12 +85,13 @@ All coordinates are **mil** unless a script's help says otherwise.
     node scripts/add-fill.js <rect|poly> --dir <dir> --pcb <pcb> [--net N] ...
     node scripts/add-region.js <rect|poly> --dir <dir> --pcb <pcb>
     --prohibit "COMPONENT,TRACK" ...                        (keepout region)
-12. node scripts/validate.js --dir <dir>            (always run this)
-13. If validation reports errors, fix and re-run until clean.
+11. node scripts/validate.js --dir <dir>            (always run this)
+12. If validation reports errors, fix and re-run until clean.
+13. node scripts/cleanup.js --dir <dir>             (remove <dir>/.tmp — run once validation passes)
 14. node scripts/open.js open --dir <dir>           (launch the offline client)
 ```
 
-The staged entries live in `<project>/library/<name>.json` (tooling metadata — the client ignores it; `load-library.js list` shows what is staged, `show --lib <name>` dumps an entry, `remove --lib <name>` deletes one).
+Two library tiers: **preset templates** ship with the skill under `templates/library/{symbol,footprint}/` (committed with the skill, resolved FIRST on every placement) and **temp entries** generated during authoring under `<project>/.tmp/library/` (tooling metadata — the client never sees it). `load-library.js list` shows both tiers (`preset`/`tmp`), `show --name <entry>` dumps one, `remove --name <entry>` deletes a temp entry (presets are committed — not removable). Temp entry names must not shadow a preset name.
 
 `generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch 10. Pass `num:name:x:y:rotation` entries for explicit placement.
 
@@ -116,8 +125,10 @@ If the user prefers a one-time override without saving, set `$EASYEDA_PRO_CLIENT
 <dir>/sch/<schematic>/<schematic>.evar   empty (variant data)
 <dir>/pcb/<pcb>.epcb2                    PCB docs: embedded SYMBOL/FOOTPRINT/DEVICE docs + PCB main
 <dir>/panel/Panel1.epan2                 panel document
-<dir>/library/<name>.json                staged library entries (tooling metadata, client-ignored)
+<dir>/.tmp/library/                      temp library entries (generation-time only; cleanup.js deletes it)
 ```
+
+Preset library templates (always consulted first when placing) live in the skill repo at `templates/library/{symbol,footprint}/` — see [templates/README.md](templates/README.md) for the entry catalog.
 
 Key format invariants (enforced by `validate.js`):
 
@@ -134,18 +145,16 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 | Script | Purpose |
 | --- | --- |
 | `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB, panel). |
-| `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → `library/<name>.json`. |
-| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → `library/<name>.json`. |
-| `scripts/load-library.js` | Combine symbol+footprint into a device, or stage power symbols / net ports (`device`/`power`/`port`/`list`/`show`/`remove`). |
-| `scripts/add-symbol.js` | Place a staged device on a schematic sheet. |
-| `scripts/add-power.js` | Place a staged power symbol (VCC/GND/...) on a sheet. |
-| `scripts/add-port.js` | Place a staged net port (NetPort symbol, docType 19) on a sheet. |
+| `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → temp entry `<dir>/.tmp/library/symbol/<name>.json`. |
+| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
+| `scripts/load-library.js` | Stage power flags / net ports as temp entries; inspect the two-tier library (`power`/`port`/`list`/`show`/`remove`). |
+| `scripts/add-symbol.js` | Unified schematic placement — resolves the entry preset-first and dispatches by kind (symbol/power/port/special); pairs a symbol with a footprint entry and composes the DEVICE doc on the fly. |
 | `scripts/add-wire.js` | Draw wires (WIRE + LINE records, optional net). |
 | `scripts/add-netlabel.js` | Label the wire under a point with a net name. |
 | `scripts/add-text.js` | Place free text on a sheet (TEXT record). |
 | `scripts/add-pcb-text.js` | Place text on the PCB (STRING record). |
 | `scripts/add-shape.js` | Draw schematic annotation graphics (`rect`/`poly`/`circle`/`ellipse`/`arc`/`bezier`). |
-| `scripts/add-footprint.js` | Place a staged device on the PCB, wiring pads to nets. |
+| `scripts/add-footprint.js` | Place a symbol+footprint pair on the PCB, wiring pads to nets (DEVICE doc composed on the fly). |
 | `scripts/add-track.js` | Draw a copper track segment on the PCB. |
 | `scripts/add-via.js` | Place a via on the PCB. |
 | `scripts/add-pcb-shape.js` | Draw PCB graphics (`rect`/`poly`/`circle` → POLY, `arc` → ARC). |
@@ -154,9 +163,10 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 | `scripts/add-region.js` | Add a keepout/constraint region (REGION record) with `--prohibit "COMPONENT,TRACK"` style rules. |
 | `scripts/set-refdes.js` | Rename or auto-renumber reference designators (`set`/`renumber`). |
 | `scripts/validate.js` | Check format invariants; exit 1 on errors. |
+| `scripts/cleanup.js` | Remove the project's temp staging area (`<dir>/.tmp/`) — run after validation passes. |
 | `scripts/open.js` | Launch / locate / register the offline client (`open`/`where`/`set`/`install`). |
 
-The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`). `scripts/tools/audit-format.js` cross-checks every generated record against the easyeda-pro-format-skill JSON Schemas — run it after changing any record builder:
+The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`). `scripts/tools/split-elibu.js` splits a real-client `.elibu` library export into preset template entries under `templates/library/` (maintainer tool for growing the preset catalog). `scripts/tools/audit-format.js` cross-checks every generated record against the easyeda-pro-format-skill JSON Schemas — run it after changing any record builder:
 
 ```bash
 node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
@@ -174,4 +184,4 @@ node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-sk
 - The generated files follow the official example byte-pattern closely, but full fidelity is only provable in the real client. If the client refuses to open a project, run `node scripts/validate.js --dir <dir>` first, then compare against [`examples/blink`](examples/blink) (a complete, validated sample project).
 - `add-pour` writes the pour region record only — the client recomputes the filled copper (POURED records) when the project is opened. Pour/fill styles are restricted to SOLID, the only mode backed by a real client record. Differential-pair routing, hierarchical multi-sheet navigation, and simulation documents are not authored by these scripts — finish those in the EasyEDA Pro client.
 - Sheet TEXT/shape and PCB STRING/VIA record bodies follow the real samples in the easyeda-pro-format-skill repo (`examples/SCH_PAGE`, `examples/PCB`); everything else mirrors official example records. Known schema-vs-example conflicts (e.g. numeric `groupId`, `pourType` object, POUR/FILL `path` nesting) are documented in `scripts/tools/audit-format.js` — real records win in every case.
-- `<project>/library/` holds the staged entries. The client does not read it; deleting it after generation is harmless.
+- The two-tier library: preset templates (`templates/library/`, mostly split from a real-client `.elibu` export) are committed with the skill; temp entries (`<project>/.tmp/library/`) exist only while authoring and are removed by `cleanup.js` — the finished project contains no library metadata. Placing the `special` entries (`DIFF_PAIR`, `SHORT`) and the `A4`/`A3` drawing-frame symbols has not yet been verified against the real client.

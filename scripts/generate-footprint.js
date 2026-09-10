@@ -1,14 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * generate-footprint.js — build a FOOTPRINT doc and stage it under
- * <project>/library/<name>.json (kind "footprint").
+ * generate-footprint.js — build a FOOTPRINT doc and stage it as a TEMP
+ * library entry: <project>/.tmp/library/footprint/<name>.json (kind
+ * "footprint").
  *
- * Combine with a symbol into a device via load-library.js, then place it on
- * the PCB with add-footprint.js.
+ * Check the preset templates first (load-library.js list) — stage a custom
+ * footprint only when no preset fits. Entries named like a preset are
+ * rejected: placement resolves presets first, so a shadowing name could never
+ * be used. Place it on the PCB with add-footprint.js --footprint.
  *
  * Subcommand:
- *   from-pads --dir <project> --name <lib-name> [--title T] [--designator U?]
+ *   from-pads --dir <project> --name <lib-name> [--designator U]
  *             [--description D] [--tags "a,b"] --pads "<spec>"
  *             [--outline "R,x,y,w,h"] [--silk "<spec>"]
  *
@@ -26,8 +29,7 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
-  { name: 'name', desc: 'library entry name', required: true },
-  { name: 'title', desc: 'footprint title (default: entry name)' },
+  { name: 'name', desc: 'library entry name (must not shadow a preset)', required: true },
   { name: 'designator', desc: 'designator prefix, e.g. R -> R?' },
   { name: 'description', desc: 'footprint description' },
   { name: 'tags', desc: 'comma-separated tags' },
@@ -103,8 +105,11 @@ function main() {
   if (cmd !== 'from-pads') die(`unknown subcommand "${cmd}" (want: from-pads)`);
   const { opts } = parseArgs(argv.slice(1), SCHEMA);
   const project = E.Project.load(opts.dir);
+  if (project.presetHas(opts.name)) {
+    die(`entry name "${opts.name}" shadows a preset template; pick another name (placement resolves presets first)`);
+  }
 
-  const title = opts.title || opts.name;
+  const title = opts.name;
   const designator = opts.designator ? `${opts.designator}?` : 'U?';
   const uuid = E.uuid16();
   const { lines, pads } = E.buildFootprintDoc({
@@ -122,11 +127,11 @@ function main() {
   });
   const attrMeta = readAttrMeta(lines);
 
-  project.saveLibrary(opts.name, {
+  project.saveLibrary({
     name: opts.name,
     kind: 'footprint',
+    title,
     footprintUuid: uuid,
-    footprintTitle: title,
     designator,
     description: opts.description || '',
     footprintDoc: lines,
@@ -137,8 +142,8 @@ function main() {
     },
     attrZ: { footprint: attrMeta.Footprint.zIndex, designator: attrMeta.Designator.zIndex }
   });
-  console.log(`staged footprint "${opts.name}" (${lines.length} doc lines, ${pads.length} pads) -> library/${opts.name}.json`);
-  console.log(`next: node scripts/load-library.js device --dir ${opts.dir} --symbol <sym> --footprint ${opts.name}`);
+  console.log(`staged footprint "${opts.name}" (${lines.length} doc lines, ${pads.length} pads) -> .tmp/library/footprint/${opts.name}.json`);
+  console.log(`next: node scripts/add-footprint.js --dir ${opts.dir} --pcb <pcb> --symbol <sym> --footprint ${opts.name} --x <x> --y <y>`);
 }
 
 main();

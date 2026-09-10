@@ -1,0 +1,30 @@
+{
+  "name": "PORT_OUT",
+  "kind": "port",
+  "title": "PORT_OUT",
+  "net": "OUT",
+  "symbolUuid": "971bcaa3b67a55d9",
+  "deviceUuid": "792a427e7a29df39",
+  "portSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"971bcaa3b67a55d9\",\"updateTime\":1788956639112,\"version\":\"1758699056919\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":25,\"id\":\"META\"}||{\"title\":\"PORT_OUT\",\"description\":\"Netport-OUT\",\"tags\":[],\"docType\":19,\"source\":\"886278409be54d11a143e9ce378c7103|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":14,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"pid8a0e77bacb214e\"}||{\"BBOX\":[0,5,40,-5],\"title\":\"\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":3,\"id\":\"86574dfabc282880\"}||{\"dataType\":\"ATTR\",\"max\":7}|",
+    "{\"type\":\"ATTR\",\"ticket\":17,\"id\":\"e8\"}||{\"x\":0,\"y\":30,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"886278409be54d11a143e9ce378c7103\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Symbol\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":1,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"b34648638df9c4ac\"}||{\"dataType\":\"ATTR\",\"max\":18}|",
+    "{\"type\":\"ATTR\",\"ticket\":24,\"id\":\"e27\"}||{\"x\":50,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"LEFT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":2,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":7,\"id\":\"1a07c1c0453e4637\"}||{\"dataType\":\"PIN\",\"max\":10}|",
+    "{\"type\":\"PIN\",\"ticket\":15,\"id\":\"e11\"}||{\"display\":true,\"x\":0,\"y\":0,\"length\":10,\"rotation\":0,\"color\":null,\"pinShape\":\"NONE\",\"zIndex\":3,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":19,\"id\":\"e12\"}||{\"x\":10,\"y\":0,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"LEFT_MIDDLE\",\"value\":\"OUT\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Name\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":4,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":20,\"id\":\"e15\"}||{\"x\":7,\"y\":0,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Number\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":5,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":21,\"id\":\"e20\"}||{\"x\":0,\"y\":-10,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"OUT\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Type\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":6,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":12,\"id\":\"65afb082066e575d\"}||{\"dataType\":\"POLY\",\"max\":24}|",
+    "{\"type\":\"POLY\",\"ticket\":16,\"id\":\"e25\"}||{\"points\":[{\"x\":10,\"y\":-5,\"hashed\":-2144337920},{\"x\":30,\"y\":-5,\"hashed\":-2144731136},{\"x\":40,\"y\":0,\"hashed\":1078198272},{\"x\":30,\"y\":5,\"hashed\":2752512},{\"x\":10,\"y\":5,\"hashed\":3145728},{\"x\":10,\"y\":-5,\"hashed\":-2144337920}],\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":null,\"fillStyle\":null,\"closed\":true,\"zIndex\":7,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":22,\"id\":\"b424e65c4dd7d3e3\"}||{\"x\":100,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"LEFT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":null,\"key\":\"Relevance\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":10,\"partId\":\"pid8a0e77bacb214e\"}|"
+  ],
+  "portDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"0000000000000000\",\"uuid\":\"792a427e7a29df39\",\"updateTime\":1788958715076,\"version\":\"1788958715076\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"PORT_OUT\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"351a33c8e28734a9baa70e8b98ce621e|f3b8f24f527ba31f4b2504df2c30e7d8\",\"images\":[],\"attributes\":{\"Symbol\":\"971bcaa3b67a55d9\",\"Name\":\"OUT\",\"Description\":\"\",\"Global Net Name\":\"OUT\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"PORT_OUT\\\",\\\"uuid\\\":\\\"971bcaa3b67a55d9\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}

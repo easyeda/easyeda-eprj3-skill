@@ -1,0 +1,33 @@
+{
+  "name": "PORT_IN",
+  "kind": "port",
+  "title": "PORT_IN",
+  "net": "IN",
+  "symbolUuid": "747d5a48fb1e05e4",
+  "deviceUuid": "cb878672198c013c",
+  "portSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"747d5a48fb1e05e4\",\"updateTime\":1788956639111,\"version\":\"1758698978696\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":53,\"id\":\"META\"}||{\"title\":\"PORT_IN\",\"description\":\"Netport-IN\",\"tags\":[],\"docType\":19,\"source\":\"9efc5969ac6c4c83b5123274296715d2|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":44,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PIN\",\"ticket\":45,\"id\":\"e11\"}||{\"display\":true,\"x\":0,\"y\":0,\"length\":10,\"rotation\":180,\"color\":null,\"pinShape\":\"NONE\",\"zIndex\":3,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"POLY\",\"ticket\":46,\"id\":\"e25\"}||{\"points\":[{\"x\":-10,\"y\":0,\"hashed\":-1071382528},{\"x\":-20,\"y\":-5,\"hashed\":2097152},{\"x\":-40,\"y\":-5,\"hashed\":5242880},{\"x\":-40,\"y\":5,\"hashed\":-2142240768},{\"x\":-20,\"y\":5,\"hashed\":-2145386496},{\"x\":-10,\"y\":0,\"hashed\":-1071382528}],\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":null,\"fillStyle\":null,\"closed\":true,\"zIndex\":7,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":47,\"id\":\"e8\"}||{\"x\":0,\"y\":30,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"9efc5969ac6c4c83b5123274296715d2\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Symbol\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":1,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":48,\"id\":\"e12\"}||{\"x\":-10,\"y\":0,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"RIGHT_MIDDLE\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Name\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":4,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":49,\"id\":\"e15\"}||{\"x\":-7,\"y\":0,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Number\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":5,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":50,\"id\":\"e20\"}||{\"x\":2,\"y\":-14,\"rotation\":360,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":null,\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Type\",\"fillColor\":null,\"parentId\":\"e11\",\"zIndex\":6,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":51,\"id\":\"e27\"}||{\"x\":-45,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"RIGHT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":true,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":2,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":52,\"id\":\"32c1b3318b2ae20f\"}||{\"x\":-100,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"RIGHT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":null,\"key\":\"Relevance\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":13,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":19,\"id\":\"106463fb40588c15\"}|||",
+    "{\"type\":\"ATTR\",\"ticket\":20,\"id\":\"54ba1d5a911e738b\"}|||",
+    "{\"type\":\"ATTR\",\"ticket\":28,\"id\":\"9e4110b0249e5779\"}||{\"x\":-45,\"y\":7,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"RIGHT_MIDDLE\",\"value\":\"ddd\",\"keyVisible\":null,\"valueVisible\":true,\"key\":\"Relevance\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":14,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"pid8a0e77bacb214e\"}||{\"BBOX\":[-40,5,0,-5],\"title\":\"\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":3,\"id\":\"81fdb757fa6b6b7d\"}||{\"dataType\":\"ATTR\",\"max\":7}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"72e18bb9a6c7d721\"}||{\"dataType\":\"ATTR\",\"max\":18}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":7,\"id\":\"d0d04dd0cce3b8be\"}||{\"dataType\":\"PIN\",\"max\":10}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":12,\"id\":\"157a8e5e1c424a7d\"}||{\"dataType\":\"POLY\",\"max\":24}|"
+  ],
+  "portDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"0000000000000000\",\"uuid\":\"cb878672198c013c\",\"updateTime\":1788958715074,\"version\":\"1788958715074\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"PORT_IN\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"9e2d75cc2bf663876328883b7f6914ae|5afa47928e266ac8773e905b42be832d\",\"images\":[],\"attributes\":{\"Symbol\":\"747d5a48fb1e05e4\",\"Name\":\"IN\",\"Description\":\"\",\"Global Net Name\":\"IN\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"PORT_IN\\\",\\\"uuid\\\":\\\"747d5a48fb1e05e4\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}

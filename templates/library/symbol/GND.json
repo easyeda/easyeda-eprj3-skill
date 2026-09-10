@@ -1,0 +1,36 @@
+{
+  "name": "GND",
+  "kind": "power",
+  "title": "GND",
+  "net": "GND",
+  "style": "down",
+  "symbolUuid": "9f26b8d1d82e48b4",
+  "deviceUuid": "ff81c719a7436ecc",
+  "powerSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"9f26b8d1d82e48b4\",\"updateTime\":1788956586080,\"version\":\"1768472523513\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":54,\"id\":\"META\"}||{\"title\":\"GND\",\"description\":\"\",\"tags\":[],\"docType\":18,\"source\":\"542d01b8b25e4236a453d7437c3944df|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":53,\"id\":\"e52\"}||{\"x\":0,\"y\":25,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"strikeout\":null,\"align\":\"CENTER_MIDDLE\",\"value\":\"GND\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":3,\"locked\":false,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":52,\"id\":\"b74de731c7e6c756\"}||{\"x\":0,\"y\":25,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":\"CENTER_MIDDLE\",\"value\":\"GND\",\"keyVisible\":null,\"valueVisible\":false,\"key\":\"Global Net Name\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":17,\"partId\":\"pid8a0e77bacb214e\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":1,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"pid8a0e77bacb214e\"}||{\"BBOX\":[-10,0,10,-19],\"title\":\"\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":3,\"id\":\"de75f222949bc03b\"}||{\"dataType\":\"ATTR\",\"max\":7}|",
+    "{\"type\":\"ATTR\",\"ticket\":4,\"id\":\"e8\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":1,\"parentId\":\"\",\"key\":\"Symbol\",\"value\":\"Ground-GND\",\"keyVisible\":false,\"valueVisible\":false,\"x\":0,\"y\":30,\"rotation\":360,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":10,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":null}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"e82b3721b8cae88a\"}||{\"dataType\":\"ATTR\",\"max\":37}|",
+    "{\"type\":\"ATTR\",\"ticket\":21,\"id\":\"e46\"}|||",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":7,\"id\":\"c874056a10a233cb\"}||{\"dataType\":\"ATTR\",\"max\":5}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":9,\"id\":\"98e7a08fee34c2b3\"}||{\"dataType\":\"PIN\",\"max\":14}|",
+    "{\"type\":\"PIN\",\"ticket\":10,\"id\":\"e15\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":4,\"display\":true,\"x\":0,\"y\":0,\"length\":10,\"rotation\":270,\"color\":null,\"pinShape\":\"NONE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":11,\"id\":\"e16\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":5,\"parentId\":\"e15\",\"key\":\"Pin Name\",\"value\":\"Pin1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":0,\"y\":10,\"rotation\":90,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":\"RIGHT_MIDDLE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":12,\"id\":\"e17\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":6,\"parentId\":\"e15\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":-1,\"y\":10,\"rotation\":90,\"color\":null,\"fillColor\":null,\"fontFamily\":\"宋体\",\"fontSize\":null,\"strikeout\":null,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":13,\"id\":\"e47\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":7,\"parentId\":\"e15\",\"key\":\"Pin Type\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"x\":0,\"y\":0,\"rotation\":90,\"color\":null,\"fillColor\":null,\"fontFamily\":null,\"fontSize\":null,\"strikeout\":null,\"underline\":null,\"italic\":null,\"fontWeight\":null,\"align\":\"RIGHT_TOP\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":14,\"id\":\"d8aa3418d24746ec\"}||{\"dataType\":\"POLY\",\"max\":40}|",
+    "{\"type\":\"POLY\",\"ticket\":15,\"id\":\"e41\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"points\":[{\"x\":-10,\"y\":10},{\"x\":10,\"y\":10}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":null}|",
+    "{\"type\":\"POLY\",\"ticket\":16,\"id\":\"e42\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":9,\"points\":[{\"x\":-1,\"y\":19},{\"x\":1,\"y\":19}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":null}|",
+    "{\"type\":\"POLY\",\"ticket\":17,\"id\":\"e43\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":10,\"points\":[{\"x\":-4,\"y\":16},{\"x\":4,\"y\":16}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":null}|",
+    "{\"type\":\"POLY\",\"ticket\":18,\"id\":\"e44\"}||{\"partId\":\"pid8a0e77bacb214e\",\"groupId\":\"\",\"locked\":false,\"zIndex\":11,\"points\":[{\"x\":-7,\"y\":13},{\"x\":7,\"y\":13}],\"closed\":false,\"strokeColor\":null,\"strokeStyle\":null,\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":null}|"
+  ],
+  "powerDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"0000000000000000\",\"uuid\":\"ff81c719a7436ecc\",\"updateTime\":1788958715068,\"version\":\"1788958715068\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"GND\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"15037cd1ef29cfa536107e553545a593|cb967288acd818f879a7959473bfd8c4\",\"images\":[],\"attributes\":{\"Symbol\":\"9f26b8d1d82e48b4\",\"Name\":\"GND\",\"Description\":\"\",\"Global Net Name\":\"GND\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"GND\\\",\\\"uuid\\\":\\\"9f26b8d1d82e48b4\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}

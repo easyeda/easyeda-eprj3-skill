@@ -124,17 +124,19 @@ function main() {
   };
 
   run([SCRIPTS + '/init.js', '--dir', proj, '--name', 'audit']);
-  run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'RES', '--title', 'Resistor', '--designator', 'R', '--pins', '1;2']);
-  run([SCRIPTS + '/generate-footprint.js', 'from-pads', '--dir', proj, '--name', 'FP0402', '--title', 'R0402', '--designator', 'R',
+  run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'T_RES', '--designator', 'R', '--pins', '1;2']);
+  run([SCRIPTS + '/generate-footprint.js', 'from-pads', '--dir', proj, '--name', 'T_FP0402', '--designator', 'R',
     '--pads', '1:-16.54:0:31.5:35.43;2:16.54:0:31.5:35.43', '--outline', 'R,-27.56,-19.69,55.12,39.37', '--silk', 'rect,-27.56,-19.69,27.56,19.69']);
-  run([SCRIPTS + '/load-library.js', 'device', '--dir', proj, '--symbol', 'RES', '--footprint', 'FP0402', '--name', 'R0402']);
-  run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'VCC']);
-  run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'GND', '--style', 'down']);
+  run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'V3P3']);
+  run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'AVDD', '--style', 'down']);
   run([SCRIPTS + '/load-library.js', 'port', '--dir', proj, '--net', 'SIG']);
-  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--lib', 'R0402', '--x', '300', '--y', '-440']);
-  run([SCRIPTS + '/add-power.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--lib', 'VCC', '--x', '300', '--y', '-500']);
-  run([SCRIPTS + '/add-power.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--lib', 'GND', '--x', '360', '--y', '-380']);
-  run([SCRIPTS + '/add-port.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--lib', 'PORT_SIG', '--x', '460', '--y', '-440']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'T_RES', '--footprint', 'T_FP0402', '--x', '300', '--y', '-440']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'V3P3', '--x', '300', '--y', '-500']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'AVDD', '--x', '360', '--y', '-380']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'PORT_SIG', '--x', '460', '--y', '-440']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'VCC', '--x', '300', '--y', '-620']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'GND', '--x', '360', '--y', '-560']);
+  run([SCRIPTS + '/add-symbol.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--symbol', 'PORT_IN', '--x', '560', '--y', '-440']);
   run([SCRIPTS + '/add-wire.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--segs', '300,-420,300,-380', '--net', 'SIG']);
   run([SCRIPTS + '/add-wire.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--segs', '300,-380,360,-380']);
   run([SCRIPTS + '/add-netlabel.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', '--net', 'SIG', '--at', '300,-400']);
@@ -148,7 +150,8 @@ function main() {
     ['arc', '--start', '600,-200', '--mid', '700,-300', '--end', '800,-200'],
     ['bezier', '--pts', '200,-500,250,-400,350,-400,400,-500']
   ]) run([SCRIPTS + '/add-shape.js', shape[0], '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', ...shape.slice(1)]);
-  run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1', '--lib', 'R0402', '--x', '300', '--y', '300', '--refdes', 'R1', '--nets', '1:VCC,2:SIG']);
+  run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1', '--symbol', 'T_RES', '--footprint', 'T_FP0402', '--x', '300', '--y', '300', '--refdes', 'R1', '--nets', '1:VCC,2:SIG']);
+  run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1', '--symbol', 'RES', '--footprint', 'R0603', '--x', '800', '--y', '300', '--refdes', 'R2']);
   run([SCRIPTS + '/add-track.js', '--dir', proj, '--pcb', 'PCB1', '--net', 'SIG', '--x1', '300', '--y1', '316.54', '--x2', '450', '--y2', '316.54', '--layer', '1', '--width', '10']);
   run([SCRIPTS + '/add-pcb-text.js', '--dir', proj, '--pcb', 'PCB1', '--value', 'REV A', '--x', '2000', '--y', '2800', '--layer', '3']);
   for (const shape of [

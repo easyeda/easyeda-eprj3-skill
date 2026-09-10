@@ -26,6 +26,14 @@ const PART_ID = 'pid8a0e77bacb214e';
 const EDIT_VERSION = '2.3.0';
 const FRAME_DEVICE_NAME = FRAME_TITLE; // "Drawing-Symbol_A4"
 
+// Two-tier library model:
+// - preset templates ship with the skill in templates/library/{symbol,footprint}/
+//   and are resolved FIRST when placing;
+// - per-project staging (custom entries generated during authoring) goes to
+//   <project>/.tmp/library/{symbol,footprint}/ and is removed by cleanup.js.
+const SKILL_ROOT = path.resolve(__dirname, '..', '..');
+const LIBRARY_DIR = path.join(SKILL_ROOT, 'templates', 'library');
+
 // ---------------------------------------------------------------- ids
 function uuid(len = 16) {
   return crypto.randomBytes(len).toString('hex').slice(0, len);
@@ -126,6 +134,47 @@ function insertDocsBeforeMain(filePath, docs) {
     writeLines(filePath, lines);
   }
   return toInsert.length;
+}
+
+// ------------------------------------------------------------ staged library
+// Staged entries live in <dir>/{symbol,footprint}/<name>.json. The kind decides
+// the subfolder on write; lookups scan both.
+function libraryFileIn(dir, name) {
+  for (const sub of ['symbol', 'footprint']) {
+    const f = path.join(dir, sub, `${name}.json`);
+    if (fs.existsSync(f)) return f;
+  }
+  return null;
+}
+
+function listLibraryDir(dir) {
+  const out = [];
+  if (!fs.existsSync(dir)) return out;
+  for (const sub of ['symbol', 'footprint']) {
+    const d = path.join(dir, sub);
+    if (!fs.existsSync(d)) continue;
+    for (const f of fs.readdirSync(d)) {
+      if (f.endsWith('.json')) out.push(f.slice(0, -5));
+    }
+  }
+  return out.sort();
+}
+
+// Staged/template docs may originate from a different owner (e.g. elibu
+// exports); their DOCHEAD client id (carried in the DOCHEAD body) must match
+// the target project before embedding.
+function rewriteDocHeads(lines, client) {
+  return lines.map((line) => {
+    const i = line.indexOf('||');
+    if (i < 0) return line;
+    let head;
+    try { head = JSON.parse(line.slice(0, i)); } catch { return line; }
+    if (!head || head.type !== 'DOCHEAD') return line;
+    let body;
+    try { body = JSON.parse(line.slice(i + 2, line.length - 1)); } catch { return line; }
+    body.client = client;
+    return JSON.stringify(head) + '||' + JSON.stringify(body) + '|';
+  });
 }
 
 function appendRecord(filePath, type, body, ticket, id) {
@@ -789,6 +838,34 @@ function portComponentBlock(v) {
   return { lines, nextTicket: t };
 }
 
+// ------------------------------------------------- SCH special component block
+// Power-family block for special symbols (differential-pair flag, short
+// marker): no Global Net Name attr, page Name shows the entry title. Placement
+// behavior of these entries in the real client is unverified.
+function specialComponentBlock(v) {
+  // v: {compId, x, y, zIndex, symbolUuid, deviceUuid, name, ticketBase}
+  const lines = [];
+  let t = v.ticketBase;
+  const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
+
+  line('COMPONENT', {
+    partId: PART_ID,
+    x: v.x, y: v.y, rotation: 0, isMirror: false,
+    attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
+    zIndex: v.zIndex
+  }, v.compId);
+  line('ATTR', attrStyled({
+    x: v.x, y: v.y + 30, fontSize: null,
+    value: v.symbolUuid, key: 'Symbol', parentId: v.compId, zIndex: 1
+  }));
+  line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId));
+  line('ATTR', attrNull('Relevance', '[]', 0, v.compId));
+  line('ATTR', attrNull('Name', v.name, 9, v.compId, {
+    x: v.x, y: v.y + 25, align: 'CENTER_MIDDLE'
+  }));
+  return { lines, nextTicket: t };
+}
+
 // ------------------------------------------------- SCH wire block
 function wireBlock(v) {
   // v: {segs:[{startX,startY,endX,endY}], net?, zIndex, ticketBase}
@@ -1379,19 +1456,34 @@ class Project {
   pcbFile(pcb) { return path.join(this.rootDir, 'pcb', `${pcb.title}.epcb2`); }
 
   // ------------------------------------------------------------ library
-  libraryDir() { return path.join(this.rootDir, 'library'); }
-  libraryFile(name) { return path.join(this.libraryDir(), `${name}.json`); }
-  loadLibrary(name) {
-    return JSON.parse(fs.readFileSync(this.libraryFile(name), 'utf8'));
+  // Preset templates (skill-owned, read-only at runtime) resolve first, then
+  // this project's staging area.
+  tmpLibraryDir() { return path.join(this.rootDir, '.tmp', 'library'); }
+  resolveLibraryFile(name) {
+    const preset = libraryFileIn(LIBRARY_DIR, name);
+    if (preset) return { file: preset, src: 'preset' };
+    const tmp = libraryFileIn(this.tmpLibraryDir(), name);
+    if (tmp) return { file: tmp, src: 'tmp' };
+    return null;
   }
-  saveLibrary(name, entry) {
-    fs.mkdirSync(this.libraryDir(), { recursive: true });
-    fs.writeFileSync(this.libraryFile(name), JSON.stringify(entry, null, 2), 'utf8');
+  presetHas(name) { return libraryFileIn(LIBRARY_DIR, name) !== null; }
+  loadLibrary(name) {
+    const hit = this.resolveLibraryFile(name);
+    return hit ? JSON.parse(fs.readFileSync(hit.file, 'utf8')) : null;
+  }
+  saveLibrary(entry) {
+    const sub = entry.kind === 'footprint' ? 'footprint' : 'symbol';
+    const dir = path.join(this.tmpLibraryDir(), sub);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${entry.name}.json`), JSON.stringify(entry, null, 2), 'utf8');
   }
   listLibrary() {
-    const dir = this.libraryDir();
-    if (!fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => f.slice(0, -5));
+    const merged = [];
+    for (const n of listLibraryDir(LIBRARY_DIR)) merged.push({ name: n, src: 'preset' });
+    for (const n of listLibraryDir(this.tmpLibraryDir())) {
+      if (!merged.some((e) => e.name === n)) merged.push({ name: n, src: 'tmp' });
+    }
+    return merged;
   }
 
   // ------------------------------------------------------------ ensure docs
@@ -1499,6 +1591,10 @@ module.exports = {
   updateRecord,
   removeRecord,
   insertDocsBeforeMain,
+  rewriteDocHeads,
+  LIBRARY_DIR,
+  libraryFileIn,
+  listLibraryDir,
   readDocHeadUuid,
   DocBuilder,
   docHeadLine,
@@ -1512,6 +1608,7 @@ module.exports = {
   schComponentBlock,
   powerComponentBlock,
   portComponentBlock,
+  specialComponentBlock,
   buildPortSymbolDoc,
   wireBlock,
   schTextLine,
