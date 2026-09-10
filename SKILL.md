@@ -136,7 +136,7 @@ Key format invariants (enforced by `validate.js`):
 - Power symbols and net ports are special devices: the COMPONENT carries `DeviceName: null` and the net lives in `Name` / `Global Net Name` ATTR records. Port symbol docs use META `docType: 19` (NetPort), power uses `docType: 18` (NetFlag).
 - PCB named NET records sit after the empty NET (`["NET",""]`) and before the first PAD_NET.
 - Tickets are unique within each document (not globally monotonic).
-- Every wire carries a NET attr; every LINE references its WIRE via `lineGroup`.
+- Named wires carry a NET attr (client-generated unnamed wires omit it); every LINE references its WIRE via `lineGroup`. Every ATTR head carries an id the client links through `parentId`; every doc DOCHEAD carries the project `client` id.
 
 ## Script reference
 

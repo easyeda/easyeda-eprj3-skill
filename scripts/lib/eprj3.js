@@ -685,23 +685,25 @@ function schComponentBlock(v) {
     zIndex: v.zIndex
   }, v.compId);
 
-  line('ATTR', attrNull('Symbol', v.symbolUuid, symbolZ, v.compId));
-  line('ATTR', attrNull('Device', v.deviceUuid, -2, v.compId));
-  line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId));
-  line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId));
+  // Every ATTR head carries an id; the client links attrs to their owner
+  // through the COMPONENT/WIRE head id recorded in parentId.
+  line('ATTR', attrNull('Symbol', v.symbolUuid, symbolZ, v.compId), randId());
+  line('ATTR', attrNull('Device', v.deviceUuid, -2, v.compId), randId());
+  line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId), randId());
+  line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId), randId());
   line('ATTR', attrStyled({
     x: v.x + 10, y: v.y + 10, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: null, valueVisible: true,
     key: 'Name', parentId: v.compId, zIndex: nameZ
-  }));
+  }), randId());
   line('ATTR', attrStyled({
     x: v.x + 10, y: v.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: v.refdes, valueVisible: true,
     key: 'Designator', parentId: v.compId, zIndex: designatorZ
-  }));
-  line('ATTR', attrNull('Reuse Block', null, 32, v.compId));
-  line('ATTR', attrNull('Group ID', null, 33, v.compId));
-  line('ATTR', attrNull('Channel ID', null, 34, v.compId));
+  }), randId());
+  line('ATTR', attrNull('Reuse Block', null, 32, v.compId), randId());
+  line('ATTR', attrNull('Group ID', null, 33, v.compId), randId());
+  line('ATTR', attrNull('Channel ID', null, 34, v.compId), randId());
   return { lines, nextTicket: t };
 }
 
@@ -722,16 +724,16 @@ function powerComponentBlock(v) {
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: down ? 10 : null,
     value: v.symbolUuid, key: 'Symbol', parentId: v.compId, zIndex: 1
-  }));
-  line('ATTR', attrNull('Device', v.deviceUuid, down ? 18 : 12, v.compId));
-  line('ATTR', attrNull('Relevance', '[]', 0, v.compId));
+  }), randId());
+  line('ATTR', attrNull('Device', v.deviceUuid, down ? 18 : 12, v.compId), randId());
+  line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
   const nameAlign = down ? 'CENTER_MIDDLE' : 'CENTER_BOTTOM';
   line('ATTR', attrNull('Name', v.net, down ? 3 : 9, v.compId, {
     x: v.x, y: down ? v.y + 25 : v.y - 10, align: nameAlign
-  }));
+  }), randId());
   line('ATTR', attrNull('Global Net Name', v.net, down ? 17 : 11, v.compId, {
     x: v.x, y: down ? v.y + 25 : v.y - 10, align: nameAlign
-  }));
+  }), randId());
   return { lines, nextTicket: t };
 }
 
@@ -826,15 +828,15 @@ function portComponentBlock(v) {
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: null,
     value: v.symbolUuid, key: 'Symbol', parentId: v.compId, zIndex: 1
-  }));
-  line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId));
-  line('ATTR', attrNull('Relevance', '[]', 0, v.compId));
+  }), randId());
+  line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId), randId());
+  line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
   line('ATTR', attrNull('Name', v.net, 9, v.compId, {
     x: v.x + 15, y: v.y, align: 'CENTER_MIDDLE'
-  }));
+  }), randId());
   line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId, {
     x: v.x + 15, y: v.y, align: 'CENTER_MIDDLE'
-  }));
+  }), randId());
   return { lines, nextTicket: t };
 }
 
@@ -857,12 +859,12 @@ function specialComponentBlock(v) {
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: null,
     value: v.symbolUuid, key: 'Symbol', parentId: v.compId, zIndex: 1
-  }));
-  line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId));
-  line('ATTR', attrNull('Relevance', '[]', 0, v.compId));
+  }), randId());
+  line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId), randId());
+  line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
   line('ATTR', attrNull('Name', v.name, 9, v.compId, {
     x: v.x, y: v.y + 25, align: 'CENTER_MIDDLE'
-  }));
+  }), randId());
   return { lines, nextTicket: t };
 }
 
@@ -888,12 +890,15 @@ function wireBlock(v) {
       lineGroup: wireId
     }, randId());
   }
-  line('ATTR', {}); // empty ATTR stub, rendered as `|||`
-  line('ATTR', attrNull('Relevance', '[]', 6, wireId));
-  line('ATTR', Object.assign(attrNull('NET', v.net || '', 7, wireId), {
-    x: midX, y: midY, rotation: vertical ? 90 : 0,
-    keyVisible: false, valueVisible: true
-  }));
+  line('ATTR', {}, randId()); // empty ATTR stub: id in the head, `|||` body
+  line('ATTR', attrNull('Relevance', '[]', 6, wireId), randId());
+  // A named wire carries a NET attr; client-generated unnamed wires omit it.
+  if (v.net) {
+    line('ATTR', Object.assign(attrNull('NET', v.net, 7, wireId), {
+      x: midX, y: midY, rotation: vertical ? 90 : 0,
+      keyVisible: false, valueVisible: true
+    }), randId());
+  }
   return { lines, nextTicket: t, wireId };
 }
 

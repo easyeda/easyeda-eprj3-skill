@@ -108,6 +108,7 @@ function cmdPower(opts) {
   const ms = project.ms();
   const powerSymbolDoc = E.buildPowerSymbolDoc({
     uuid: symbolUuid,
+    client: project.client,
     title: name,
     net: opts.net,
     source: E.makeSource(E.uuid32(), project.index.owner_uuid),
@@ -157,6 +158,7 @@ function cmdPort(opts) {
   const deviceUuid = E.uuid16();
   const portSymbolDoc = E.buildPortSymbolDoc({
     uuid: symbolUuid,
+    client: project.client,
     title: name,
     net: opts.net,
     source: E.makeSource(E.uuid32(), project.index.owner_uuid),

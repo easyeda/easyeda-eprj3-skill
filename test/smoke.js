@@ -10,7 +10,7 @@
  *   - folder layout: index + sch/<sch>/{P1.esch2,<sch>.ecfg,<sch>.evar} + pcb + panel
  *   - library docs embedded per-container; Device/Symbol/Footprint attr links resolve
  *   - COMPONENT head.id == body.id == ATTR.parentId
- *   - one WIRE + one LINE per segment; every WIRE has a NET attr
+ *   - one WIRE + one LINE per segment; named wires carry a NET attr
  *   - PCB named NETs precede the first PAD_NET; PAD_NET ids reference COMPONENTs
  *   - tickets unique within every document
  *   - record round-trip survives '||' inside JSON string bodies
@@ -87,6 +87,34 @@ function ticketsIncrease(doc, label) {
     }
   }
   assert(ok, `${label}: tickets increase in file order`);
+}
+
+// Real-client invariants (verified against a client-generated project):
+// every DOCHEAD body carries the client id, and every ATTR/COMPONENT/WIRE/LINE
+// record head carries an id the client uses to link attrs via parentId.
+function realClientInvariants(dir, label) {
+  const containers = [];
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(esch2|epcb2|epan2)$/.test(e.name)) containers.push(p);
+    }
+  };
+  walk(dir);
+  let noClient = 0, noId = 0;
+  for (const f of containers) {
+    for (const doc of docsOf(f)) {
+      if (!doc.records[0].body.client) noClient++;
+      for (const r of doc.records.slice(1)) {
+        if (['ATTR', 'COMPONENT', 'WIRE', 'LINE'].includes(r.type) && !r.id) noId++;
+      }
+    }
+  }
+  assert(noClient === 0, `${label}: every doc DOCHEAD carries the project client`,
+    `${noClient} docs missing client in ${containers.length} container files`);
+  assert(noId === 0, `${label}: every ATTR/COMPONENT/WIRE/LINE head carries an id`,
+    `${noId} id-less records in ${containers.length} container files`);
 }
 
 function main() {
@@ -280,9 +308,11 @@ function main() {
       'one WIRE + one LINE per wire', `wires=${wires.length} lines=${lines.length}`);
     assert(lines.every((l) => wires.some((w) => w.head.id === l.body.lineGroup)),
       'every LINE references its WIRE via lineGroup');
+    const namedWireId = wires[1].head.id; // 2nd add-wire call got --net SIG
     for (const w of wires) {
       const hasNet = sch2.main.records.some((a) => a.type === 'ATTR' && a.body.parentId === w.head.id && a.body.key === 'NET');
-      assert(hasNet, `WIRE ${w.head.id} carries a NET attr`);
+      const named = w.head.id === namedWireId;
+      assert(hasNet === named, `WIRE ${w.head.id} ${named ? 'carries' : 'omits'} a NET attr`);
     }
     const rBad = run([SCRIPTS + '/add-wire.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1',
       '--segs', '1,foo,2,3'], null);
@@ -462,13 +492,14 @@ function main() {
     const rVal = run([SCRIPTS + '/validate.js', '--dir', proj]);
     assert(/OK \(0 errors, 0 warning/.test(rVal.stdout),
       'validate reports 0 errors on the finished project', rVal.stdout.trim());
+    realClientInvariants(proj, 'smoke project');
     const dirty = path.join(tmp, 'dirty');
     fs.cpSync(proj, dirty, { recursive: true });
     const dirtySheet = path.join(dirty, 'sch', 'Schematic1', 'P1.esch2');
-    E.appendRecord(dirtySheet, 'WIRE', { zIndex: 1 }, undefined, 'orphan1');
+    E.appendRecord(dirtySheet, 'LINE', { lineGroup: 'missing-wire' }, undefined, 'orphan1');
     const rDirty = run([SCRIPTS + '/validate.js', '--dir', dirty], 1);
     assert(/error/.test(rDirty.stderr + rDirty.stdout),
-      'validate flags a dangling WIRE without NET attr as an error');
+      'validate flags a LINE referencing a missing WIRE as an error');
 
     // ---- cleanup: drop the temp staging area, presets untouched ----
     run([SCRIPTS + '/cleanup.js', '--dir', proj]);
@@ -490,6 +521,7 @@ function main() {
       const rBlink = run([SCRIPTS + '/validate.js', '--dir', blinkDir]);
       assert(/OK \(0 errors, 0 warning/.test(rBlink.stdout),
         'examples/blink passes validate', rBlink.stdout.trim());
+      realClientInvariants(blinkDir, 'examples/blink');
     }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });

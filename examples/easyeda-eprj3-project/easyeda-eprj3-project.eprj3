@@ -1,0 +1,87 @@
+{
+  "name": "easyeda-eprj3-project",
+  "owner_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "creator_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "created_at": "2026-09-10 09:29:03",
+  "updated_at": "2026-09-10 09:29:03",
+  "modifier_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "content": "",
+  "archive": false,
+  "cbb_project": 0,
+  "thumb": "",
+  "ticket": 1,
+  "g_ticket": 1,
+  "boards": [],
+  "block_symbol_attrs_groups": {},
+  "default_sheet": "",
+  "branch_uuid": "",
+  "pcb_count": 0,
+  "format": "folder",
+  "profile": {
+    "boards": {
+      "5704c374b3c25820": {
+        "uuid": "5704c374b3c25820",
+        "title": "Board1",
+        "zIndex": 1
+      }
+    },
+    "schematics": {
+      "dfc4a5125c45a472": {
+        "uuid": "dfc4a5125c45a472",
+        "name": "Schematic1",
+        "board": "5704c374b3c25820",
+        "source": "",
+        "version": "1789003821803",
+        "updateTime": 1789003821803
+      }
+    },
+    "sheets": {
+      "3ada04a3cf294e09": {
+        "uuid": "3ada04a3cf294e09",
+        "title": "P1",
+        "schematic_uuid": "dfc4a5125c45a472",
+        "zIndex": 1,
+        "source": "",
+        "version": "1789003821468",
+        "updateTime": 1789003821468
+      },
+      "9f4675dfed5da031": {
+        "uuid": "9f4675dfed5da031",
+        "title": "P2",
+        "schematic_uuid": "dfc4a5125c45a472",
+        "zIndex": 2,
+        "source": "",
+        "version": "1789003821803",
+        "updateTime": 1789003821803
+      }
+    },
+    "pcbs": {
+      "2e2dcab1266cc0ae": {
+        "uuid": "2e2dcab1266cc0ae",
+        "title": "PCB1",
+        "board": "5704c374b3c25820",
+        "parent_uuid": "",
+        "source": "",
+        "version": "1789003872516",
+        "updateTime": 1789003872648
+      }
+    },
+    "panels": {
+      "f3675fe18af69fc5": {
+        "uuid": "f3675fe18af69fc5",
+        "title": "Panel1",
+        "zIndex": null
+      }
+    },
+    "blockSymbols": {},
+    "owner": {
+      "uuid": "52159e623a734559a92667bdcb3b3e5d"
+    },
+    "simSchematics": {},
+    "simulations": {}
+  },
+  "config": {
+    "defaultSheet": "",
+    "settings": {}
+  }
+}

@@ -148,12 +148,12 @@ Free TEXT and non-electrical graphics. The official example carries these record
 ```jsonc
 {"type":"WIRE","ticket":132,"id":"6ac533e76661a882"}||{"zIndex":99}|
 {"type":"LINE","ticket":133,"id":"37cdb87aa09a450c"}||{"fillColor":null,"fillStyle":null,"strokeColor":null,"strokeStyle":null,"strokeWidth":null,"startX":300,"startY":-500,"endX":300,"endY":-460,"lineGroup":"6ac533e76661a882"}|
-{"type":"ATTR","ticket":135}|||                                                                 // empty stub record (present in the example)
+{"type":"ATTR","ticket":135,"id":"0d177a161602f2b4"}|||                                                        // empty stub record (present in the example)
 {"type":"ATTR",...}||{...,"key":"Relevance","value":"[]","zIndex":6,...}|
 {"type":"ATTR",...}||{...,"key":"NET","value":"SIG","keyVisible":false,"valueVisible":true,"parentId":"6ac533e76661a882","zIndex":7,...}|
 ```
 
-One `WIRE` + one `LINE` per segment; `LINE.lineGroup` → `WIRE.id`. Every wire carries a NET attr (value `""` when unnamed). A net label is just that NET attr with a value plus label position/rotation on the same record.
+One `WIRE` + one `LINE` per segment; `LINE.lineGroup` → `WIRE.id`. A named wire carries a NET attr; client-generated unnamed wires omit the NET attr entirely (a labeled wire = the NET attr with a value plus label position/rotation on the same record). Every record head (`WIRE`/`LINE`/`ATTR`/`COMPONENT`) carries an id; ATTR records link to their owner through `parentId`.
 
 ## Library documents
 
@@ -261,4 +261,4 @@ Invariants:
 
 ## Validation
 
-`scripts/validate.js` checks all of the above mechanically: index shape, `.ecfg`/`.evar` presence, per-doc uuid uniqueness, per-doc ticket uniqueness, `Device`/`Symbol`/`Footprint` attr → embedded doc resolution, `LINE.lineGroup` → `WIRE`, wire NET attrs, empty NET + BOARD_OUTLINE presence, `PAD_NET` → `COMPONENT`/`NET` references, POUR/VIA/FILL → NET references, and the panel file. Exit code 0 = clean, 1 = errors printed.
+`scripts/validate.js` checks all of the above mechanically: index shape, `.ecfg`/`.evar` presence, per-doc uuid uniqueness, per-doc ticket uniqueness, `Device`/`Symbol`/`Footprint` attr → embedded doc resolution, `LINE.lineGroup` → `WIRE`, empty NET + BOARD_OUTLINE presence, `PAD_NET` → `COMPONENT`/`NET` references, POUR/VIA/FILL → NET references, and the panel file. Exit code 0 = clean, 1 = errors printed.

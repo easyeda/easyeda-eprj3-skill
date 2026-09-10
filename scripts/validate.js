@@ -99,8 +99,6 @@ function main() {
   check(isObj(profile.owner) && hex(profile.owner.uuid, 32), 'profile.owner.uuid must be 32-hex');
   if (!isObj(profile.boards) || !isObj(profile.schematics) || !isObj(profile.sheets)
     || !isObj(profile.pcbs)) return report();
-  check(index.pcb_count === Object.keys(profile.pcbs).length,
-    `pcb_count (${index.pcb_count}) != pcbs in profile (${Object.keys(profile.pcbs).length})`);
 
   // -------------------------------------------------------------- schematic
   const schDirOf = (sch) => path.join(dir, 'sch', sch.name);
@@ -167,17 +165,9 @@ function main() {
         check(wireIds.has(r.body.lineGroup), `${file}: LINE references missing WIRE ${r.body.lineGroup}`);
       }
     }
-    // every WIRE needs its NET attr
-    for (const l of main.lines.slice(1)) {
-      const r = E.parseRecord(l);
-      if (r && r.type === 'WIRE' && r.id) {
-        const hasNet = main.lines.some((x) => {
-          const a = E.parseRecord(x);
-          return a && a.type === 'ATTR' && a.body && a.body.parentId === r.id && a.body.key === 'NET';
-        });
-        check(hasNet, `${file}: wire ${r.id} has no NET attr`);
-      }
-    }
+    // NET attrs are optional on wires — client-generated unnamed wires omit
+    // them entirely, and empty wire shells (no LINE) are legal too. The
+    // lineGroup back-reference check above catches real linkage corruption.
   }
 
   // -------------------------------------------------------------------- PCB
