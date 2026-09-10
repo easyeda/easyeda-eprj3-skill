@@ -404,7 +404,8 @@ function buildPowerSymbolDoc(spec) {
 
 // ------------------------------------------------- footprint doc
 // spec: {uuid,title,description,tags,source,ms,outline,silks,pads,designator}
-// outline: mil path array (layer 48 component body), e.g. ['R',x,y,w,h,0,0]
+// outline: mil path array (layer 48 component body) — polyline corners, e.g.
+// [x0,y0,'L',x1,y0,x1,y1,x0,y1,x0,y0] (real footprint docs never use rect paths)
 // silks:   [{path:[x1,y1,'L',x2,y2,...], width?}]  (layer 3)
 // pads:    [{num,x,y,width,height,offsetX?,offsetY?}]  (mil, layer 1 RECT)
 function buildFootprintDoc(spec) {
@@ -1072,6 +1073,16 @@ function pcbNetLine(netName, ticket) {
 // PCB primitives: partitionId "" + groupId 0 + locked false + zIndex -1, as in
 // every real PCB record. path is a mil path array ([x0,y0,'L',...] polygon or
 // ['R',x,y,w,h,rot,isCCW,round] rect or ['CIRCLE',cx,cy,r,isCCW]).
+
+// Rect path encoding: ["R", x, y0, w, h] covers x∈[x, x+w], y∈[y0-h, y0] —
+// the anchor is the MIN-x / MAX-y corner and h extends toward -y. Verified
+// against the official example (board ["R",0,940,1475,940,0,0] covering
+// [0,1475]×[0,940]) and a real-client project (["R",-80,-200,670,550,0,0]
+// containing all of its routed geometry). Callers pass the bottom-left corner
+// + size in the same space as component placements; y0 = y + h.
+function rectPath(x, y, w, h) {
+  return ['R', x, y + h, w, h, 0, 0];
+}
 function pcbPolyLine(v) {
   // v: {netName?, layerId?, width?, path, ticketBase}
   return formatRecord({ type: 'POLY', ticket: v.ticketBase, id: randId() }, {
@@ -1539,7 +1550,7 @@ class Project {
         board: pcb.board,
         client: this.client,
         ms: this.ms(),
-        outline: (opts && opts.outline) || ['R', 0, 0, 4000, 3000, 0, 0]
+        outline: (opts && opts.outline) || rectPath(0, 0, 4000, 3000)
       });
       writeLines(file, lines);
     }
@@ -1638,6 +1649,7 @@ module.exports = {
   pcbTrackLine,
   pcbNetLine,
   pcbPolyLine,
+  rectPath,
   pcbArcLine,
   pcbStringLine,
   pcbViaLine,

@@ -60,7 +60,7 @@ function main() {
   let path;
   if (cmd === 'rect') {
     if ([opts.x, opts.y, opts.w, opts.h].some((v) => v === undefined)) die('rect needs --x --y --w --h');
-    path = [['R', Number(opts.x), Number(opts.y), Number(opts.w), Number(opts.h), 0, 0]];
+    path = [E.rectPath(Number(opts.x), Number(opts.y), Number(opts.w), Number(opts.h))];
   } else if (cmd === 'poly') {
     if (!opts.pts) die('poly needs --pts "x1,y1,x2,y2,..."');
     const nums = numList(opts.pts, 'pts');

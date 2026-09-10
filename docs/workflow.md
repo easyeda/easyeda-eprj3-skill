@@ -146,6 +146,8 @@ node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRA
 
 `add-pour` writes the POUR region record; the client recomputes the filled copper when the file opens. PCB shape arcs use a signed sweep angle (CCW positive).
 
+Rectangles (`init` board outline, `add-pcb-shape/add-pour/add-fill/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000`.
+
 `--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when routing: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — the blink example routes R1 pad 2 (x=516.54) to C1 pad 1 (x=783.46) on the SIG net.
 
 ## 9. Validate (loop)

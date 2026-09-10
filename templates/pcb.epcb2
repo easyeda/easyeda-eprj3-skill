@@ -152,4 +152,4 @@
 {"type":"PRIMITIVE","ticket":1069,"id":"[\"PRIMITIVE\",\"SELECTBOX\"]"}||{"display":true,"color":"#00ffff"}|
 {"type":"NET","ticket":1126,"id":"[\"NET\",\"\"]"}|||
 {"type":"RULE_SELECTOR","ticket":1225,"id":"[\"RULE_SELECTOR\",[\"NET\",\"\"]]"}|||
-{"type":"POLY","ticket":1534,"id":"06bf6d5071462681"}||{"partitionId":"","groupId":0,"netName":"","layerId":11,"width":10,"path":["R",0,0,4000,3000,0,0],"locked":false,"zIndex":-1,"polyType":"BOARD_OUTLINE"}|
+{"type":"POLY","ticket":1534,"id":"06bf6d5071462681"}||{"partitionId":"","groupId":0,"netName":"","layerId":11,"width":10,"path":["R",0,3000,4000,3000,0,0],"locked":false,"zIndex":-1,"polyType":"BOARD_OUTLINE"}|

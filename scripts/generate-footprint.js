@@ -77,7 +77,10 @@ function parseOutline(spec) {
   if (!spec) return undefined;
   const p = spec.split(',').map((v) => v.trim());
   if (p[0] !== 'R' || p.length !== 5) return die('outline must be R,x,y,w,h');
-  return ['R', Number(p[1]), Number(p[2]), Number(p[3]), Number(p[4]), 0, 0];
+  const [x, y, w, h] = [Number(p[1]), Number(p[2]), Number(p[3]), Number(p[4])];
+  // Emit explicit corners: real footprint docs describe outlines as polylines,
+  // never as rect paths (whose ["R",...] anchor convention differs).
+  return [x, y, 'L', x + w, y, x + w, y + h, x, y + h, x, y];
 }
 
 // Footprint/Designator attr ids and zIndexes; the PCB component block reuses
@@ -99,7 +102,7 @@ function main() {
   const cmd = argv[0];
   if (!cmd || cmd === '-h' || cmd === '--help') {
     printHelp('generate-footprint.js from-pads [options]', SCHEMA,
-      'Generate a footprint and stage it as <project>/library/<name>.json.');
+      'Generate a footprint and stage it as <project>/.tmp/library/footprint/<name>.json.');
     return;
   }
   if (cmd !== 'from-pads') die(`unknown subcommand "${cmd}" (want: from-pads)`);

@@ -173,10 +173,14 @@ function main() {
     const pad1 = fpRecs.find((r) => r.type === 'PAD' && r.body && r.body.num === '1');
     assert(pad1 && pad1.body.hole === null && pad1.body.defaultPad.padType === 'RECT',
       'footprint doc has an SMD RECT PAD record for pad 1');
-    const silk = fpRecs.find((r) => r.type === 'POLY' && r.body && typeof r.body.path[0] === 'number');
+    const silk = fpRecs.find((r) => r.type === 'POLY' && r.body && r.body.layerId === 3
+      && typeof r.body.path[0] === 'number');
     assert(silk && silk.body.path[0] === -27.56 && silk.body.path[2] === 'L' && silk.body.layerId === 3,
       'silk POLY path uses the [x0,y0,"L",...] encoding on layer 3',
       JSON.stringify(silk && silk.body.path));
+    const outline48 = fpRecs.find((r) => r.type === 'POLY' && r.body && r.body.layerId === 48);
+    assert(outline48 && outline48.body.path[0] === -27.56 && outline48.body.path[2] === 'L',
+      'footprint outline emits explicit polyline corners (real docs never use rect paths)');
 
     // ---- temp power/port staging via load-library ----
     run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'T_PWR']);
@@ -435,9 +439,9 @@ function main() {
       'add-text writes a PCB STRING record with layer/font');
     const prect = pcb3.main.records.find((r) => r.type === 'POLY' && r.body.polyType === 'NORMAL'
       && Array.isArray(r.body.path) && r.body.path[0] === 'R');
-    assert(prect && prect.body.path[1] === 500 && prect.body.path[3] === 400
-      && prect.body.path[4] === 300 && prect.body.zIndex === -1,
-      'PCB rect POLY uses ["R",x,y,w,h,0,0] with polyType NORMAL / zIndex -1');
+    assert(prect && prect.body.path[1] === 500 && prect.body.path[2] === 800
+      && prect.body.path[3] === 400 && prect.body.path[4] === 300 && prect.body.zIndex === -1,
+      'PCB rect POLY anchors at min-x/max-y: ["R",500,800,400,300,0,0] for a rect at (500,500)');
     const ppoly = pcb3.main.records.find((r) => r.type === 'POLY' && Array.isArray(r.body.path)
       && r.body.path[2] === 'L');
     assert(ppoly && ppoly.body.path[0] === ppoly.body.path[ppoly.body.path.length - 2]

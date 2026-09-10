@@ -72,7 +72,7 @@ function main() {
     record = E.pcbPolyLine({
       layerId,
       width: opts.width !== undefined ? Number(opts.width) : 2,
-      path: ['R', Number(opts.x), Number(opts.y), Number(opts.w), Number(opts.h), 0, 0],
+      path: E.rectPath(Number(opts.x), Number(opts.y), Number(opts.w), Number(opts.h)),
       ticketBase: ticket
     });
   } else if (cmd === 'poly') {

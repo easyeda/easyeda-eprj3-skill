@@ -193,11 +193,11 @@ DOCHEAD(FOOTPRINT) → META → CANVAS{unit:"mm"} → Pads + graphics → Design
 
 ```jsonc
 {"type":"PAD","ticket":25,"id":"e2"}||{"groupId":0,"netName":"","layerId":1,"num":"1","centerX":-16.54,"centerY":0,"padAngle":0,"hole":null,"defaultPad":{"padType":"RECT","width":31.5,"height":35.43,"radius":0},"specialPad":[],"padOffsetX":0,"padOffsetY":0,"relativeAngle":90,"plated":true,...}|
-{"type":"POLY","ticket":23,"id":"..."}||{...,"layerId":48,"width":2,"path":["R",-27.56,-19.69,55.12,39.37,0,0],...}|       // courtyard/body outline, rect form
+{"type":"POLY","ticket":23,"id":"..."}||{...,"layerId":48,"width":2,"path":[-27.56,-19.69,"L",27.56,-19.69,27.56,19.69,-27.56,19.69,-27.56,-19.69],...}| // courtyard/body outline, polyline corners
 {"type":"POLY","ticket":24,"id":"..."}||{...,"layerId":3,"width":6,"path":[-27.56,-19.69,"L",27.56,-19.69,27.56,19.69,-27.56,19.69,-27.56,-19.69],...}| // silk, polyline form
 ```
 
-- Polyline paths are `[x0, y0, "L", x1, y1, x2, y2, ...]` (one leading `"L"`, then coordinate pairs). Rect shapes use `["R", x, y, w, h, rx, ry]`.
+- Polyline paths are `[x0, y0, "L", x1, y1, x2, y2, ...]` (one leading `"L"`, then coordinate pairs). Rect shapes use `["R", x, y, w, h, rx, ry]` — **the anchor `(x, y)` is the min-x / max-y corner and `h` extends toward −y**: the rect covers `x ∈ [x, x+w]`, `y ∈ [y−h, y]`. Verified against the official example (board outline `["R",0,940,1475,940,0,0]` covering `[0,1475]×[0,940]`) and a real-client project. Real footprint docs describe outlines as polylines only — never as rect paths.
 - **All footprint coordinates are mil even though the CANVAS says `unit:"mm"`** (the official example does the same).
 - Layers: 1 top copper, 3 top silk, 11 board outline, 48 component body/courtyard.
 - The PCB component block reuses the footprint doc's `Footprint`/`Designator` attr ids and zIndexes.
@@ -215,7 +215,7 @@ per-component blocks (COMPONENT + PAD_NETs + Designator/Footprint/… attrs) →
 {"type":"LAYER","ticket":39,"id":"[\"LAYER\",1]"}||{"layerId":1,"layerType":"TOP","layerName":"Top Layer","use":true,"show":true,"locked":false,"activeColor":"#ff0000","activateTransparency":1,"inactiveColor":"#7f0000","inactiveTransparency":1}|
 {"type":"NET","ticket":152,"id":"[\"NET\",\"\"]"}||{}|                                          // the empty NET is mandatory
 {"type":"NET","ticket":153,"id":"[\"NET\",\"VCC\"]"}||{"netType":null,"specialColor":null,"retLine":true,"differentialName":null,"isPositiveNet":false,"equalLengthGroupName":null}|
-{"type":"POLY","ticket":157,"id":"06bf6d5071462681"}||{"partitionId":"","groupId":0,"netName":"","layerId":11,"width":10,"path":["R",0,0,4000,3000,0,0],"locked":false,"zIndex":-1,"polyType":"BOARD_OUTLINE"}|
+{"type":"POLY","ticket":157,"id":"06bf6d5071462681"}||{"partitionId":"","groupId":0,"netName":"","layerId":11,"width":10,"path":["R",0,3000,4000,3000,0,0],"locked":false,"zIndex":-1,"polyType":"BOARD_OUTLINE"}|   // board 0..4000 × 0..3000 (rect anchor = min-x/max-y corner)
 {"type":"COMPONENT","ticket":160,"id":"a0ee7cd54d8e3d86"}||{"partitionId":"","groupId":0,"layerId":1,"x":300,"y":300,"angle":90,"attrs":{"Reuse Block":"","Group ID":"","Channel ID":"","Unique ID":"gge1","DeviceName":"{\"name\":\"R0402\",\"source\":\"\",\"uuid\":\"b02c92de66f189fd\"}"},"locked":false,"zIndex":-1,"pinSwap":false,"pinSwapInfo":{"a0ee7cd54d8e3d86e2":{"pinClass":"","differentialPairClass":""}},"footprintPrimitives":true}|
 {"type":"PAD_NET","ticket":158,"id":"[\"PAD_NET\",\"a0ee7cd54d8e3d86\",\"1\",\"e2\"]"}||{"partitionId":"","padNet":"VCC","padLen":null,"propagationDelay":null,"attrsMap":{}}|
 {"type":"LINE","ticket":171,"id":"5d3cbdb8d4b54f4b"}||{"partitionId":"","groupId":0,"netName":"SIG","layerId":1,"startX":300,"startY":316.54,"endX":450,"endY":316.54,"width":10,"locked":false,"zIndex":-1}|   // copper track
@@ -226,21 +226,21 @@ per-component blocks (COMPONENT + PAD_NETs + Designator/Footprint/… attrs) →
 The example PCB main doc has only LINE/POLY/POUR/COMPONENT/NET/LAYER (its FILL records live in footprint docs); STRING/VIA/ARC/REGION follow the real samples in the easyeda-pro-format-skill repo (`examples/PCB`), merged with the official example's `partitionId:""` / `groupId:0` / `locked:false` / `zIndex:-1` conventions. The real POUR record quoted below is authoritative. Where the format skill's JSON Schemas disagree with these samples (numeric `groupId`, `bold/italic: 0`, omitted `propagationDelay`, array `prohibitType`, `pourType` object), the samples win — see `scripts/tools/audit-format.js` for the full list.
 
 ```jsonc
-{"type":"POLY","ticket":172,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"width":2,"path":["R",500,500,400,300,0,0],"locked":false,"zIndex":-1,"polyType":"NORMAL"}|              // rect graphic
+{"type":"POLY","ticket":172,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"width":2,"path":["R",500,800,400,300,0,0],"locked":false,"zIndex":-1,"polyType":"NORMAL"}|              // rect graphic covering 500..900 × 500..800
 {"type":"POLY","ticket":173,"id":"..."}||{"partitionId":"","groupId":0,"netName":"","layerId":1,"width":2,"path":["CIRCLE",700,650,100,1],"locked":false,"zIndex":-1,"polyType":"NORMAL"}|               // circle graphic
 {"type":"ARC","ticket":174,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"netName":"","startX":500,"startY":500,"endX":900,"endY":500,"angle":90,"width":10,"arcType":"DOT","locked":false,"zIndex":-1}|   // two-point arc, CCW positive; arcType DOT|CENT
 {"type":"STRING","ticket":175,"id":"..."}||{"partitionId":"","groupId":0,"layerId":3,"x":2000,"y":2800,"text":"REV A","fontFamily":"default","fontSize":60,"strokeWidth":6,"bold":0,"italic":0,"origin":"CENTER_MIDDLE","angle":0,"reverse":false,"expansion":0,"mirror":false,"locked":false,"zIndex":-1}|   // origin = EAlign string (LEFT_BOTTOM … RIGHT_TOP); mirror true on bottom
 {"type":"VIA","ticket":176,"id":"..."}||{"partitionId":"","groupId":0,"netName":"SIG","ruleName":"viaSize","centerX":700,"centerY":316.54,"holeDiameter":12.0078,"viaDiameter":24.0158,"viaType":"NORMAL","topSolderExpansion":null,"bottomSolderExpansion":null,"unusedInnerLayers":[],"locked":false,"zIndex":-1}|   // viaType NORMAL|BLIND|SUTURE; defaults = example PREFERENCE; propagationDelay omitted as in the sample
-{"type":"POUR","ticket":177,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"name":"POUR1","order":0,"path":[["R",100,100,3800,2800,0,0]],"pourType":{"pourType":"SOLID","fineness":8},"keepIsland":false,"locked":false,"zIndex":-1}|  // real record
-{"type":"FILL","ticket":178,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"fillStyle":"SOLID","path":[["R",100,100,400,300,0,0]],"locked":false,"zIndex":-1,"isBridgingCopper":false,"networkList":[],"refs":[]}|   // body mirrors the real footprint-doc FILL records, main-doc conventions
-{"type":"REGION","ticket":179,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"width":1,"prohibitType":["COPPER","TRACK"],"path":[["R",200,200,300,200,0,0]],"locked":false,"zIndex":-1,"regionType":"PROHIBIT","name":"KEEP1"}|   // regionType PROHIBIT|CONSTRAINT
+{"type":"POUR","ticket":177,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"name":"POUR1","order":0,"path":[["R",100,2900,3800,2800,0,0]],"pourType":{"pourType":"SOLID","fineness":8},"keepIsland":false,"locked":false,"zIndex":-1}|  // real record, area 100..3900 × 100..2900
+{"type":"FILL","ticket":178,"id":"..."}||{"partitionId":"","groupId":0,"netName":"GND","layerId":1,"width":0.2,"fillStyle":"SOLID","path":[["R",100,400,400,300,0,0]],"locked":false,"zIndex":-1,"isBridgingCopper":false,"networkList":[],"refs":[]}|   // body mirrors the real footprint-doc FILL records, main-doc conventions
+{"type":"REGION","ticket":179,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"width":1,"prohibitType":["COPPER","TRACK"],"path":[["R",200,400,300,200,0,0]],"locked":false,"zIndex":-1,"regionType":"PROHIBIT","name":"KEEP1"}|   // regionType PROHIBIT|CONSTRAINT
 ```
 
 - FILL field order follows the real footprint-doc records (`groupId,netName,layerId,width,fillStyle,path,locked,zIndex,isBridgingCopper,networkList,refs`) with the main-doc `partitionId:""` prepended. Only `fillStyle:"SOLID"` is sample-backed — grid/inner-plane modes and POUR's line/grid `pourType` variants have no verifiable sample and are rejected by the scripts.
 - REGION `prohibitType` is an array of string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE`. `name` is optional and only written when provided.
 - The legacy PROP record no longer exists in the format; per-primitive styling such as `specialColor` now lives on the ATTR record.
 
-- PCB path arrays use the docs encoding: `[x0,y0,"L",...]` polyline, `["R",x,y,w,h,rot,isCCW,round]` rect, `["CIRCLE",cx,cy,r,isCCW]`, `"ARC"angle` / `"C"` bezier segments; complex pour outlines are arrays of simple polygons (first CW outer, rest CCW holes).
+- PCB path arrays use the docs encoding: `[x0,y0,"L",...]` polyline, `["R",x,y,w,h,rot,isCCW,round]` rect (anchor = min-x/max-y corner, covers `y ∈ [y−h, y]`), `["CIRCLE",cx,cy,r,isCCW]`, `"ARC"angle` / `"C"` bezier segments; complex pour outlines are arrays of simple polygons (first CW outer, rest CCW holes). The skill's scripts take bottom-left corner + size and emit the anchored rect form for you (`E.rectPath`).
 - POUR is the region record only — the client recomputes the filled copper (POURED records) on open. `width: 0.2` and `pourType {pourType:"SOLID",fineness:8}` are quoted from the real example.
 - The pour/via `netName` must name an existing NET record (`ensurePcbNets` inserts one before renumbering).
 

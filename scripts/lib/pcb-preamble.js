@@ -176,7 +176,9 @@ function fill(l, v) {
     .replace(/__UUID__/g, v.uuid || '')
     .replace(/__TITLE__/g, v.title === undefined ? '' : JSON.stringify(v.title).slice(1, -1))
     .replace(/__BOARD__/g, v.board || '')
-    .replace(/__OUTLINE__/g, JSON.stringify(v.outline || ['R', 0, 0, 4000, 3000, 0, 0]));
+    // rect path covers y∈[y0-h, y0] (anchor = min-x/max-y corner) — default
+    // board = 4000×3000 with its bottom-left at (0,0) → y0 = 3000.
+    .replace(/__OUTLINE__/g, JSON.stringify(v.outline || ['R', 0, 3000, 4000, 3000, 0, 0]));
 }
 
 function buildPcbPreamble(v) {
