@@ -43,6 +43,7 @@ All coordinates are **mil** unless a script's help says otherwise.
 1.  Resolve paths & project name                    (AskUserQuestion)
 2.  node scripts/init.js --dir <dir> --name <name>
     [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
+    [--board-w 4000] [--board-h 3000]          (board outline size, mil)
 3.  Pick library entries — check the preset templates first:
       node scripts/load-library.js list             (presets; add --dir to also list project staging)
     Place a preset directly (resolved first on every placement), e.g.:
@@ -53,9 +54,9 @@ All coordinates are **mil** unless a script's help says otherwise.
     No preset fits? Stage a temp entry under <dir>/.tmp/library/
     (names must not shadow a preset — the scripts reject that):
       node scripts/generate-symbol.js from-pins --dir <dir> --name <sym>
-           [--designator R] [--pins "1;2:A;3:x:y:rot"]
+           [--designator R] [--pins "1:A;2:B" | "1:A:x:y:rot;..."] [--pitch 10]
       node scripts/generate-footprint.js from-pads --dir <dir> --name <fp>
-           [--pads "1:x:y:w:h;..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
+           [--pads "1:x:y:w:h[:holeD];..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
       node scripts/load-library.js power --dir <dir> --net VCC [--style up|down]
       node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
 4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p>
@@ -74,7 +75,7 @@ All coordinates are **mil** unless a script's help says otherwise.
     (or: set --designator R1 --value R5)
 9.  node scripts/add-footprint.js --dir <dir> --pcb <pcb>
     --symbol <entry> --footprint <fp> --x <mil> --y <mil>
-    [--angle 90] [--refdes R1] [--nets "1:VCC,2:GND"]
+    [--angle 0] [--refdes R1] [--nets "1:VCC,2:GND"]
 10. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
     [--layer 1] [--width 10]
     node scripts/add-via.js  --dir <dir> --pcb <pcb> --x .. --y .. [--net SIG]
@@ -93,7 +94,7 @@ All coordinates are **mil** unless a script's help says otherwise.
 
 Two library tiers: **preset templates** ship with the skill under `templates/library/{symbol,footprint}/` (committed with the skill, resolved FIRST on every placement) and **temp entries** generated during authoring under `<project>/.tmp/library/` (tooling metadata — the client never sees it). `load-library.js list` shows both tiers (`preset`/`tmp`), `show --name <entry>` dumps one, `remove --name <entry>` deletes a temp entry (presets are committed — not removable). Temp entry names must not shadow a preset name.
 
-`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch 10. Pass `num:name:x:y:rotation` entries for explicit placement.
+`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch `--pitch` (default 10). Pin spec entries are all-auto (`num:name`) or all-explicit (`num:name:x:y:rot`, rot 0 = left column / 180 = right column — vertical columns have no real-client sample and are rejected); the body rect always derives from the actual pin geometry. `generate-footprint.js` pads take an optional 6th field — a drill diameter in mil switches the pad to through-hole (ROUND hole + ELLIPSE pad on the MULTI layer).
 
 Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings`.
 
@@ -144,9 +145,9 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 
 | Script | Purpose |
 | --- | --- |
-| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). Pass `--panel` to also create a panel document. |
+| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). `--board-w/--board-h` size the board outline (mil, default 4000×3000); pass `--panel` to also create a panel document. |
 | `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → temp entry `<dir>/.tmp/library/symbol/<name>.json`. |
-| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
+| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list (SMD, or through-hole with a drill diameter) → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
 | `scripts/load-library.js` | Stage power flags / net ports as temp entries; inspect the two-tier library (`power`/`port`/`list`/`show`/`remove`). |
 | `scripts/add-symbol.js` | Unified schematic placement — resolves the entry preset-first and dispatches by kind (symbol/power/port/special); pairs a symbol with a footprint entry and composes the DEVICE doc on the fly. |
 | `scripts/add-wire.js` | Draw wires (WIRE + LINE records, optional net). |

@@ -193,13 +193,15 @@ DOCHEAD(FOOTPRINT) → META → CANVAS{unit:"mm"} → Pads + graphics → Design
 
 ```jsonc
 {"type":"PAD","ticket":25,"id":"e2"}||{"groupId":0,"netName":"","layerId":1,"num":"1","centerX":-16.54,"centerY":0,"padAngle":0,"hole":null,"defaultPad":{"padType":"RECT","width":31.5,"height":35.43,"radius":0},"specialPad":[],"padOffsetX":0,"padOffsetY":0,"relativeAngle":90,"plated":true,...}|
+{"type":"PAD","ticket":26,"id":"e5"}||{"groupId":0,"netName":"GND","layerId":12,"num":"1","centerX":499.2387,"centerY":348.6491,"padAngle":0,"hole":{"holeType":"ROUND","width":36,"height":36,"cornerRadius":11.811},"defaultPad":{"padType":"ELLIPSE","width":60,"height":60},"specialPad":[],"padOffsetX":0,"padOffsetY":0,...}|  // through-hole, official example
 {"type":"POLY","ticket":23,"id":"..."}||{...,"layerId":48,"width":2,"path":[-27.56,-19.69,"L",27.56,-19.69,27.56,19.69,-27.56,19.69,-27.56,-19.69],...}| // courtyard/body outline, polyline corners
 {"type":"POLY","ticket":24,"id":"..."}||{...,"layerId":3,"width":6,"path":[-27.56,-19.69,"L",27.56,-19.69,27.56,19.69,-27.56,19.69,-27.56,-19.69],...}| // silk, polyline form
 ```
 
 - Polyline paths are `[x0, y0, "L", x1, y1, x2, y2, ...]` (one leading `"L"`, then coordinate pairs). Rect shapes use `["R", x, y, w, h, rx, ry]` — **the anchor `(x, y)` is the min-x / max-y corner and `h` extends toward −y**: the rect covers `x ∈ [x, x+w]`, `y ∈ [y−h, y]`. Verified against the official example (board outline `["R",0,940,1475,940,0,0]` covering `[0,1475]×[0,940]`) and a real-client project. Real footprint docs describe outlines as polylines only — never as rect paths.
 - **All footprint coordinates are mil even though the CANVAS says `unit:"mm"`** (the official example does the same).
-- Layers: 1 top copper, 3 top silk, 11 board outline, 48 component body/courtyard.
+- Layers: 1 top copper, 3 top silk, 11 board outline, 12 multi (through-hole pads), 48 component body/courtyard.
+- PAD `hole` is `null` for SMD, otherwise a `THoleDef` object `{holeType, width, height[, cornerRadius]}` with `holeType` ∈ `ROUND | RECT | SLOT | ROUND_RECT` (only `ROUND` appears in real samples; mil). A holed pad sits on layer 12 with an `ELLIPSE` `defaultPad`.
 - The PCB component block reuses the footprint doc's `Footprint`/`Designator` attr ids and zIndexes.
 
 ## PCB container (`pcb/<pcb>.epcb2`)

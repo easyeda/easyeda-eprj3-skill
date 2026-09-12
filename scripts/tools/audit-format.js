@@ -213,6 +213,8 @@ function main() {
     // page attrs value:null (official @Board Name); instance attrs bold/italic:0 (official ticket 1134)
     { re: /^(SCH|PCB) ATTR ->/, field: /(value|bold|italic)/, msg: /must be (string|boolean)/ },
     { re: /^(SCH|PCB) PIN ->/, field: 'color', msg: 'must be string' },
+    // real-client symbol docs (elibu export) omit groupId on SCH PIN/POLY records
+    { re: /^SCH (PIN|POLY) ->/, field: 'groupId', msg: "must have required property 'groupId'" },
     // official shapes use null for stroke/fill style
     { re: /^(SCH|PCB) (LINE|RECT|POLY|CIRCLE|ELLIPSE|ARC|BEZIER) ->/, field: /(strokeStyle|fillStyle)/, msg: 'must be equal to one of the allowed values' },
     // official POLY/TEXT omit startShape/endShape/strikeout, TEXT align is null

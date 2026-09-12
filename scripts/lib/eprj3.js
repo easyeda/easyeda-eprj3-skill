@@ -407,7 +407,9 @@ function buildPowerSymbolDoc(spec) {
 // outline: mil path array (layer 48 component body) — polyline corners, e.g.
 // [x0,y0,'L',x1,y0,x1,y1,x0,y1,x0,y0] (real footprint docs never use rect paths)
 // silks:   [{path:[x1,y1,'L',x2,y2,...], width?}]  (layer 3)
-// pads:    [{num,x,y,width,height,offsetX?,offsetY?}]  (mil, layer 1 RECT)
+// pads:    [{num,x,y,width,height,hole?,offsetX?,offsetY?}]  (mil)
+//          hole = drill diameter (mil): null → SMD RECT pad on layer 1;
+//          number → ROUND hole, ELLIPSE pad on layer 12 (MULTI)
 function buildFootprintDoc(spec) {
   const b = new DocBuilder();
   b.lines.push(docHeadLine('FOOTPRINT', spec.client, spec.uuid, spec.ms));
@@ -475,11 +477,16 @@ function buildFootprintDoc(spec) {
   }
   const pads = [];
   for (const p of spec.pads || []) {
+    // Through-hole pads follow the official example: MULTI layer (12), round
+    // drill hole, ellipse pad. SMD pads stay on TOP_COPPER with a RECT pad.
+    const hole = p.hole ? { holeType: 'ROUND', width: p.hole, height: p.hole } : null;
     const elemId = b.addElem('PAD', {
-      groupId: 0, netName: '', layerId: 1,
+      groupId: 0, netName: '', layerId: hole ? 12 : 1,
       num: p.num, centerX: p.x, centerY: p.y, padAngle: 0,
-      hole: null,
-      defaultPad: { padType: 'RECT', width: p.width, height: p.height, radius: 0 },
+      hole,
+      defaultPad: hole
+        ? { padType: 'ELLIPSE', width: p.width, height: p.height }
+        : { padType: 'RECT', width: p.width, height: p.height, radius: 0 },
       specialPad: [],
       padOffsetX: p.offsetX || 0, padOffsetY: p.offsetY || 0,
       relativeAngle: 90, plated: true, padType: 'NORMAL',
@@ -1014,7 +1021,7 @@ function pcbComponentBlock(v) {
   }
   line('COMPONENT', {
     partitionId: '', groupId: 0, layerId: 1,
-    x: v.x, y: v.y, angle: v.angle !== undefined ? v.angle : 90,
+    x: v.x, y: v.y, angle: v.angle !== undefined ? v.angle : 0,
     attrs: {
       'Reuse Block': '',
       'Group ID': '',

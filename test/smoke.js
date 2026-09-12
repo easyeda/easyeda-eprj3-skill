@@ -143,6 +143,25 @@ function main() {
     assert(fs.existsSync(path.join(panelProj, 'panel', 'Panel1.epan2')), '--panel creates the panel document');
     const rValPanel = run([SCRIPTS + '/validate.js', '--dir', panelProj]);
     assert(rValPanel.status === 0, 'validate passes with a panel present', rValPanel.stdout);
+    const panelPcb = mainDocs(path.join(panelProj, 'pcb', 'PCB1.epcb2'));
+    const dfltOutline = panelPcb.main.records.find((r) => r.type === 'POLY' && r.body.polyType === 'BOARD_OUTLINE');
+    assert(dfltOutline && JSON.stringify(dfltOutline.body.path) === '["R",0,3000,4000,3000,0,0]',
+      'init board outline defaults to 4000x3000 mil anchored bottom-left');
+    run([SCRIPTS + '/add-footprint.js', '--dir', panelProj, '--pcb', 'PCB1',
+      '--symbol', 'RES', '--footprint', 'R0603', '--x', '1000', '--y', '1000', '--refdes', 'R1']);
+    const panelPcb2 = mainDocs(path.join(panelProj, 'pcb', 'PCB1.epcb2'));
+    const ppComp = panelPcb2.main.records.find((r) => r.type === 'COMPONENT' && r.body.x === 1000);
+    assert(ppComp && ppComp.body.angle === 0, 'add-footprint defaults to angle 0 without --angle');
+
+    // ---- board size options ----
+    const bigProj = path.join(tmp, 'bigboard');
+    run([SCRIPTS + '/init.js', '--dir', bigProj, '--name', 'bigboard',
+      '--board-w', '5000', '--board-h', '4000']);
+    const bigPcb = mainDocs(path.join(bigProj, 'pcb', 'PCB1.epcb2'));
+    const bigOutline = bigPcb.main.records.find((r) => r.type === 'POLY' && r.body.polyType === 'BOARD_OUTLINE');
+    assert(bigOutline && JSON.stringify(bigOutline.body.path) === '["R",0,4000,5000,4000,0,0]',
+      'init --board-w/--board-h size the board outline',
+      bigOutline && JSON.stringify(bigOutline.body.path));
 
     // ---- temp symbol library (project .tmp staging) ----
     run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'T_RES',
@@ -160,6 +179,34 @@ function main() {
       '--name', 'RES', '--pins', '1;2'], null);
     assert(rShadow.status !== 0 && /shadows a preset/.test(rShadow.stderr + rShadow.stdout),
       'generate-symbol rejects names shadowing a preset');
+
+    // ---- pin layout: --pitch, explicit coordinates, guards ----
+    run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'T_IC4',
+      '--designator', 'U', '--pins', '1:a;2:b;3:c;4:d', '--pitch', '20']);
+    const ic4 = JSON.parse(fs.readFileSync(j('.tmp', 'library', 'symbol', 'T_IC4.json'), 'utf8'));
+    const ic4Pins = ic4.symbolDoc.map(E.parseRecord).filter((r) => r.type === 'PIN');
+    const ic4Rect = ic4.symbolDoc.map(E.parseRecord).find((r) => r.type === 'RECT');
+    assert(ic4Pins.some((p) => Math.abs(p.body.y) === 10)
+      && ic4Rect && ic4Rect.body.dotY2 === 20 && ic4Rect.body.dotY1 === -20,
+      'generate-symbol --pitch 20 spaces pins 20 mil and the body follows',
+      JSON.stringify({ ys: ic4Pins.map((p) => p.body.y), rect: ic4Rect && [ic4Rect.body.dotY1, ic4Rect.body.dotY2] }));
+    run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj, '--name', 'T_EXPL',
+      '--designator', 'U', '--pins', '1:IN:-30:0:0;2:OUT:30:0:180;3:CLK:-30:15:0;4:RST:30:15:180']);
+    const expl = JSON.parse(fs.readFileSync(j('.tmp', 'library', 'symbol', 'T_EXPL.json'), 'utf8'));
+    const explPins = expl.symbolDoc.map(E.parseRecord).filter((r) => r.type === 'PIN');
+    const explRect = expl.symbolDoc.map(E.parseRecord).find((r) => r.type === 'RECT');
+    assert(explPins.every((p) => Math.abs(p.body.x) === 30)
+      && explRect && explRect.body.dotX1 === -20 && explRect.body.dotX2 === 20,
+      'explicit pin coordinates survive into the doc and drive the body rect',
+      JSON.stringify({ xs: explPins.map((p) => p.body.x), rect: explRect && [explRect.body.dotX1, explRect.body.dotX2] }));
+    const rMixed = run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj,
+      '--name', 'T_MIX', '--pins', '1:a;2:b:30:0:180'], null);
+    assert(rMixed.status !== 0 && /mixes auto and explicit/.test(rMixed.stderr + rMixed.stdout),
+      'generate-symbol rejects mixing auto and explicit pins');
+    const rVert = run([SCRIPTS + '/generate-symbol.js', 'from-pins', '--dir', proj,
+      '--name', 'T_VERT', '--pins', '1:a:0:-20:270'], null);
+    assert(rVert.status !== 0 && /only 0 \(left\) or 180/.test(rVert.stderr + rVert.stdout),
+      'generate-symbol rejects explicit vertical pins (no real-client sample)');
 
     // ---- temp footprint library ----
     run([SCRIPTS + '/generate-footprint.js', 'from-pads', '--dir', proj, '--name', 'T_FP0402',
@@ -181,6 +228,20 @@ function main() {
     const outline48 = fpRecs.find((r) => r.type === 'POLY' && r.body && r.body.layerId === 48);
     assert(outline48 && outline48.body.path[0] === -27.56 && outline48.body.path[2] === 'L',
       'footprint outline emits explicit polyline corners (real docs never use rect paths)');
+    run([SCRIPTS + '/generate-footprint.js', 'from-pads', '--dir', proj, '--name', 'T_TH',
+      '--designator', 'U', '--pads', '1:-50:0:60:60:36;2:50:0:60:60:36',
+      '--outline', 'R,-80,-40,160,80']);
+    const thFp = JSON.parse(fs.readFileSync(j('.tmp', 'library', 'footprint', 'T_TH.json'), 'utf8'));
+    const thPad = thFp.footprintDoc.map(E.parseRecord).find((r) => r.type === 'PAD' && r.body.num === '1');
+    assert(thPad && thPad.body.hole && thPad.body.hole.holeType === 'ROUND'
+      && thPad.body.hole.width === 36 && thPad.body.layerId === 12
+      && thPad.body.defaultPad.padType === 'ELLIPSE',
+      'pad spec with drill emits ROUND hole + ELLIPSE pad on MULTI layer (official example shape)',
+      thPad && JSON.stringify({ hole: thPad.body.hole, layerId: thPad.body.layerId }));
+    const rHoleBad = run([SCRIPTS + '/generate-footprint.js', 'from-pads', '--dir', proj,
+      '--name', 'T_BAD', '--pads', '1:0:0:10:10:36'], null);
+    assert(rHoleBad.status !== 0 && /drill/.test(rHoleBad.stderr + rHoleBad.stdout),
+      'generate-footprint rejects a drill larger than its copper pad');
 
     // ---- temp power/port staging via load-library ----
     run([SCRIPTS + '/load-library.js', 'power', '--dir', proj, '--net', 'T_PWR']);
@@ -432,7 +493,7 @@ function main() {
     run([SCRIPTS + '/add-pour.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
       '--x', '100', '--y', '100', '--w', '3800', '--h', '2800']);
     run([SCRIPTS + '/add-pour.js', 'poly', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
-      '--layer', '2', '--name', 'POUR2', '--pts', '100,100,3900,100,3900,2900,100,2900']);
+      '--layer', '2', '--pts', '100,100,3900,100,3900,2900,100,2900']);
     const pcb3 = mainDocs(j('pcb', 'PCB1.epcb2'));
     const str = pcb3.main.records.find((r) => r.type === 'STRING' && r.body.text === 'REV A');
     assert(str && str.body.layerId === 3 && str.body.fontFamily === 'default',
@@ -462,6 +523,9 @@ function main() {
       && pours.every((p) => Array.isArray(p.body.path) && Array.isArray(p.body.path[0]))
       && pours[0].body.pourType.pourType === 'SOLID',
       'POUR records carry nested polygon paths + pourType object');
+    assert(pours[0].body.name === 'POUR1' && pours[1].body.name === 'POUR2',
+      'add-pour auto-assigns unique POURn names when --name is omitted',
+      JSON.stringify(pours.map((p) => p.body.name)));
     const pcbNets = new Set(pcb3.main.records
       .filter((r) => r.type === 'NET' && r.id !== '["NET",""]')
       .map((r) => JSON.parse(r.id)[1]));

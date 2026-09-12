@@ -20,10 +20,11 @@ Refuse to start until the answers are concrete.
 
 ```bash
 node scripts/init.js --dir <dir> --name <name> \
-  [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
+  [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel] \
+  [--board-w 4000] [--board-h 3000]
 ```
 
-Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet document and the PCB document in one shot. The panel is optional — only add `--panel` when the user asks for one.
+Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet document and the PCB document in one shot. The panel is optional — only add `--panel` when the user asks for one. `--board-w/--board-h` size the board outline in mil (default 4000×3000, covering `0..w × 0..h`).
 
 ## 3. Library: presets first, then temp staging
 
@@ -38,15 +39,19 @@ No preset fits? Stage a **temp entry** under `<project>/.tmp/library/` (tooling 
 
 ```bash
 node scripts/generate-symbol.js from-pins --dir <dir> --name <sym> \
-  --designator R --pins "1;2"
-# pin spec: "num" | "num:name" | "num:name:x:y:rotation" ; ';' separated
-# auto-layout: two columns at x=±20, pin length 10, pitch 10
+  --designator R --pins "1;2" [--pitch 10]
+# pin spec, ';'-separated items — ALL auto ("num" | "num:name") or ALL
+# explicit ("num:name:x:y:rotation", rotation 0 = left / 180 = right column):
+# auto-layout gives two columns at x=±20, pin length 10, pitch --pitch;
+# the body rect always derives from the resulting pin geometry
 
 node scripts/generate-footprint.js from-pads --dir <dir> --name <fp> \
   --designator R \
   --pads "1:-16.54:0:31.5:35.43;2:16.54:0:31.5:35.43" \
   --outline "R,-27.56,-19.69,55.12,39.37" \
   --silk "rect,-27.56,-19.69,27.56,19.69"    # or path,x1,y1,x2,y2,...
+# pads spec item: num:x:y:w:h[:holeDiameter] — a drill diameter makes the pad
+# through-hole: ROUND hole + ELLIPSE copper on the MULTI layer (official shape)
 
 node scripts/load-library.js power --dir <dir> --net <NET> [--style up|down]
 node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
@@ -112,6 +117,11 @@ node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
 ```bash
 node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0603 \
   --x 300 --y 300 --angle 90 --refdes R1 --nets "1:VCC,2:SIG"
+```
+
+`--angle` defaults to `0` (no rotation) — pass it explicitly when the footprint should sit rotated.
+
+```bash
 node scripts/add-track.js --dir <dir> --pcb PCB1 --net SIG \
   --x1 300 --y1 316.54 --x2 450 --y2 316.54 --layer 1 --width 10
 node scripts/add-via.js --dir <dir> --pcb PCB1 --x 700 --y 316.54 [--net SIG]
@@ -128,7 +138,7 @@ node scripts/add-pcb-shape.js arc    --dir <dir> --pcb PCB1 \
 node scripts/add-pour.js rect --dir <dir> --pcb PCB1 --net GND \
   --x 100 --y 100 --w 3800 --h 2800 [--layer 1]     # SOLID style only
 node scripts/add-pour.js poly --dir <dir> --pcb PCB1 --net GND \
-  --pts "100,100,3900,100,3900,2900,100,2900" [--name POUR1]
+  --pts "100,100,3900,100,3900,2900,100,2900" [--name POUR1]   # --name omitted: next free POURn
 node scripts/add-pcb-text.js --dir <dir> --pcb PCB1 --value "REV A" \
   --x 2000 --y 2800 [--layer 1] [--origin 4] [--angle 0]
 ```
@@ -146,7 +156,7 @@ node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRA
 
 `add-pour` writes the POUR region record; the client recomputes the filled copper when the file opens. PCB shape arcs use a signed sweep angle (CCW positive).
 
-Rectangles (`init` board outline, `add-pcb-shape/add-pour/add-fill/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000`.
+Rectangles (`init` board outline, `add-pcb-shape/add-pour/add-fill/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000` (resize with `init --board-w/--board-h`).
 
 `--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when routing: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — the blink example routes R1 pad 2 (x=516.54) to C1 pad 1 (x=783.46) on the SIG net.
 

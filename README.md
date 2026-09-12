@@ -69,7 +69,7 @@ git clone https://github.com/easyeda/easyeda-eprj3-skill
 cd easyeda-eprj3-skill
 
 # 1) Bootstrap a project
-node scripts/init.js --dir ./myboard --name myboard
+node scripts/init.js --dir ./myboard --name myboard   # --board-w/--board-h size the outline (mil)
 
 # 2) Check the preset template library (RES, CAP, LED, GND/VCC, net ports, R0603, ...)
 node scripts/load-library.js list
@@ -82,7 +82,7 @@ node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol 
 # 4) No preset fits? Stage temp entries under ./myboard/.tmp/library/
 node scripts/generate-symbol.js from-pins --dir ./myboard --name MY_CONN --designator J --pins "1:A;2:B"
 node scripts/generate-footprint.js from-pads --dir ./myboard --name MY_FP --designator J \
-  --pads "1:0:0:35:35;2:100:0:35:35" --outline "R,-25,-25,150,50"
+  --pads "1:0:0:35:35;2:100:0:35:35" --outline "R,-25,-25,150,50"   # "num:x:y:w:h[:drill]" — a drill makes it through-hole
 node scripts/load-library.js power --dir ./myboard --net V3P3
 node scripts/load-library.js port  --dir ./myboard --net SIG --name PORT_SIG
 node scripts/add-symbol.js --dir ./myboard --sch Schematic1 --sheet P1 --symbol MY_CONN --footprint MY_FP --x 500 --y -440

@@ -10,7 +10,7 @@
  * staging. All embedded docs are rewritten to the project's client id first.
  *
  *   add-footprint --dir <project> --pcb PCB1 --symbol RES --footprint R0603
- *                 --x 300 --y 300 [--angle 90] [--refdes R1]
+ *                 --x 300 --y 300 [--angle 0] [--refdes R1]
  *                 [--name <device title>] [--nets "1:VCC,2:GND"]
  *
  * Coordinates are mil. Named nets are inserted after the empty NET record.
@@ -26,7 +26,7 @@ const SCHEMA = [
   { name: 'footprint', desc: 'footprint library entry', required: true },
   { name: 'x', desc: 'x (mil)', required: true },
   { name: 'y', desc: 'y (mil)', required: true },
-  { name: 'angle', desc: 'rotation (default 90, as the example)' },
+  { name: 'angle', desc: 'rotation in degrees (default 0)' },
   { name: 'refdes', desc: 'reference designator (default: symbol placeholder)' },
   { name: 'name', desc: 'device title (default: footprint entry name)' },
   { name: 'nets', desc: 'pad net map num:NET,... e.g. "1:VCC,2:GND"' }
@@ -92,7 +92,7 @@ function main() {
   const block = E.pcbComponentBlock({
     compId,
     x: Number(opts.x), y: Number(opts.y),
-    angle: opts.angle !== undefined ? Number(opts.angle) : 90,
+    angle: opts.angle !== undefined ? Number(opts.angle) : 0,
     deviceUuid,
     deviceName: deviceTitle,
     footprintUuid: fp.footprintUuid,
