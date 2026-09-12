@@ -1,6 +1,6 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "1.0.0",
+  "version": "1.7.1",
   "description": "AI agent skill that teaches any coding assistant to author EasyEDA Pro .eprj3 projects",
   "main": "scripts/lib/eprj3.js",
   "repository": {

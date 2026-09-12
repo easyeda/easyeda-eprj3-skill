@@ -24,6 +24,7 @@ The format spec is documented in [`docs/format-reference.md`](docs/format-refere
 easyeda-eprj3-skill/
 ├── SKILL.md               ← AI agent entry point — read this first
 ├── README.md              ← You are here
+├── CHANGELOG.md           ← release history (bump with every change)
 ├── package.json
 ├── scripts/
 │   ├── init.js
