@@ -24,8 +24,8 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
   { name: 'pcb', desc: 'PCB title', required: true },
-  { name: 'x', desc: 'rect top-left x (mil)' },
-  { name: 'y', desc: 'rect top-left y (mil)' },
+  { name: 'x', desc: 'rect bottom-left x (mil)' },
+  { name: 'y', desc: 'rect bottom-left y (mil)' },
   { name: 'w', desc: 'rect width (mil)' },
   { name: 'h', desc: 'rect height (mil)' },
   { name: 'pts', desc: 'comma-separated x,y pairs: "x1,y1,x2,y2,..."' },

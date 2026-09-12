@@ -64,6 +64,8 @@ All coordinates are **mil** unless a script's help says otherwise.
     [--rotation 0|90|180|270] [--refdes R1] [--name <device title>]
     (unified placement, dispatched by entry kind: symbol -> component block,
      power -> power flag, port -> net port, special -> DIFF_PAIR/SHORT flag)
+    (choose every x/y per "Schematic layout & wiring rules" below:
+     partition into titled module blocks first, wire = visible, labels = last resort)
 5.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
     --segs "x1,y1,x2,y2;..." [--net SIG]
 6.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
@@ -97,6 +99,56 @@ Two library tiers: **preset templates** ship with the skill under `templates/lib
 `generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch `--pitch` (default 10). Pin spec entries are all-auto (`num:name`) or all-explicit (`num:name:x:y:rot`, rot 0 = left column / 180 = right column — vertical columns have no real-client sample and are rejected); the body rect always derives from the actual pin geometry. `generate-footprint.js` pads take an optional 6th field — a drill diameter in mil switches the pad to through-hole (ROUND hole + ELLIPSE pad on the MULTI layer).
 
 Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings`.
+
+## Schematic layout & wiring rules
+
+`validate.js` checks structure, not readability. When choosing coordinates, follow these rules — they are what makes an AI-authored schematic readable: signal flow left→right, components grouped into titled module blocks, connections shown as visible wires, net labels only as their intended shortcut.
+
+### Partition into module blocks first
+
+1. Before placing anything, split the design into functional blocks (Power Input, Decoupling, Core IC, Interface, LED Driver, …). Blocks stay **coarse**: one block = 3–10 related components; never isolate a single resistor, and put decoupling caps with the IC they decouple.
+2. Lay blocks out **along signal flow**: power entry left or top, processing chain left→right, outputs right, ground/decoupling below their IC. Keep ≥150 mil gutters between blocks; labels and ports live in the gutters.
+3. **Enclose every block** with a rectangle and a title — this is required, not optional:
+   ```bash
+   node scripts/add-shape.js rect --dir <dir> --sch Schematic1 --sheet P1 --x1 250 --y1 -350 --x2 550 --y2 -570
+   node scripts/add-text.js --dir <dir> --sch Schematic1 --sheet P1 --x 255 --y -340 \
+     --value "PWM FILTER — R14/C13, fc ≈ 1.6 kHz"
+   ```
+   Keep 60–80 mil margin between the box edge and the outermost stub; the title sits just above the top edge, left-aligned.
+
+### Placement
+
+- All sheet coordinates are mil with Y up. Put everything on the 10 mil grid: component origins on multiples of 100 (`--x 300 --y -400`), wire endpoints on multiples of 10. Aligned rows/columns: share one `y` across a chain, and use row pitch ≥200 mil so the Designator/Name labels (which sit ±25 mil around the origin) never collide.
+- **Connectivity is exact coordinate equality** — a wire touches a pin only when the endpoint coincides with the pin tip. Compute tips from the entry (`load-library show --name <sym>`): a pin `(px, py, length L, rotation r)` has its tip at `(px − L·cos r, py − L·sin r)` relative to the component origin, then rotated CCW by the component's `--rotation`. Do not assume — RES/CAP/DIODE/LED presets use length 10 (tips `(X±30, Y)` at rotation 0, `(X, Y±30)` at 90) but IND uses length 3 (tips `X±17`), TEST_POINT connects at its origin. Power flags and ports connect at their origin point.
+- Orientation: signal enters the left column and leaves the right (that is the preset/generator convention); rotate 180 only when the flow demands swapping. Series parts horizontal; pull-ups/pull-downs vertical toward the rail they attach to.
+
+### Wiring — prefer visible copper over labels
+
+For every pair of connected pins pick the **weakest** encoding that keeps the drawing clear:
+
+| Situation | Encoding |
+| --- | --- |
+| Same block / nearby (a few hundred mil) | one straight or ≤2-bend **wire**, no label |
+| Same sheet, far apart, or routing would cross other blocks | short **stub** (≥30 mil out of the pin) + `add-netlabel` at both ends |
+| Across sheets | `PORT_IN/OUT/BI` or off-page connector |
+| Power / ground rail | stub + power flag (`GND`, `VCC`, …) |
+
+Hard rules:
+
+- **Never label a pin directly, and never let labels replace wires between nearby pins.** A component whose every pin fans straight into net labels has an unreadable schematic — that is the anti-pattern to avoid.
+- Orthogonal segments only (horizontal/vertical). If wires would cross, move components first; a crossing you cannot route around means the block layout is wrong, not the wiring.
+- Net names: meaningful UPPERCASE (`SPI_CLK`, `LED_PWM`), never auto-style (`N$1`); one name per net everywhere.
+- Worked example — RC low-pass inside its block (RES/CAP presets, tips ±30 mil; GND flag connects at its origin):
+  ```bash
+  node scripts/add-symbol.js ... --symbol RES --footprint R0603 --x 300 --y -400   # tips 270/330,-400
+  node scripts/add-symbol.js ... --symbol CAP --footprint C0603 --x 400 --y -430 --rotation 90   # tips 400,-400/-460
+  node scripts/add-wire.js ... --segs "330,-400,470,-400" --net PWM_OUT
+      # one wire: R.right tip → through C.top tip (T-junction) → output label anchor
+  node scripts/add-wire.js ... --segs "400,-460,400,-520"          # C.bottom stub down to GND flag
+  node scripts/add-symbol.js ... --symbol GND --x 400 --y -520
+  ```
+
+Before running `validate.js`, self-check: every component sits inside a titled block, every wire endpoint equals a pin tip or another wire endpoint, no floating label, no unconnected stub.
 
 ### Launching the client — non-default install paths
 

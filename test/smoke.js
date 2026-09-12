@@ -397,6 +397,17 @@ function main() {
       .filter((a) => a.type === 'ATTR' && a.body.key === 'NET' && a.body.parentId)
       .map((a) => a.body.value);
     assert(netVals.includes('SIG'), 'add-netlabel writes SIG into the wire NET attr');
+    // label the wire that was drawn WITHOUT --net (no NET attr yet)
+    run([SCRIPTS + '/add-netlabel.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1',
+      '--net', 'LBL1', '--at', '300,-480']);
+    const schL = mainDocs(j('sch', 'Schematic1', 'P1.esch2'));
+    const unlabeledWire = schL.main.records.filter((r) => r.type === 'WIRE')[0];
+    const lblAttr = schL.main.records.find((a) => a.type === 'ATTR' && a.body.key === 'NET'
+      && a.body.parentId === unlabeledWire.head.id);
+    assert(lblAttr && lblAttr.body.value === 'LBL1' && lblAttr.body.rotation === 90
+      && lblAttr.body.valueVisible === true,
+      'add-netlabel creates a NET attr (wireBlock shape) on an unlabeled wire');
+    ticketsIncrease(schL.main, 'P1.esch2 after netlabel');
 
     // ---- text + shapes on the sheet ----
     run([SCRIPTS + '/add-text.js', '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1',
@@ -437,6 +448,14 @@ function main() {
     const rGhost = run([SCRIPTS + '/set-refdes.js', 'set', '--dir', proj, '--sch', 'NoSuch',
       '--sheet', 'P1', '--designator', 'R1', '--value', 'R9'], null);
     assert(rGhost.status !== 0, 'set-refdes fails on unknown schematic instead of creating one', `exit ${rGhost.status}`);
+    // embedded SYMBOL docs still carry their "R?" placeholder attrs; `set`
+    // must be main-doc scoped and refuse to rename them
+    const rPlace = run([SCRIPTS + '/set-refdes.js', 'set', '--dir', proj, '--sch', 'Schematic1',
+      '--sheet', 'P1', '--designator', 'R?', '--value', 'RZ'], null);
+    assert(rPlace.status !== 0, 'set-refdes set ignores embedded symbol placeholder attrs', `exit ${rPlace.status}`);
+    const schP2 = mainDocs(j('sch', 'Schematic1', 'P1.esch2'));
+    assert(schP2.main.records.some((r) => r.type === 'ATTR' && r.body.key === 'Designator' && r.body.value === 'R1'),
+      'placeholder guard did not disturb the renamed component');
 
     // ---- PCB placement (preset symbol + footprint) ----
     run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1',
@@ -467,6 +486,14 @@ function main() {
     assert(['VCC', 'SIG'].every((n) => netNameSet.has(n)), 'VCC/SIG NET records created');
     const emptyNet = pcb1.main.records.find((r) => r.type === 'NET' && r.id === '["NET",""]');
     assert(emptyNet, 'empty NET record preserved');
+    // set-refdes `set` must work on the PCB main doc too (rename back after)
+    run([SCRIPTS + '/set-refdes.js', 'set', '--dir', proj, '--pcb', 'PCB1',
+      '--designator', 'R1', '--value', 'R7']);
+    const pcbR7 = mainDocs(j('pcb', 'PCB1.epcb2'));
+    assert(pcbR7.main.records.some((r) => r.type === 'ATTR' && r.body.key === 'Designator' && r.body.value === 'R7'),
+      'set-refdes set renames the PCB Designator attr');
+    run([SCRIPTS + '/set-refdes.js', 'set', '--dir', proj, '--pcb', 'PCB1',
+      '--designator', 'R7', '--value', 'R1']);
 
     // ---- tracks ----
     run([SCRIPTS + '/add-track.js', '--dir', proj, '--pcb', 'PCB1', '--net', 'SIG',

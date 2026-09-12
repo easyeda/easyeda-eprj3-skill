@@ -9,9 +9,9 @@
  *                --x 2000 --y 2800 [--layer 1] [--size 60] [--angle 0]
  *               [--origin 4] [--mirror 0|1]
  *
- * Coordinates are mil. --origin picks the anchor: 0 left-top, 1 mid-top,
- * 2 right-top, 3 left-middle, 4 center, 5 right-middle, 6 left-bottom,
- * 7 mid-bottom, 8 right-bottom. Bottom-layer text defaults to mirror 1.
+ * Coordinates are mil. --origin picks the EAlign anchor: 0 left-bottom,
+ * 1 mid-bottom, 2 right-bottom, 3 left-middle, 4 center, 5 right-middle,
+ * 6 left-top, 7 mid-top, 8 right-top. Bottom-layer text defaults to mirror 1.
  */
 const fs = require('fs');
 const E = require('./lib/eprj3');

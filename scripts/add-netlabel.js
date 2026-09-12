@@ -2,7 +2,8 @@
 'use strict';
 /**
  * add-netlabel.js — set the net name of an existing wire. There is no
- * standalone net-label record type: a label is the wire's NET attr.
+ * standalone net-label record type: a label is the wire's NET attr (created
+ * if the wire was drawn unlabeled by add-wire without --net).
  *
  *   add-netlabel --dir <project> --sch Schematic1 --sheet P1
  *                --net SIG --at 300,-470
@@ -58,14 +59,28 @@ function main() {
     .filter(([, w]) => x >= w.minX && x <= w.maxX && y >= w.minY && y <= w.maxY);
   if (!hits.length) die(`no wire covers point ${x},${y}`);
   if (hits.length > 1) die(`point ${x},${y} covers ${hits.length} wires; pick a point unique to one wire`);
-  const [wireId] = hits[0];
+  const [wireId, w] = hits[0];
 
+  let labeled = 'updated';
   const updated = E.updateRecord(file,
     (r) => r.type === 'ATTR' && r.body && r.body.parentId === wireId && r.body.key === 'NET',
     (r) => { r.body.value = opts.net; });
-  if (!updated) die(`wire ${wireId} has no NET attr`);
+  if (!updated) {
+    // The wire was drawn unlabeled (add-wire without --net) — a real client
+    // named wire carries the NET attr, so create it in wireBlock's shape.
+    labeled = 'created';
+    const midX = (w.minX + w.maxX) / 2;
+    const midY = (w.minY + w.maxY) / 2;
+    const vertical = w.minX === w.maxX;
+    const body = Object.assign(E.attrNull('NET', opts.net, 7, wireId), {
+      x: midX, y: midY, rotation: vertical ? 90 : 0,
+      keyVisible: false, valueVisible: true
+    });
+    E.appendLines(file, [E.formatRecord(
+      { type: 'ATTR', ticket: E.maxTicketOfLines(lines) + 1, id: E.randId() }, body)]);
+  }
   project.save();
-  console.log(`labeled wire ${wireId} as ${opts.net} in ${opts.sch}/${opts.sheet}`);
+  console.log(`labeled wire ${wireId} as ${opts.net} (${labeled} NET attr) in ${opts.sch}/${opts.sheet}`);
 }
 
 main();

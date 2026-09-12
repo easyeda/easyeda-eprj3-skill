@@ -61,6 +61,8 @@ Inspect or prune with `load-library.js list|show|remove` (`remove` only deletes 
 
 ## 4. Place on schematic
 
+Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 3–10 components each, decoupling caps with their IC — with ≥150 mil gutters between them. Full rules with worked coordinates: [SKILL.md → Schematic layout & wiring rules](../SKILL.md#schematic-layout--wiring-rules).
+
 `add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port, `special` → DIFF_PAIR/SHORT flag):
 
 ```bash
@@ -73,6 +75,8 @@ node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
 ```
 
 `--footprint` pairs the symbol with a footprint entry (preset or temp) and the DEVICE doc is composed on the fly — there is no device staging. Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
+
+Coordinates: Y-up mil, everything on the 10 mil grid (component origins on 100 multiples). A wire touches a pin only at **exact coordinate equality** — read the tip from the entry (`load-library show`): RES/CAP/DIODE/LED presets connect at origin `(±30, 0)` rotated by the placement rotation; IND at `±17`; power flags/ports at their origin. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
 
 ## 5. Annotate (text & graphics)
 
@@ -102,7 +106,9 @@ node scripts/add-netlabel.js --dir <dir> --sch Schematic1 --sheet P1 \
   --net SIG --at 300,-400
 ```
 
-`--net` both names the wire and creates the net. `add-netlabel` finds the wire under the point (must match exactly one) and writes its NET attr.
+`--net` both names the wire and creates the net. `add-netlabel` finds the wire under the point (must match exactly one) and writes its NET attr — creating one if the wire was drawn unlabeled.
+
+Wiring rules (readability): nearby pins are joined by **visible wires**, not labels — a pin fanning directly into net labels is the anti-pattern. Use a label only for far-apart same-sheet links, and then only after a wire stub (≥30 mil) out of the pin; cross-sheet links go through ports/off-page connectors; power rails through power flags. Segments stay orthogonal, endpoints on the 10 mil grid, and if a route would cross another block, fix the placement instead of the wire. Net names are meaningful UPPERCASE (`SPI_CLK`), never `N$1`.
 
 ## 7. Renumber
 
@@ -111,6 +117,8 @@ node scripts/set-refdes.js renumber --dir <dir> --sch Schematic1 --sheet P1 --pr
 node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
   --designator R1 --value R5
 ```
+
+Both commands act on the single sheet or PCB document passed (`--sch/--sheet` or `--pcb`); with multiple sheets, renumber each one and keep prefixes globally unique yourself.
 
 ## 8. PCB placement and routing
 
