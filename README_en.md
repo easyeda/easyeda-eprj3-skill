@@ -2,7 +2,7 @@
 
 An AI-agent skill that teaches any coding assistant (Claude Code, Codex, Cursor, Copilot, Continue, Cline, Roo, Windsurf, Trae, Qoder, etc.) to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format.
 
-**Current version: 1.7.2** · [Changelog](CHANGELOG.md)
+[中文版](README.md) · **Current version: 1.7.3** · [Changelog](CHANGELOG.md)
 
 The skill ships a complete set of cross-platform Node.js scripts plus a **preset template library** (common symbols & footprints split from a real-client export) so the AI can:
 

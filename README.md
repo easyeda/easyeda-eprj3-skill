@@ -2,7 +2,7 @@
 
 > 用 AI 或几条 Node 命令，生成可在 EasyEDA Pro（嘉立创 EDA 专业版）直接打开的 `.eprj3` 工程。
 
-**当前版本：1.7.2** · [更新记录](CHANGELOG.md)
+[English version](README_en.md) · **当前版本：1.7.3** · [更新记录](CHANGELOG.md)
 
 ---
 
