@@ -5,6 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.7.2] - 2026-09-15
+
+### Changed
+- Rewrote `README.md` from an ordinary user's perspective: one-line AI install prompt at the top, installation first, an 8-step quick-start plus a minimal command flow, and development/technical details moved to the bottom. Added `README_zh.md` and `README_en.md` as Chinese and English fallbacks.
+
 ## [1.7.1] - 2026-09-12
 
 ### Added
