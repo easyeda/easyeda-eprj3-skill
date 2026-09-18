@@ -2,6 +2,8 @@
 
 Compact reference for the records the scripts in this skill produce — verified against the official example at https://github.com/easyeda/easyeda-pro-eprj3-format (its `example/eprj3-example` project is the ground truth) and cross-checked against the JSON Schemas and real record samples of the **easyeda-pro-format-skill** repo: https://github.com/easyeda/easyeda-pro-format-skill. Every JSON snippet below is quoted from a real record or a sample-backed merge.
 
+Refreshed 2026-09-18 against a full sweep of the companion repo (`primitives/`, `documents/`, `examples/`, `validate.js`) — the field-level traps are consolidated in [Gotchas](#gotchas-卡点经验-swept-from-easyeda-pro-format-skill) near the end.
+
 ## Project layout (folder format)
 
 ```
@@ -250,6 +252,66 @@ Invariants:
 - Named NET records sit **after the empty NET and before the first PAD_NET**; inserting one mid-file renumbers the main doc's tickets to stay increasing in file order.
 - PCB `COMPONENT.body.angle` (not `rotation`); `zIndex: -1`; the component id doubles as the prefix of its pad element ids in `pinSwapInfo`.
 - `Unique ID` attrs use the `gge<N>` convention, counting across the whole main doc.
+
+## Gotchas (卡点经验) — swept from easyeda-pro-format-skill
+
+Field-level traps collected from the companion repo's `primitives/*.md` field tables, `documents/*.md` and `validate.js`. Where the companion docs and real client records disagree, the real records win (noted inline).
+
+### Envelope & record heads
+
+- Every line ends with a `|` separator **except the last line of the file**. `DOCHEAD` is the only head without `ticket`/`id`.
+- `DOCHEAD.client` / `uuid` must be **16-char lowercase hex**; `version` normally equals `updateTime` (ms). Within one project the `client` id should stay consistent.
+- Record order: `DOCHEAD` → `CANVAS` → everything else; tickets increase in generation order (CANVAS fixed `ticket:1, id:"CANVAS"`, others start at 2 — scope is per document).
+- `CANVAS` exists **only** for SCH_PAGE / SYMBOL / SIMULATION / PCB / FOOTPRINT / PANEL / PANEL_LIB docs. DEVICE / SCH / SIMULATION_SCH / CONFIG / BOARD / FONT / BLOB docs have **no CANVAS line** — don't emit one.
+- Three incompatible CANVAS flavors: schematic `{originX, originY}` (+ optional `yAxisDirection`), PCB/FOOTPRINT full grid block, PANEL material/thickness/print/coverColor fields. They are not interchangeable.
+- Singleton-atom ids are not random hex: META/CANVAS use the type name as id, **NET uses the net name as id**, FONT's id is the whole font-parameter array (`["C1","仿宋",4.5,10,0,0,0,0]`), POURED's id is `["POURED","<id>"]`.
+- TABLE cells are **embedded structures, not standalone records** — never emit a line per cell.
+
+### Schema resolution (companion validator)
+
+- The same primitive name means different things per doc type (SCH_PAGE `LINE` = wire segment with `lineGroup`; PCB `LINE` = copper track with `netName/layerId/width`). The companion `validate.js` resolves bare names by priority `SCH_PAGE > SCH > SYMBOL > PCB > …` — unreliable across doc families. Use `<DOCTYPE>_<NAME>` prefixes (`PCB_LINE`) or `--doc`.
+- `--doc X` silently falls back to bare-name resolution with only a warning when the type isn't registered under X; some doc types have empty schemas (validation = pass-through). A validator `valid: true` is necessary, not sufficient.
+
+### Units, coordinates, layers
+
+- `CANVAS.unit` is **display-only — it never re-scales the data**. This is the documented reason footprint coords stay mil even with `unit:"mm"`.
+- `yAxisDirection` (`TYAxisDirection`: `up`/`down`) is the local-format Y-axis **marker**, not the axis itself: per `schemas/ty-axis-direction.json`, a missing field means `down` (cloud/editor-internal space), and writing a local file pairs the marker with a whole-coordinate Y flip (`addUpAndFlipY` / `stripUpAndFlipY` — the business layer never sees the field). Every SCH_PAGE/SYMBOL primitive and its CANVAS may carry it, **but the official example emits it zero times** while storing flipped (Y-up) coordinates (component at `y:-545`) — so the axis shows up in the data as negative-y-below-origin, not as a field. Our writers omit the marker and write Y-up coordinates directly, like the real client.
+- Layer limits: ≤32 inner layers, ≤30 custom layers, ≤31 substrate layers. `LAYER.layerName` must be **unique**; colors must match `^#[0-9A-Fa-f]{6}$` or be empty.
+
+### Path encodings (POLY / POUR / BOARD / REGION / FILL / FONT)
+
+- `"R"` rect segments: the companion docs have **no chapter on the anchor geometry** — the 5th/6th params are always `0,0` in every sample and their meaning is undocumented. The min-x/max-y anchor rule documented above comes from real records only; trust those, not any schema.
+- `"L"` polylines repeat the start point at the beginning and close **explicitly** back to the start (`[x0,y0,"L",x1,y1,…,x0,y0]`).
+- Arc segments are `"ARC"<angle>` (CCW positive), bezier `"C"`; circles `["CIRCLE",cx,cy,r(,isCCW)]`.
+- `path` is **nested `any[][]`** (multi-ring: outer CW, holes CCW) for BOARD / POUR / REGION / FPC_FILL / FONT. The companion doc types FILL's path as a flat single-polygon `any[]` ("组合模式画的才有多个"), but the real FILL example still wraps one polygon in an array (`[["CIRCLE",…]]`) — **always emit the nested form**, even for a single ring.
+
+### Schematic side
+
+- `groupId` when ungrouped: schematic primitives use the **empty string `""`** (`wire.md`: "没有则为空"); the companion PCB docs say `"0"`, but real client PCB records use numeric `0` — emit numeric 0, parse both.
+- `LINE.lineGroup` must match `^[0-9a-f]{16}$`. For BUS members, every LINE's `lineGroup` **and** the NET attr's `parentId` all point at the BUS record's id.
+- `fillColor:""` means no fill; when filled, LINE/POLY shapes **auto-close** start→end regardless of `closed`.
+- Rotation pivots differ per type and are easy to get wrong: RECT rotates around **corner 1** (`dotX1/dotY1`), TEXT around its text anchor, COMPONENT around its position, BUSENTRY around its endpoint.
+- PIN `rotation` is documented 0–360 but real usage is only **0/90/180/270**; `pinShape` ∈ NONE/CLOCK/INVERTED/INVERTED_CLOCK.
+- ATTR `x`/`y` stay **null until the attr has ever been displayed**; `partId` is a SYMBOL-doc-only field. `fontWeight`/`italic` are documented `boolean|null`, but real client records show `0`/`1` — write booleans, tolerate numbers when parsing.
+- BUSENTRY `order` (position within its BUS) **may repeat** — it is not a unique index.
+- A schematic COMPONENT **must** carry a `Symbol` attr whose value is the embedded SYMBOL doc uuid; `DeviceName`/`Devices`/`Footprints` attrs are JSON.stringify'd strings (v4 shape).
+
+### PCB side
+
+- **`null` means "follow the design rule"**, not "none": VIA/PAD `topSolderExpansion`/`bottomSolderExpansion`/`connectMode`/`spokeSpace`/`spokeWidth`/`spokeAngle`/the four expansions. Writing `0` instead of `null` silently overrides the rule.
+- SMD pad `hole`: the companion doc says null = no hole, but real samples write a **zero-size hole** `{"holeType":"ROUND","width":0,"height":0}`. Follow the sample.
+- VIA requires **both** `holeDiameter` and `viaDiameter`; `ruleName` selects the via rule (start/end layers); `viaType` ∈ NORMAL/BLIND/SUTURE; `propagationDelay` is a v3.3-era field.
+- PCB COMPONENT fixed attrs include `3D Model` / `3D Model Transform`; `footprintPrimitives` (v3.3+, default true) and `pinSwap`/`pinSwapInfo` (v3.4+, default false) are newer than many samples — keep them defaulted.
+- STRING `mirror` must flip to true when the text sits on the bottom layer (layer/text coupling the schema does not enforce); `angle` min 0; `expansion` may be negative.
+- REGION `prohibitType` old format: numeric codes 1–8 (1 route+place-fill … 8 inner plane) — the client still parses them for backward compat; emit the string-array form only.
+- NET null semantics: `netType:null` = untyped, `differentialName:null` = not a diff pair, `equalLengthGroupName:null` = not in an equal-length group.
+- Deprecated in the format: the whole **SHELLCUT** record and `SHELL.strokeWidth`. **PROP does not exist anywhere** in the companion repo — confirms this skill's removal of it.
+
+### Holes in the companion repo (why real samples stay the ground truth)
+
+- **NetFlag (docType 18) / NetPort (docType 19) have no primitive docs, no schema, no example** in easyeda-pro-format-skill (grep confirms zero hits). Power symbols and net ports are authored purely from real-client samples — the rules in this doc's *Power symbol block* / *Port block* sections are the only spec that exists.
+- The empty-NET placement rule (after `["NET",""]`, before the first PAD_NET) is likewise absent from the companion docs — derived from the official example.
+- `examples/` in the companion repo carry no schema-vs-record annotations; each example is silently authoritative.
 
 ## Units & conventions
 
