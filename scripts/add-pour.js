@@ -8,11 +8,12 @@
  *   add-pour poly --dir <project> --pcb PCB1 --net GND --layer 1
  *                --pts "100,100,3900,100,3900,2900,100,2900"
  *
- * Coordinates are mil and form the pour outline (rect uses the example's
- * ["R",x,y,w,h,0,0] form). --style only accepts SOLID — it is the only fill
- * mode backed by a real client record; --name defaults to POUR1. The record is
- * the pour region only — the client recomputes the filled copper (POURED
- * records) on open.
+ * Coordinates are mil and form the pour outline (rect takes the bottom-left
+ * corner + size; the client's anchored rect form is emitted for you). --style
+ * only accepts SOLID — it is the only fill mode backed by a real client
+ * record; without --name the next free POURn is picked. The record is the pour
+ * region only — the client recomputes the filled copper (POURED records) on
+ * open.
  */
 const fs = require('fs');
 const E = require('./lib/eprj3');
@@ -23,14 +24,14 @@ const SCHEMA = [
   { name: 'pcb', desc: 'PCB title', required: true },
   { name: 'net', desc: 'net name', required: true },
   { name: 'layer', desc: 'layer id (default 1 = top)' },
-  { name: 'x', desc: 'rect top-left x (mil)' },
-  { name: 'y', desc: 'rect top-left y (mil)' },
+  { name: 'x', desc: 'rect bottom-left x (mil)' },
+  { name: 'y', desc: 'rect bottom-left y (mil)' },
   { name: 'w', desc: 'rect width (mil)' },
   { name: 'h', desc: 'rect height (mil)' },
   { name: 'pts', desc: 'poly outline: comma-separated x,y pairs' },
   { name: 'style', desc: 'SOLID only (default; other modes have no verifiable sample)' },
   { name: 'width', desc: 'clearance/stroke width (default 0.2, as in example)' },
-  { name: 'name', desc: 'pour name (default POUR1)' }
+  { name: 'name', desc: 'pour name (default: next free POURn in this PCB)' }
 ];
 
 function numList(s, what) {
@@ -72,17 +73,28 @@ function main() {
 
   E.ensurePcbNets(file, [opts.net]);
   const lines = E.readLines(file);
+  let name = opts.name;
+  if (name === undefined) {
+    const used = new Set();
+    for (const l of lines) {
+      const r = E.parseRecord(l);
+      if (r && r.type === 'POUR' && r.body && r.body.name) used.add(String(r.body.name));
+    }
+    let n = 1;
+    while (used.has(`POUR${n}`)) n++;
+    name = `POUR${n}`;
+  }
   E.appendLines(file, [E.pcbPourLine({
     netName: opts.net,
     layerId: opts.layer !== undefined ? Number(opts.layer) : 1,
     path,
     width: opts.width !== undefined ? Number(opts.width) : undefined,
-    name: opts.name,
+    name,
     style: 'SOLID',
     ticketBase: E.maxTicketOfLines(lines) + 1
   })]);
   project.save();
-  console.log(`added ${cmd} pour ${opts.name || 'POUR1'} (net ${opts.net}) on ${opts.pcb}`);
+  console.log(`added ${cmd} pour ${name} (net ${opts.net}) on ${opts.pcb}`);
 }
 
 main();

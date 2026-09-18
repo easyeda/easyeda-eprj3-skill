@@ -17,7 +17,9 @@
  *
  * All coordinates are mil (footprint docs carry them as-is despite the mm
  * canvas unit — see the official example).
- *   pads   spec: ';'-separated num:x:y:w:h        (RECT pads on layer 1)
+ *   pads   spec: ';'-separated num:x:y:w:h[:holeD]
+ *          RECT pads on layer 1 (SMD); with a drill diameter holeD the pad
+ *          becomes through-hole: ELLIPSE pad + ROUND hole on layer 12 (MULTI)
  *   outline spec: R,x,y,w,h                        (layer 48 component body)
  *   silk   spec: ';'-separated items:
  *                rect,x1,y1,x2,y2                  (closed rect outline)
@@ -33,7 +35,7 @@ const SCHEMA = [
   { name: 'designator', desc: 'designator prefix, e.g. R -> R?' },
   { name: 'description', desc: 'footprint description' },
   { name: 'tags', desc: 'comma-separated tags' },
-  { name: 'pads', desc: 'pad spec num:x:y:w:h;... (mil)', required: true },
+  { name: 'pads', desc: 'pad spec num:x:y:w:h[:holeDiameter];... (mil)', required: true },
   { name: 'outline', desc: 'body outline R,x,y,w,h (mil, layer 48)' },
   { name: 'silk', desc: 'silk spec, see above (mil, layer 3)' }
 ];
@@ -41,12 +43,21 @@ const SCHEMA = [
 function parsePads(spec) {
   return spec.split(';').map((s) => s.trim()).filter(Boolean).map((s) => {
     const p = s.split(':');
-    if (p.length !== 5) return die(`bad pad spec "${s}" (want num:x:y:w:h)`);
-    return {
+    if (p.length !== 5 && p.length !== 6) return die(`bad pad spec "${s}" (want num:x:y:w:h or num:x:y:w:h:holeDiameter)`);
+    const pad = {
       num: p[0].trim(),
       x: Number(p[1]), y: Number(p[2]),
       width: Number(p[3]), height: Number(p[4])
     };
+    if (p.length === 6) {
+      pad.hole = Number(p[5]);
+      if (!Number.isFinite(pad.hole) || pad.hole <= 0) die(`bad hole diameter "${p[5]}" in pad spec "${s}" (want a positive mil number)`);
+      if (pad.hole > Math.min(pad.width, pad.height)) {
+        die(`pad ${pad.num}: drill ${pad.hole} larger than the copper ${pad.width}x${pad.height}`);
+      }
+    }
+    if (![pad.x, pad.y, pad.width, pad.height].every(Number.isFinite)) die(`bad numeric pad spec "${s}"`);
+    return pad;
   });
 }
 

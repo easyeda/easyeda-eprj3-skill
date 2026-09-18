@@ -68,6 +68,7 @@ All coordinates are **mil** unless a script's help says otherwise.
 1.  Resolve paths & project name                    (AskUserQuestion)
 2.  node scripts/init.js --dir <dir> --name <name>
     [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
+    [--board-w 4000] [--board-h 3000]          (board outline size, mil)
 3.  Pick library entries — check the preset templates first:
       node scripts/load-library.js list             (presets; add --dir to also list project staging)
     Place a preset directly (resolved first on every placement), e.g.:
@@ -78,9 +79,9 @@ All coordinates are **mil** unless a script's help says otherwise.
     No preset fits? Stage a temp entry under <dir>/.tmp/library/
     (names must not shadow a preset — the scripts reject that):
       node scripts/generate-symbol.js from-pins --dir <dir> --name <sym>
-           [--designator R] [--pins "1;2:A;3:x:y:rot"]
+           [--designator R] [--pins "1:A;2:B" | "1:A:x:y:rot;..."] [--pitch 10]
       node scripts/generate-footprint.js from-pads --dir <dir> --name <fp>
-           [--pads "1:x:y:w:h;..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
+           [--pads "1:x:y:w:h[:holeD];..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
       node scripts/load-library.js power --dir <dir> --net VCC [--style up|down]
       node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
 4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p>
@@ -88,6 +89,8 @@ All coordinates are **mil** unless a script's help says otherwise.
     [--rotation 0|90|180|270] [--refdes R1] [--name <device title>]
     (unified placement, dispatched by entry kind: symbol -> component block,
      power -> power flag, port -> net port, special -> DIFF_PAIR/SHORT flag)
+    (choose every x/y per "Schematic layout & wiring rules" below:
+     partition into titled module blocks first, wire = visible, labels = last resort)
 5.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
     --segs "x1,y1,x2,y2;..." [--net SIG]
 6.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
@@ -99,7 +102,7 @@ All coordinates are **mil** unless a script's help says otherwise.
     (or: set --designator R1 --value R5)
 9.  node scripts/add-footprint.js --dir <dir> --pcb <pcb>
     --symbol <entry> --footprint <fp> --x <mil> --y <mil>
-    [--angle 90] [--refdes R1] [--nets "1:VCC,2:GND"]
+    [--angle 0] [--refdes R1] [--nets "1:VCC,2:GND"]
 10. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
     [--layer 1] [--width 10]
     node scripts/add-via.js  --dir <dir> --pcb <pcb> --x .. --y .. [--net SIG]
@@ -118,9 +121,59 @@ All coordinates are **mil** unless a script's help says otherwise.
 
 Two library tiers: **preset templates** ship with the skill under `templates/library/{symbol,footprint}/` (committed with the skill, resolved FIRST on every placement) and **temp entries** generated during authoring under `<project>/.tmp/library/` (tooling metadata — the client never sees it). `load-library.js list` shows both tiers (`preset`/`tmp`), `show --name <entry>` dumps one, `remove --name <entry>` deletes a temp entry (presets are committed — not removable). Temp entry names must not shadow a preset name.
 
-`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch 10. Pass `num:name:x:y:rotation` entries for explicit placement.
+`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch `--pitch` (default 10). Pin spec entries are all-auto (`num:name`) or all-explicit (`num:name:x:y:rot`, rot 0 = left column / 180 = right column — vertical columns have no real-client sample and are rejected); the body rect always derives from the actual pin geometry. `generate-footprint.js` pads take an optional 6th field — a drill diameter in mil switches the pad to through-hole (ROUND hole + ELLIPSE pad on the MULTI layer).
 
 Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings`.
+
+## Schematic layout & wiring rules
+
+`validate.js` checks structure, not readability. When choosing coordinates, follow these rules — they are what makes an AI-authored schematic readable: signal flow left→right, components grouped into titled module blocks, connections shown as visible wires, net labels only as their intended shortcut.
+
+### Partition into module blocks first
+
+1. Before placing anything, split the design into functional blocks (Power Input, Decoupling, Core IC, Interface, LED Driver, …). Blocks stay **coarse**: one block = 3–10 related components; never isolate a single resistor, and put decoupling caps with the IC they decouple.
+2. Lay blocks out **along signal flow**: power entry left or top, processing chain left→right, outputs right, ground/decoupling below their IC. Keep ≥150 mil gutters between blocks; labels and ports live in the gutters.
+3. **Enclose every block** with a rectangle and a title — this is required, not optional:
+   ```bash
+   node scripts/add-shape.js rect --dir <dir> --sch Schematic1 --sheet P1 --x1 250 --y1 -350 --x2 550 --y2 -570
+   node scripts/add-text.js --dir <dir> --sch Schematic1 --sheet P1 --x 255 --y -340 \
+     --value "PWM FILTER — R14/C13, fc ≈ 1.6 kHz"
+   ```
+   Keep 60–80 mil margin between the box edge and the outermost stub; the title sits just above the top edge, left-aligned.
+
+### Placement
+
+- All sheet coordinates are mil with Y up. Put everything on the 10 mil grid: component origins on multiples of 100 (`--x 300 --y -400`), wire endpoints on multiples of 10. Aligned rows/columns: share one `y` across a chain, and use row pitch ≥200 mil so the Designator/Name labels (which sit ±25 mil around the origin) never collide.
+- **Connectivity is exact coordinate equality** — a wire touches a pin only when the endpoint coincides with the pin tip. Compute tips from the entry (`load-library show --name <sym>`): a pin `(px, py, length L, rotation r)` has its tip at `(px − L·cos r, py − L·sin r)` relative to the component origin, then rotated CCW by the component's `--rotation`. Do not assume — RES/CAP/DIODE/LED presets use length 10 (tips `(X±30, Y)` at rotation 0, `(X, Y±30)` at 90) but IND uses length 3 (tips `X±17`), TEST_POINT connects at its origin. Power flags and ports connect at their origin point.
+- Orientation: signal enters the left column and leaves the right (that is the preset/generator convention); rotate 180 only when the flow demands swapping. Series parts horizontal; pull-ups/pull-downs vertical toward the rail they attach to.
+
+### Wiring — prefer visible copper over labels
+
+For every pair of connected pins pick the **weakest** encoding that keeps the drawing clear:
+
+| Situation | Encoding |
+| --- | --- |
+| Same block / nearby (a few hundred mil) | one straight or ≤2-bend **wire**, no label |
+| Same sheet, far apart, or routing would cross other blocks | short **stub** (≥30 mil out of the pin) + `add-netlabel` at both ends |
+| Across sheets | `PORT_IN/OUT/BI` or off-page connector |
+| Power / ground rail | stub + power flag (`GND`, `VCC`, …) |
+
+Hard rules:
+
+- **Never label a pin directly, and never let labels replace wires between nearby pins.** A component whose every pin fans straight into net labels has an unreadable schematic — that is the anti-pattern to avoid.
+- Orthogonal segments only (horizontal/vertical). If wires would cross, move components first; a crossing you cannot route around means the block layout is wrong, not the wiring.
+- Net names: meaningful UPPERCASE (`SPI_CLK`, `LED_PWM`), never auto-style (`N$1`); one name per net everywhere.
+- Worked example — RC low-pass inside its block (RES/CAP presets, tips ±30 mil; GND flag connects at its origin):
+  ```bash
+  node scripts/add-symbol.js ... --symbol RES --footprint R0603 --x 300 --y -400   # tips 270/330,-400
+  node scripts/add-symbol.js ... --symbol CAP --footprint C0603 --x 400 --y -430 --rotation 90   # tips 400,-400/-460
+  node scripts/add-wire.js ... --segs "330,-400,470,-400" --net PWM_OUT
+      # one wire: R.right tip → through C.top tip (T-junction) → output label anchor
+  node scripts/add-wire.js ... --segs "400,-460,400,-520"          # C.bottom stub down to GND flag
+  node scripts/add-symbol.js ... --symbol GND --x 400 --y -520
+  ```
+
+Before running `validate.js`, self-check: every component sits inside a titled block, every wire endpoint equals a pin tip or another wire endpoint, no floating label, no unconnected stub.
 
 ### Launching the client — non-default install paths
 
@@ -169,9 +222,9 @@ All scripts accept `--help` and follow the convention `<script> [subcommand] [op
 
 | Script | Purpose |
 | --- | --- |
-| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). Pass `--panel` to also create a panel document. |
+| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). `--board-w/--board-h` size the board outline (mil, default 4000×3000); pass `--panel` to also create a panel document. |
 | `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → temp entry `<dir>/.tmp/library/symbol/<name>.json`. |
-| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
+| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list (SMD, or through-hole with a drill diameter) → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
 | `scripts/load-library.js` | Stage power flags / net ports as temp entries; inspect the two-tier library (`power`/`port`/`list`/`show`/`remove`). |
 | `scripts/add-symbol.js` | Unified schematic placement — resolves the entry preset-first and dispatches by kind (symbol/power/port/special); pairs a symbol with a footprint entry and composes the DEVICE doc on the fly. |
 | `scripts/add-wire.js` | Draw wires (WIRE + LINE records, optional net). |

@@ -45,13 +45,29 @@ function targetFile(project, opts) {
   return null;
 }
 
+// Only the main document (everything after the last DOCHEAD) is renamed —
+// embedded SYMBOL docs in the same file carry placeholder Designator attrs
+// ("R?") that must stay untouched.
+function mainRecordBounds(file) {
+  const records = E.readRecords(file);
+  let from = 0;
+  for (let i = records.length - 1; i >= 0; i--) {
+    if (records[i].type === 'DOCHEAD') { from = i + 1; break; }
+  }
+  return { records, from };
+}
+
 function cmdSet(file, opts) {
   if (!opts.designator || !opts.value) die('set needs --designator <old> --value <new>');
-  const n = E.updateRecord(file,
-    (r) => r.type === 'ATTR' && r.body && r.body.key === 'Designator'
-      && r.body.parentId && r.body.value === opts.designator,
-    (r) => { r.body.value = opts.value; });
+  const { records, from } = mainRecordBounds(file);
+  let n = 0;
+  for (let i = from; i < records.length; i++) {
+    const r = records[i];
+    if (r.type === 'ATTR' && r.body && r.body.key === 'Designator'
+      && r.body.parentId && r.body.value === opts.designator) { r.body.value = opts.value; n++; }
+  }
   if (!n) die(`no component with designator "${opts.designator}" found`);
+  E.writeRecords(file, records);
   console.log(`renamed ${opts.designator} -> ${opts.value} (${n} record${n === 1 ? '' : 's'})`);
 }
 
