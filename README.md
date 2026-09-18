@@ -118,8 +118,21 @@ A complete worked example lives in [`examples/blink`](examples/blink) — a show
 
 Read [`SKILL.md`](SKILL.md). It defines the workflow, the required user inputs, and which scripts to run in which order. The skill is also packaged with installation guides for every common agent — see [`install/`](install/README.md).
 
+## Required companion skill: easyeda-pro-format-skill (install this first)
+
+**easyeda-pro-format-skill** (https://github.com/easyeda/easyeda-pro-format-skill) is a **mandatory foundation for this skill**, not optional reference material. This skill's scripts encode a subset of the `.eprj3` format; the companion repo is the authoritative, machine-checkable spec — per-record field tables (`primitives/`), real record samples (`examples/`), and JSON Schemas (`schemas/`).
+
+- **AI agents MUST install and read it** before generating, editing, or validating any `.eprj3` file. Follow the "Mandatory prerequisite" gate at the top of [`SKILL.md`](SKILL.md) and step 0 of [`docs/workflow.md`](docs/workflow.md).
+- **Install** (check in order, clone only if missing):
+  - `c:\Users\easyeda\.claude\skills\easyeda-pro-format-skill\` (default skill directory)
+  - any path already registered under the `easyeda-pro-format-skill` name
+  - otherwise: `git clone https://github.com/easyeda/easyeda-pro-format-skill <target-dir>`
+- The repo is also needed at authoring time by `scripts/tools/audit-format.js --format-skill <path>` (schema cross-check of every generated record).
+- If the repo cannot be found or cloned, the agent must STOP and ask the user to install it — never guess record shapes from memory. Where this skill's docs, a schema, and a real record disagree, the real record wins (ground truth: https://github.com/easyeda/easyeda-pro-eprj3-format).
+
 ## Requirements
 
+- **easyeda-pro-format-skill** (see the section above) — install and read it first; it is the authoritative spec this skill builds on.
 - Node.js ≥ 18 (tested on Node 24 on Windows 11). No npm dependencies.
 - EasyEDA Pro or LCEDA Pro offline client (only required for the `open.js` step). Both clients share the same `.eprj3` format. The default Windows install puts `easyeda-pro.exe` under `C:\Program Files\easyeda-pro\` (English brand) and `lceda-pro.exe` under `C:\Program Files\lceda-pro\` (Chinese brand). The installer lets the user pick any other path — see [`scripts/open.js`](scripts/open.js) for the probe list and the `set --client <path>` override.
 

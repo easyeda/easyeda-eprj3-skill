@@ -1,11 +1,31 @@
 ---
 name: easyeda-eprj3
-description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use this skill whenever the user wants to author a schematic/PCB in EasyEDA Pro offline-client format from AI prompts, build symbols/footprints/devices, or run validation. Drives the Node.js scripts under scripts/.
+description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use this skill whenever the user wants to author a schematic/PCB in EasyEDA Pro offline-client format from AI prompts, build symbols/footprints/devices, or run validation. Drives the Node.js scripts under scripts/. REQUIRES the companion easyeda-pro-format-skill repo (https://github.com/easyeda/easyeda-pro-format-skill) to be installed and read — both skills are mandatory before generating any eprj3 file.
 ---
 
 # EasyEDA Pro eprj3 Project Skill
 
-This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format. The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md); the authoritative, machine-checkable spec lives in the **easyeda-pro-format-skill** repo at https://github.com/easyeda/easyeda-pro-format-skill (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). The official example project (https://github.com/easyeda/easyeda-pro-eprj3-format) remains the ground truth for record shapes — where a schema and a real record disagree, the record wins.
+This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format. The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md).
+
+## Mandatory prerequisite — easyeda-pro-format-skill (STRONG CONSTRAINT)
+
+The **easyeda-pro-format-skill** repo at https://github.com/easyeda/easyeda-pro-format-skill is a **required companion skill**, not optional reference material. **You MUST NOT generate, edit, or validate any `.eprj3` file based on this skill alone.**
+
+Before running ANY script in the Standard workflow (including `init.js`), you MUST:
+
+1. **Install** the repo if not already present. Check these locations, in order:
+   - `c:\Users\easyeda\.claude\skills\easyeda-pro-format-skill\` (default skill directory)
+   - Any path registered under the `easyeda-pro-format-skill` name in the environment
+   - Otherwise clone it: `git clone https://github.com/easyeda/easyeda-pro-format-skill <target-dir>`
+2. **Read** the repo before authoring anything:
+   - `SKILL.md` (top-level instructions)
+   - `schemas/*.json` — JSON Schemas for every record type
+   - `primitives/*.md` — per-record field tables
+   - `examples/` — real record samples (`SCH_PAGE`, `PCB`, …)
+
+**Why:** this skill's scripts encode a subset of the format. The companion repo is the authoritative, machine-checkable spec (per-record field tables, real client samples, JSON Schemas). Where this skill's docs, a schema, and a real record disagree, **the real record wins**. The official example project (https://github.com/easyeda/easyeda-pro-eprj3-format) remains ground truth for record shapes.
+
+**Hard rule:** if the companion repo cannot be found or cloned (no network, restricted environment), STOP and tell the user it must be installed before any eprj3 authoring proceeds. Do not guess record shapes from memory or from this skill's docs alone.
 
 ## When to invoke
 
@@ -40,6 +60,11 @@ Always confirm the resolved path/name before running `init.js`.
 All coordinates are **mil** unless a script's help says otherwise.
 
 ```
+0.  MANDATORY GATE — install & read easyeda-pro-format-skill first
+    (see "Mandatory prerequisite" above; do NOT proceed to step 1 until done).
+    Locate/verify the repo path now and keep it for the rest of the session —
+    the audit tool needs it later:
+      node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
 1.  Resolve paths & project name                    (AskUserQuestion)
 2.  node scripts/init.js --dir <dir> --name <name>
     [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
