@@ -10,7 +10,7 @@
 
 把下面这句话直接发给你的 AI 助手即可开始：
 
-> AI 助手，请帮我把 https://github.com/easyeda/easyeda-eprj3-skill 安装到我的 AI 助手的 skill 目录（例如 Claude Code 的 `.claude/skills/easyeda-eprj3`），确认 Node.js ≥ 18，并初始化一个示例工程。
+> AI 助手，请帮我把 https://github.com/easyeda/easyeda-eprj3-skill 和 https://github.com/easyeda/easyeda-pro-format-skill 安装到我的 AI 助手的 skill 目录（例如 Claude Code 的 `.claude/skills/easyeda-eprj3`），确认 Node.js ≥ 18，并初始化一个示例工程。
 
 ## 安装
 

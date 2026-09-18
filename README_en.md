@@ -10,7 +10,7 @@
 
 Send this to your AI agent:
 
-> AI agent, please install easyeda-eprj3-skill from https://github.com/easyeda/easyeda-eprj3-skill into my AI agent's skill directory (e.g. `.claude/skills/easyeda-eprj3`), make sure Node.js ≥ 18, and initialize a sample project.
+> AI agent, please install easyeda-eprj3-skill from https://github.com/easyeda/easyeda-eprj3-skill and https://github.com/easyeda/easyeda-pro-format-skill into my AI agent's skill directory (e.g. `.claude/skills/easyeda-eprj3`), make sure Node.js ≥ 18, and initialize a sample project.
 
 ## Install
 
