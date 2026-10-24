@@ -84,8 +84,17 @@ function formatRecord(head, body) {
   return JSON.stringify(head) + '||' + b + '|';
 }
 
+// Atomic write: a crash mid-write must never leave a half-written document
+// (the client would refuse to open the project). Temp file + rename.
 function writeLines(filePath, lines) {
-  fs.writeFileSync(filePath, lines.join('\n') + '\n', 'utf8');
+  const tmp = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, lines.join('\n') + '\n', 'utf8');
+  try {
+    fs.renameSync(tmp, filePath);
+  } catch (e) {
+    try { fs.unlinkSync(tmp); } catch { /* ignore */ }
+    throw e;
+  }
 }
 
 function writeRecords(filePath, records) {
@@ -127,7 +136,12 @@ function insertDocsBeforeMain(filePath, docs) {
   for (const doc of docs) {
     const head = parseRecord(doc[0]);
     const u = head && head.body && head.body.uuid;
-    if (!u || !present.has(u)) toInsert.push(...doc);
+    // `present` grows as we accept docs: the same SYMBOL is embedded once even
+    // when several placements reference it in the same batch.
+    if (!u || !present.has(u)) {
+      toInsert.push(...doc);
+      if (u) present.add(u);
+    }
   }
   if (toInsert.length) {
     lines.splice(lastHead, 0, ...toInsert);
@@ -1316,10 +1330,18 @@ class Project {
 
   static load(rootDir) {
     const p = new Project(rootDir);
+    if (!fs.existsSync(p.indexFile) && fs.existsSync(rootDir)) {
+      // The index name need not equal the directory name (build.js builds
+      // "blink" into whatever --dir the user chose), so fall back to the
+      // single .eprj3 file in the directory.
+      const found = fs.readdirSync(rootDir).filter((f) => f.endsWith('.eprj3'));
+      if (found.length === 1) p.indexFile = path.join(rootDir, found[0]);
+    }
     if (!fs.existsSync(p.indexFile)) {
       throw new Error(`Project index not found: ${p.indexFile}`);
     }
     p.index = JSON.parse(fs.readFileSync(p.indexFile, 'utf8'));
+    if (typeof p.index.name === 'string' && p.index.name) p.name = p.index.name;
     if (!p.index.profile || p.index.format !== 'folder') {
       throw new Error(`Not a folder-format eprj3 project: ${p.indexFile}`);
     }
