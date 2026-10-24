@@ -1,0 +1,207 @@
+{
+  "name": "mosfet-switch",
+  "board": {
+    "width": 1200,
+    "height": 800
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "12V": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "GATE DRIVE",
+      "parts": [
+        "R1",
+        "R2",
+        "Q1"
+      ]
+    },
+    {
+      "title": "LOAD PATH + FLYBACK",
+      "parts": [
+        "D1",
+        "J1",
+        "J2"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "100R",
+      "pins": {
+        "1": "LOAD_CTRL",
+        "2": "GATE"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "GATE",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "Q1",
+      "symbol": {
+        "name": "NMOS_SOT23",
+        "designator": "Q",
+        "pitch": 30,
+        "pins": [
+          "1:G",
+          "2:S",
+          "3:D"
+        ]
+      },
+      "footprint": {
+        "name": "SOT23_3",
+        "designator": "Q",
+        "pads": [
+          [
+            1,
+            -30,
+            -18.5,
+            24,
+            30
+          ],
+          [
+            2,
+            -30,
+            18.5,
+            24,
+            30
+          ],
+          [
+            3,
+            30,
+            0,
+            24,
+            30
+          ]
+        ],
+        "outline": [
+          -55,
+          -45,
+          55,
+          45
+        ]
+      },
+      "name": "NMOS",
+      "value": "AO3400",
+      "pins": {
+        "1": "GATE",
+        "2": "GND",
+        "3": "DRAIN"
+      }
+    },
+    {
+      "id": "D1",
+      "symbol": "DIODE",
+      "footprint": "SMA",
+      "name": "FLYBACK",
+      "value": "SS34",
+      "pins": {
+        "1": "12V",
+        "2": "DRAIN"
+      }
+    },
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_2P_LOAD",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:12V",
+          "2:DRAIN"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P_LOAD",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "LOAD",
+      "value": "LOAD",
+      "pins": {
+        "1": "12V",
+        "2": "DRAIN"
+      }
+    },
+    {
+      "id": "J2",
+      "symbol": {
+        "name": "HDR_2P_CTRL2",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:LOAD_CTRL",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P_CTRL2",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "CTRL",
+      "value": "CTRL",
+      "pins": {
+        "1": "LOAD_CTRL",
+        "2": "GND"
+      }
+    }
+  ]
+}

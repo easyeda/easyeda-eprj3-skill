@@ -1,0 +1,30 @@
+{
+  "name": "inline-test",
+  "board": { "width": 1400, "height": 900 },
+  "powers": { "VIN": "up", "GND": "down", "3V3": "up" },
+  "blocks": [
+    { "title": "REGULATOR", "parts": ["U1", "C1", "C2"] },
+    { "title": "HEADER", "parts": ["J1"] }
+  ],
+  "parts": [
+    {
+      "id": "U1",
+      "symbol": { "name": "LDO_SOT23_5", "designator": "U", "pins": ["1:GND", "2:VOUT", "3:VIN", "4:EN", "5:BYP"] },
+      "footprint": {
+        "name": "SOT23_5", "designator": "U",
+        "pads": [[1, -37.4, -19, 20, 28], [2, 0, -19, 20, 28], [3, 37.4, -19, 20, 28],
+                 [4, 37.4, 19, 20, 28], [5, 0, 19, 20, 28]],
+        "outline": [-60, -40, 60, 40]
+      },
+      "pins": { "1": "GND", "2": "3V3", "3": "VIN", "4": "VIN", "5": "GND" }
+    },
+    { "id": "C1", "symbol": "CAP", "footprint": "C0603", "value": "10uF", "pins": { "1": "VIN", "2": "GND" } },
+    { "id": "C2", "symbol": "CAP", "footprint": "C0603", "value": "10uF", "pins": { "1": "3V3", "2": "GND" } },
+    {
+      "id": "J1",
+      "symbol": { "name": "HDR_2P", "designator": "J", "pins": ["1:VCC", "2:GND"] },
+      "footprint": { "name": "HDR_2P", "designator": "J", "pads": [[1, -50, 0, 60, 60, 40], [2, 50, 0, 60, 60, 40]], "outline": [-90, -50, 90, 50] },
+      "pins": { "1": "3V3", "2": "GND" }
+    }
+  ]
+}

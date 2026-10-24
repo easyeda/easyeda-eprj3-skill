@@ -1,0 +1,15 @@
+{
+  "name": "blink",
+  "board": { "width": 1600, "height": 1000 },
+  "powers": { "VCC": "up", "GND": "down" },
+  "blocks": [
+    { "title": "POWER INPUT", "parts": ["D1", "C1"] },
+    { "title": "LED DRIVER", "parts": ["R1", "D2"] }
+  ],
+  "parts": [
+    { "id": "D1", "symbol": "DIODE", "footprint": "SMA", "pins": { "2": "VCC", "1": "V_LED" } },
+    { "id": "C1", "symbol": "CAP", "footprint": "C0603", "value": "100nF", "pins": { "1": "V_LED", "2": "GND" } },
+    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "330R", "pins": { "1": "V_LED", "2": "LED_A" } },
+    { "id": "D2", "symbol": "LED", "footprint": "LED0603", "pins": { "1": "LED_A", "2": "GND" } }
+  ]
+}

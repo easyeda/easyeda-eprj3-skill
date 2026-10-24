@@ -1,0 +1,175 @@
+{
+  "name": "crystal",
+  "board": {
+    "width": 1200,
+    "height": 800
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "3V3": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "CRYSTAL + XIN LOAD CAP",
+      "parts": [
+        "Y1",
+        "C1"
+      ]
+    },
+    {
+      "title": "XOUT LOAD CAP + MCU",
+      "parts": [
+        "C2",
+        "U1"
+      ]
+    },
+    {
+      "title": "MCU DECOUPLING",
+      "parts": [
+        "C3"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "Y1",
+      "symbol": {
+        "name": "XTAL_2P",
+        "designator": "Y",
+        "pitch": 30,
+        "pins": [
+          "1:XIN",
+          "2:XOUT"
+        ]
+      },
+      "footprint": {
+        "name": "XTAL_2P",
+        "designator": "Y",
+        "pads": [
+          [
+            1,
+            -60,
+            0,
+            50,
+            60
+          ],
+          [
+            2,
+            60,
+            0,
+            50,
+            60
+          ]
+        ],
+        "outline": [
+          -110,
+          -60,
+          110,
+          60
+        ]
+      },
+      "name": "XTAL_8M",
+      "value": "8MHz",
+      "pins": {
+        "1": "XIN",
+        "2": "XOUT"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "20pF",
+      "pins": {
+        "1": "XIN",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C2",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "20pF",
+      "pins": {
+        "1": "XOUT",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "MCU_OSC_4P",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:XIN",
+          "2:XOUT",
+          "3:VSS",
+          "4:VDD"
+        ]
+      },
+      "footprint": {
+        "name": "OSC_MCU_4P",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -60,
+            -40,
+            40,
+            40
+          ],
+          [
+            2,
+            60,
+            -40,
+            40,
+            40
+          ],
+          [
+            3,
+            60,
+            40,
+            40,
+            40
+          ],
+          [
+            4,
+            -60,
+            40,
+            40,
+            40
+          ]
+        ],
+        "outline": [
+          -110,
+          -80,
+          110,
+          80
+        ]
+      },
+      "name": "MCU",
+      "value": "OSC",
+      "pins": {
+        "1": "XIN",
+        "2": "XOUT",
+        "3": "GND",
+        "4": "3V3"
+      }
+    },
+    {
+      "id": "C3",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    }
+  ]
+}

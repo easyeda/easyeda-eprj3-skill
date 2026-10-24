@@ -1,0 +1,343 @@
+{
+  "name": "power-tree",
+  "board": {
+    "width": 1600,
+    "height": 1000
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "VIN_5V": "up",
+    "5V": "up",
+    "3V3": "up",
+    "1V8": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "INPUT PROTECTION",
+      "parts": [
+        "J1",
+        "D1",
+        "D2",
+        "C1"
+      ]
+    },
+    {
+      "title": "5V BULK",
+      "parts": [
+        "C2",
+        "C3"
+      ]
+    },
+    {
+      "title": "3V3 RAIL",
+      "parts": [
+        "U1",
+        "C4",
+        "C5",
+        "C6"
+      ]
+    },
+    {
+      "title": "1V8 RAIL",
+      "parts": [
+        "U2",
+        "C7",
+        "C8"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_2P_PWR",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:VIN_5V",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P_PWR",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "PWR_IN",
+      "value": "5V IN",
+      "pins": {
+        "1": "VIN_5V",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "D1",
+      "symbol": "DIODE",
+      "footprint": "SMA",
+      "name": "REVERSE_PROT",
+      "value": "SS34",
+      "pins": {
+        "1": "5V",
+        "2": "VIN_5V"
+      }
+    },
+    {
+      "id": "D2",
+      "symbol": "DIODE",
+      "footprint": "SMA",
+      "name": "TVS_5V",
+      "value": "SMBJ5.0A",
+      "pins": {
+        "1": "GND",
+        "2": "5V"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "VIN_5V",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C2",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "5V",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C3",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "5V",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "LDO_SOT23_5",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:VIN",
+          "2:GND",
+          "3:EN",
+          "4:BYP",
+          "5:VOUT"
+        ]
+      },
+      "footprint": {
+        "name": "SOT23_5",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -30,
+            -37,
+            24,
+            30
+          ],
+          [
+            2,
+            -30,
+            0,
+            24,
+            30
+          ],
+          [
+            3,
+            -30,
+            37,
+            24,
+            30
+          ],
+          [
+            4,
+            30,
+            -18.5,
+            24,
+            30
+          ],
+          [
+            5,
+            30,
+            18.5,
+            24,
+            30
+          ]
+        ],
+        "outline": [
+          -55,
+          -55,
+          55,
+          55
+        ]
+      },
+      "name": "LDO_3V3",
+      "value": "3V3/300mA",
+      "pins": {
+        "1": "5V",
+        "2": "GND",
+        "3": "5V",
+        "4": "BYP_3V3",
+        "5": "3V3"
+      }
+    },
+    {
+      "id": "C4",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C5",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C6",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "10nF",
+      "pins": {
+        "1": "BYP_3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "U2",
+      "symbol": {
+        "name": "LDO_SOT23_5",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:VIN",
+          "2:GND",
+          "3:EN",
+          "4:BYP",
+          "5:VOUT"
+        ]
+      },
+      "footprint": {
+        "name": "SOT23_5",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -30,
+            -37,
+            24,
+            30
+          ],
+          [
+            2,
+            -30,
+            0,
+            24,
+            30
+          ],
+          [
+            3,
+            -30,
+            37,
+            24,
+            30
+          ],
+          [
+            4,
+            30,
+            -18.5,
+            24,
+            30
+          ],
+          [
+            5,
+            30,
+            18.5,
+            24,
+            30
+          ]
+        ],
+        "outline": [
+          -55,
+          -55,
+          55,
+          55
+        ]
+      },
+      "name": "LDO_1V8",
+      "value": "1V8/300mA",
+      "pins": {
+        "1": "5V",
+        "2": "GND",
+        "3": "5V",
+        "4": "BYP_1V8",
+        "5": "1V8"
+      }
+    },
+    {
+      "id": "C7",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "1V8",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C8",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "10nF",
+      "pins": {
+        "1": "BYP_1V8",
+        "2": "GND"
+      }
+    }
+  ]
+}

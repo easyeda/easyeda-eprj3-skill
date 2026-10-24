@@ -1,0 +1,174 @@
+{
+  "name": "usb-c-power",
+  "board": {
+    "width": 1800,
+    "height": 1000
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "VBUS": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "USB-C RECEPTACLE + CC",
+      "parts": [
+        "U1",
+        "C1",
+        "R1",
+        "R2"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "USB_C_PWR",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "A4:VBUS",
+          "A9:VBUS",
+          "B4:VBUS",
+          "B9:VBUS",
+          "A1:GND",
+          "A12:GND",
+          "B1:GND",
+          "B12:GND",
+          "A5:CC1",
+          "B5:CC2"
+        ]
+      },
+      "footprint": {
+        "name": "USB_C_16P",
+        "designator": "J",
+        "pads": [
+          [
+            "A4",
+            -60,
+            80,
+            24,
+            32
+          ],
+          [
+            "A9",
+            -60,
+            40,
+            24,
+            32
+          ],
+          [
+            "A5",
+            -60,
+            0,
+            24,
+            32
+          ],
+          [
+            "A1",
+            -60,
+            -40,
+            24,
+            32
+          ],
+          [
+            "A12",
+            -60,
+            -80,
+            24,
+            32
+          ],
+          [
+            "B4",
+            60,
+            80,
+            24,
+            32
+          ],
+          [
+            "B9",
+            60,
+            40,
+            24,
+            32
+          ],
+          [
+            "B5",
+            60,
+            0,
+            24,
+            32
+          ],
+          [
+            "B1",
+            60,
+            -40,
+            24,
+            32
+          ],
+          [
+            "B12",
+            60,
+            -80,
+            24,
+            32
+          ]
+        ],
+        "outline": [
+          -140,
+          -130,
+          140,
+          130
+        ]
+      },
+      "name": "USB_C",
+      "value": "USB-C 16P",
+      "pins": {
+        "A4": "VBUS",
+        "A9": "VBUS",
+        "B4": "VBUS",
+        "B9": "VBUS",
+        "A1": "GND",
+        "A12": "GND",
+        "B1": "GND",
+        "B12": "GND",
+        "A5": "CC1",
+        "B5": "CC2"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "VBUS",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "5.1k",
+      "pins": {
+        "1": "CC1",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "5.1k",
+      "pins": {
+        "1": "CC2",
+        "2": "GND"
+      }
+    }
+  ]
+}

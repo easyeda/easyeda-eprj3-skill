@@ -1,0 +1,233 @@
+{
+  "name": "uart-bridge",
+  "board": {
+    "width": 1400,
+    "height": 900
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "3V3": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "UART MCU + NRST PULL-UP",
+      "parts": [
+        "U1",
+        "C1",
+        "R3"
+      ]
+    },
+    {
+      "title": "RESET CAP + SERIES RESISTORS",
+      "parts": [
+        "C2",
+        "R1",
+        "R2"
+      ]
+    },
+    {
+      "title": "UART HEADER",
+      "parts": [
+        "J1"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "MCU_UART_6P",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:VDD",
+          "2:GND",
+          "3:UART_TX_MCU",
+          "4:UART_RX_MCU",
+          "5:NRST",
+          "6:BOOT0"
+        ]
+      },
+      "footprint": {
+        "name": "TSSOP_6P",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -70,
+            -37,
+            24,
+            28
+          ],
+          [
+            2,
+            -70,
+            0,
+            24,
+            28
+          ],
+          [
+            3,
+            -70,
+            37,
+            24,
+            28
+          ],
+          [
+            4,
+            70,
+            37,
+            24,
+            28
+          ],
+          [
+            5,
+            70,
+            0,
+            24,
+            28
+          ],
+          [
+            6,
+            70,
+            -37,
+            24,
+            28
+          ]
+        ],
+        "outline": [
+          -110,
+          -70,
+          110,
+          70
+        ]
+      },
+      "name": "UART_MCU",
+      "value": "BRIDGE",
+      "pins": {
+        "1": "3V3",
+        "2": "GND",
+        "3": "UART_TX_MCU",
+        "4": "UART_RX_MCU",
+        "5": "NRST",
+        "6": "GND"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R3",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "NRST",
+        "2": "3V3"
+      }
+    },
+    {
+      "id": "C2",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "NRST",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "100R",
+      "pins": {
+        "1": "UART_TX_MCU",
+        "2": "UART_TX"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "100R",
+      "pins": {
+        "1": "UART_RX",
+        "2": "UART_RX_MCU"
+      }
+    },
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_4P_UART",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:3V3",
+          "2:UART_TX",
+          "3:UART_RX",
+          "4:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_4P_UART",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -150,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            3,
+            50,
+            0,
+            60,
+            60
+          ],
+          [
+            4,
+            150,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -200,
+          -60,
+          200,
+          60
+        ]
+      },
+      "name": "UART_PORT",
+      "value": "UART",
+      "pins": {
+        "1": "3V3",
+        "2": "UART_TX",
+        "3": "UART_RX",
+        "4": "GND"
+      }
+    }
+  ]
+}

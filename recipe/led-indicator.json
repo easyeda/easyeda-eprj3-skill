@@ -1,0 +1,94 @@
+{
+  "params": {
+    "rf": "330R"
+  },
+  "name": "led-indicator",
+  "board": {
+    "width": 900,
+    "height": 600
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "LED INDICATOR",
+      "parts": [
+        "J1",
+        "R1",
+        "D1"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_2P_CTRL",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:LED_CTRL",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "LED_CTRL",
+      "value": "CTRL",
+      "pins": {
+        "1": "LED_CTRL",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "${rf}",
+      "pins": {
+        "1": "LED_CTRL",
+        "2": "LED_A"
+      }
+    },
+    {
+      "id": "D1",
+      "symbol": "LED",
+      "footprint": "LED0603",
+      "name": "PWR_LED",
+      "value": "RED",
+      "pins": {
+        "1": "LED_A",
+        "2": "GND"
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "name": "divider",
+  "board": {
+    "width": 900,
+    "height": 600
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "VIN": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "RESISTOR DIVIDER + PROBE",
+      "parts": [
+        "R1",
+        "R2",
+        "TP1"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "VIN",
+        "2": "DIV_MID"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "DIV_MID",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "TP1",
+      "symbol": "TEST_POINT",
+      "footprint": "TP0.5",
+      "name": "V_HALF",
+      "value": "V_HALF",
+      "pins": {
+        "1": "DIV_MID"
+      }
+    }
+  ]
+}

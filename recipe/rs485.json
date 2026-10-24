@@ -1,0 +1,312 @@
+{
+  "name": "rs485",
+  "board": {
+    "width": 1600,
+    "height": 1000
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "5V": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "RS485 TRANSCEIVER",
+      "parts": [
+        "U1",
+        "C1"
+      ]
+    },
+    {
+      "title": "DE PULL-DOWN + LOGIC PORT",
+      "parts": [
+        "R2",
+        "J2"
+      ]
+    },
+    {
+      "title": "TERMINATION + TVS A",
+      "parts": [
+        "R1",
+        "D1"
+      ]
+    },
+    {
+      "title": "TVS B + BUS CONNECTOR",
+      "parts": [
+        "D2",
+        "J1"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "RS485_XCVR_8P",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:RO",
+          "2:RE_N",
+          "3:DE",
+          "4:DI",
+          "5:GND",
+          "6:A",
+          "7:B",
+          "8:VCC"
+        ]
+      },
+      "footprint": {
+        "name": "SOIC_8P",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -80,
+            -75,
+            24,
+            55
+          ],
+          [
+            2,
+            -80,
+            -25,
+            24,
+            55
+          ],
+          [
+            3,
+            -80,
+            25,
+            24,
+            55
+          ],
+          [
+            4,
+            -80,
+            75,
+            24,
+            55
+          ],
+          [
+            5,
+            80,
+            75,
+            24,
+            55
+          ],
+          [
+            6,
+            80,
+            25,
+            24,
+            55
+          ],
+          [
+            7,
+            80,
+            -25,
+            24,
+            55
+          ],
+          [
+            8,
+            80,
+            -75,
+            24,
+            55
+          ]
+        ],
+        "outline": [
+          -130,
+          -110,
+          130,
+          110
+        ]
+      },
+      "name": "RS485_XCVR",
+      "value": "MAX485",
+      "pins": {
+        "1": "RS485_RO",
+        "2": "RS485_DE",
+        "3": "RS485_DE",
+        "4": "RS485_DI",
+        "5": "GND",
+        "6": "RS485_A",
+        "7": "RS485_B",
+        "8": "5V"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "5V",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "RS485_DE",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "J2",
+      "symbol": {
+        "name": "HDR_4P_LOGIC",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:RS485_RO",
+          "2:RS485_DE",
+          "3:RS485_DI",
+          "4:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_4P_LOGIC",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -150,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            3,
+            50,
+            0,
+            60,
+            60
+          ],
+          [
+            4,
+            150,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -200,
+          -60,
+          200,
+          60
+        ]
+      },
+      "name": "LOGIC_PORT",
+      "value": "LOGIC",
+      "pins": {
+        "1": "RS485_RO",
+        "2": "RS485_DE",
+        "3": "RS485_DI",
+        "4": "GND"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "120R",
+      "pins": {
+        "1": "RS485_A",
+        "2": "RS485_B"
+      }
+    },
+    {
+      "id": "D1",
+      "symbol": "DIODE",
+      "footprint": "SMA",
+      "name": "TVS_A",
+      "value": "SMBJ6.5A",
+      "pins": {
+        "1": "RS485_A",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "D2",
+      "symbol": "DIODE",
+      "footprint": "SMA",
+      "name": "TVS_B",
+      "value": "SMBJ6.5A",
+      "pins": {
+        "1": "RS485_B",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_3P_BUS",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:A",
+          "2:B",
+          "3:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_3P_BUS",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -100,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            0,
+            0,
+            60,
+            60
+          ],
+          [
+            3,
+            100,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -150,
+          -60,
+          150,
+          60
+        ]
+      },
+      "name": "RS485_BUS",
+      "value": "A/B/GND",
+      "pins": {
+        "1": "RS485_A",
+        "2": "RS485_B",
+        "3": "GND"
+      }
+    }
+  ]
+}

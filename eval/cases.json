@@ -1,0 +1,7 @@
+{
+  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<folder>/<file>' without .json. Missing entries fall back to the defaults below.",
+  "_defaults": { "minLint": 85, "minDrc": 80, "maxSeconds": 20 },
+  "examples/designs/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "examples/designs/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "recipe/rs485": { "minLint": 95, "minDrc": 100, "maxSeconds": 10 }
+}

@@ -1,0 +1,170 @@
+{
+  "name": "button-debounce",
+  "board": {
+    "width": 1200,
+    "height": 800
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "3V3": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "BUTTON + RC DEBOUNCE",
+      "parts": [
+        "SW1",
+        "R1",
+        "C1",
+        "R2"
+      ]
+    },
+    {
+      "title": "DEBOUNCED OUTPUT",
+      "parts": [
+        "J1"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "SW1",
+      "symbol": {
+        "name": "SW_PUSH_4P",
+        "designator": "SW",
+        "pitch": 30,
+        "pins": [
+          "1:A",
+          "2:A",
+          "3:B",
+          "4:B"
+        ]
+      },
+      "footprint": {
+        "name": "SW_4P",
+        "designator": "SW",
+        "pads": [
+          [
+            1,
+            -100,
+            -70,
+            60,
+            50
+          ],
+          [
+            2,
+            -100,
+            70,
+            60,
+            50
+          ],
+          [
+            3,
+            100,
+            -70,
+            60,
+            50
+          ],
+          [
+            4,
+            100,
+            70,
+            60,
+            50
+          ]
+        ],
+        "outline": [
+          -140,
+          -100,
+          140,
+          100
+        ]
+      },
+      "name": "PUSH_BUTTON",
+      "value": "SW",
+      "pins": {
+        "1": "GND",
+        "2": "GND",
+        "3": "BTN",
+        "4": "BTN"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "3V3",
+        "2": "BTN"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "BTN",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "1k",
+      "pins": {
+        "1": "BTN",
+        "2": "BTN_OUT"
+      }
+    },
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_2P_BTN",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:BTN_OUT",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P_BTN",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "BTN_OUT",
+      "value": "OUT",
+      "pins": {
+        "1": "BTN_OUT",
+        "2": "GND"
+      }
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+{
+  "name": "rc-highpass",
+  "board": {
+    "width": 1200,
+    "height": 800
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "INPUT COUPLING",
+      "parts": [
+        "J1",
+        "C1"
+      ]
+    },
+    {
+      "title": "OUTPUT + BIAS",
+      "parts": [
+        "R1",
+        "J2"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_2P_IN",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:SIG_IN",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "SIG_IN",
+      "value": "IN",
+      "pins": {
+        "1": "SIG_IN",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "100nF",
+      "pins": {
+        "1": "SIG_IN",
+        "2": "SIG_OUT"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "1k",
+      "pins": {
+        "1": "SIG_OUT",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "J2",
+      "symbol": {
+        "name": "HDR_2P_OUT",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:SIG_OUT",
+          "2:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_2P_OUT",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            50,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -90,
+          -50,
+          90,
+          50
+        ]
+      },
+      "name": "SIG_OUT",
+      "value": "OUT",
+      "pins": {
+        "1": "SIG_OUT",
+        "2": "GND"
+      }
+    }
+  ]
+}

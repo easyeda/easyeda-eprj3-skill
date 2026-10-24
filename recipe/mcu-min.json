@@ -1,0 +1,327 @@
+{
+  "name": "mcu-min",
+  "board": {
+    "width": 1600,
+    "height": 1000
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "3V3": "up",
+    "GND": "down"
+  },
+  "blocks": [
+    {
+      "title": "MCU CORE + SWD",
+      "parts": [
+        "U1",
+        "C1",
+        "C2",
+        "J1"
+      ]
+    },
+    {
+      "title": "RESET / BOOT / GPIO",
+      "parts": [
+        "R1",
+        "C3",
+        "R2",
+        "J2"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "MCU_10P",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:VDD",
+          "2:VSS",
+          "3:NRST",
+          "4:BOOT0",
+          "5:SWDIO",
+          "6:SWCLK",
+          "7:GPIO1",
+          "8:GPIO2",
+          "9:VDD",
+          "10:VSS"
+        ]
+      },
+      "footprint": {
+        "name": "MCU_TSSOP10",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -120,
+            -74,
+            24,
+            28
+          ],
+          [
+            2,
+            -120,
+            -37,
+            24,
+            28
+          ],
+          [
+            3,
+            -120,
+            0,
+            24,
+            28
+          ],
+          [
+            4,
+            -120,
+            37,
+            24,
+            28
+          ],
+          [
+            5,
+            -120,
+            74,
+            24,
+            28
+          ],
+          [
+            6,
+            120,
+            74,
+            24,
+            28
+          ],
+          [
+            7,
+            120,
+            37,
+            24,
+            28
+          ],
+          [
+            8,
+            120,
+            0,
+            24,
+            28
+          ],
+          [
+            9,
+            120,
+            -37,
+            24,
+            28
+          ],
+          [
+            10,
+            120,
+            -74,
+            24,
+            28
+          ]
+        ],
+        "outline": [
+          -160,
+          -110,
+          160,
+          110
+        ]
+      },
+      "name": "MCU",
+      "value": "CORTEX-M0",
+      "pins": {
+        "1": "3V3",
+        "2": "GND",
+        "3": "NRST",
+        "4": "BOOT0",
+        "5": "SWDIO",
+        "6": "SWCLK",
+        "7": "GPIO1",
+        "8": "GPIO2",
+        "9": "3V3",
+        "10": "GND"
+      }
+    },
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C2",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "1uF",
+      "pins": {
+        "1": "3V3",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "J1",
+      "symbol": {
+        "name": "HDR_4P_SWD",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:3V3",
+          "2:SWDIO",
+          "3:SWCLK",
+          "4:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_4P",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -150,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            3,
+            50,
+            0,
+            60,
+            60
+          ],
+          [
+            4,
+            150,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -200,
+          -60,
+          200,
+          60
+        ]
+      },
+      "name": "SWD",
+      "value": "SWD",
+      "pins": {
+        "1": "3V3",
+        "2": "SWDIO",
+        "3": "SWCLK",
+        "4": "GND"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "3V3",
+        "2": "NRST"
+      }
+    },
+    {
+      "id": "C3",
+      "symbol": "CAP",
+      "footprint": "C0402",
+      "value": "100nF",
+      "pins": {
+        "1": "NRST",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "10k",
+      "pins": {
+        "1": "BOOT0",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "J2",
+      "symbol": {
+        "name": "HDR_4P_GPIO",
+        "designator": "J",
+        "pitch": 30,
+        "pins": [
+          "1:GPIO1",
+          "2:GPIO2",
+          "3:3V3",
+          "4:GND"
+        ]
+      },
+      "footprint": {
+        "name": "HDR_4P_GPIO",
+        "designator": "J",
+        "pads": [
+          [
+            1,
+            -150,
+            0,
+            60,
+            60
+          ],
+          [
+            2,
+            -50,
+            0,
+            60,
+            60
+          ],
+          [
+            3,
+            50,
+            0,
+            60,
+            60
+          ],
+          [
+            4,
+            150,
+            0,
+            60,
+            60
+          ]
+        ],
+        "outline": [
+          -200,
+          -60,
+          200,
+          60
+        ]
+      },
+      "name": "GPIO",
+      "value": "GPIO",
+      "pins": {
+        "1": "GPIO1",
+        "2": "GPIO2",
+        "3": "3V3",
+        "4": "GND"
+      }
+    }
+  ]
+}

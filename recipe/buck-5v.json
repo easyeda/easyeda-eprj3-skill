@@ -1,0 +1,166 @@
+{
+  "name": "buck-5v",
+  "board": {
+    "width": 1600,
+    "height": 1000
+  },
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "powers": {
+    "VIN": "up",
+    "GND": "down",
+    "5V": "up"
+  },
+  "blocks": [
+    {
+      "title": "BUCK MODULE",
+      "parts": [
+        "C1",
+        "U1",
+        "L1"
+      ]
+    },
+    {
+      "title": "OUTPUT + FEEDBACK",
+      "parts": [
+        "R1",
+        "R2",
+        "C2"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "C1",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "10uF",
+      "pins": {
+        "1": "VIN",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "U1",
+      "symbol": {
+        "name": "BUCK_MOD_6P",
+        "designator": "U",
+        "pitch": 30,
+        "pins": [
+          "1:VIN",
+          "2:GND",
+          "3:EN",
+          "4:SW",
+          "5:FB",
+          "6:VOUT"
+        ]
+      },
+      "footprint": {
+        "name": "BUCK_MOD_6P",
+        "designator": "U",
+        "pads": [
+          [
+            1,
+            -250,
+            -100,
+            80,
+            60
+          ],
+          [
+            2,
+            -250,
+            0,
+            80,
+            60
+          ],
+          [
+            3,
+            -250,
+            100,
+            80,
+            60
+          ],
+          [
+            4,
+            250,
+            -100,
+            80,
+            60
+          ],
+          [
+            5,
+            250,
+            0,
+            80,
+            60
+          ],
+          [
+            6,
+            250,
+            100,
+            80,
+            60
+          ]
+        ],
+        "outline": [
+          -300,
+          -160,
+          300,
+          160
+        ]
+      },
+      "name": "BUCK_MODULE",
+      "value": "12V / 5V 2A",
+      "pins": {
+        "1": "VIN",
+        "2": "GND",
+        "3": "VIN",
+        "4": "SW_PHASE",
+        "5": "FB",
+        "6": "5V"
+      }
+    },
+    {
+      "id": "L1",
+      "symbol": "IND",
+      "footprint": "L0603",
+      "value": "10uH",
+      "pins": {
+        "1": "SW_PHASE",
+        "2": "5V"
+      }
+    },
+    {
+      "id": "R1",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "100k",
+      "pins": {
+        "1": "5V",
+        "2": "FB"
+      }
+    },
+    {
+      "id": "R2",
+      "symbol": "RES",
+      "footprint": "R0603",
+      "value": "33k",
+      "pins": {
+        "1": "FB",
+        "2": "GND"
+      }
+    },
+    {
+      "id": "C2",
+      "symbol": "CAP",
+      "footprint": "C0603",
+      "value": "22uF",
+      "pins": {
+        "1": "5V",
+        "2": "GND"
+      }
+    }
+  ]
+}
