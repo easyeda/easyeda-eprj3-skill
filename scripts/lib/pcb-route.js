@@ -72,11 +72,15 @@ class Grid {
     this.layers = rules.layers;
     // blocked[layer][idx] — clearance zone (net name, '#conflict' or '#edge')
     // body[layer][idx]    — real pad copper: only its own net may enter
+    // trackOcc[layer][idx]— centreline keep-out of REAL copper (tracks/vias):
+    //                       never passable, not even in the allowSoft pass
     this.blocked = [];
     this.body = [];
+    this.trackOcc = [];
     for (let l = 0; l < this.layers; l += 1) {
       this.blocked.push(new Array(this.cols * this.rows).fill(''));
       this.body.push(new Array(this.cols * this.rows).fill(''));
+      this.trackOcc.push(new Array(this.cols * this.rows).fill(false));
     }
   }
 
@@ -94,19 +98,22 @@ class Grid {
 
   /**
    * Mark a rectangle. `kind` 'body' writes real pad copper (only its own net
-   * may enter); the default 'soft' writes the clearance zone. Soft zones of two
-   * different nets become '#conflict' so neither can sneak through the other's
-   * clearance.
+   * may enter); 'track'/'via' additionally mark real copper that allowSoft may
+   * never cross; the default 'soft' writes the clearance zone. Soft zones of
+   * two different nets become '#conflict' so neither can sneak through the
+   * other's clearance.
    */
   blockRect(rect, net, layers, kind) {
     const a = this.toCell({ x: rect.x1, y: rect.y1 });
     const b = this.toCell({ x: rect.x2, y: rect.y2 });
     const soft = kind !== 'body';
+    const solid = kind === 'track' || kind === 'via';
     for (let j = Math.min(a.j, b.j); j <= Math.max(a.j, b.j); j += 1) {
       for (let i = Math.min(a.i, b.i); i <= Math.max(a.i, b.i); i += 1) {
         if (!this.inside(i, j)) continue;
         for (const l of layers) {
           const idx = this.idx(i, j);
+          if (solid) this.trackOcc[l][idx] = true;
           if (!soft) {
             this.body[l][idx] = net;
             continue;
@@ -181,8 +188,13 @@ function findPath(grid, src, dst, net, opts) {
     if (Math.abs(i - dst.i) <= ESCAPE && Math.abs(j - dst.j) <= ESCAPE) return true;
     if (!occ || mine) return true;
     // Best-effort pass: reach the target through a PAD clearance zone rather
-    // than leaving the net unrouted. The DRC reports the true spacing anyway.
+    // than leaving the net unrouted. Real copper (tracks/vias) is never
+    // passable — overlapping copper is a short, not a spacing violation.
+    // A trace WIDER than the default has no business squeezing through a pad
+    // gap sized for the default: its copper would land on the pad itself.
     if (opts && opts.allowSoft) {
+      if (grid.trackOcc[layer][grid.idx(i, j)]) return false;
+      if ((opts.width || rules.trackWidth) > rules.trackWidth) return false;
       return occ !== '#edge' && occ !== '#keepout';
     }
     return false;
@@ -279,11 +291,17 @@ function pathToTracks(path, grid) {
 }
 
 /**
- * @param opts {pads:[{ref,num,net,x,y,w,h}], board:{width,height}, rules, keepouts}
+ * @param opts {pads:[{ref,num,net,x,y,w,h}], board:{width,height}, rules,
+ *              keepouts, netWidths:{netName:mil}}
  * @returns {tracks:[], vias:[], unrouted:[], stats:{}}
  */
 function routePcb(opts) {
   const rules = Object.assign({}, DEFAULT_RULES, opts.rules || {});
+  const netWidths = opts.netWidths || {};
+  const widthOf = (net) => (netWidths[net] > 0 ? netWidths[net] : rules.trackWidth);
+  // Pad keep-outs must clear the WIDEST trace on the board, or a wide power
+  // route would squeeze past a pad the default-width radius permits.
+  const boardMaxTrack = Math.max(rules.trackWidth, ...Object.values(netWidths).filter((v) => v > 0));
   const board = opts.board;
   const grid = new Grid(board, rules);
   const pads = opts.pads.filter((p) => p.net);
@@ -293,7 +311,7 @@ function routePcb(opts) {
   // obstacles: pad BODY (hard copper) plus a clearance zone sized pad-half +
   // clearance + half the track width, because the CHECK measures copper edge to
   // copper edge. The extra 2 mil absorbs rasterisation rounding.
-  const halfTrack = (rules.trackWidth || 8) / 2;
+  const halfTrack = boardMaxTrack / 2;
   const full = rules.clearance + halfTrack + 2;
   for (const p of pads) {
     const hw0 = Math.max(p.w || 20, rules.grid) / 2;
@@ -335,6 +353,7 @@ function routePcb(opts) {
     const remaining = netPads.slice(1);
     let current = netPads[0];
     let netOk = true;
+    const w = widthOf(net);
     while (remaining.length) {
       remaining.sort((a, b) => (Math.abs(a.x - current.x) + Math.abs(a.y - current.y))
         - (Math.abs(b.x - current.x) + Math.abs(b.y - current.y)));
@@ -351,7 +370,7 @@ function routePcb(opts) {
       // best-effort connection is visible rather than silent.
       if (!path) {
         for (const layer of allLayers) {
-          path = findPath(grid, { i: a.i, j: a.j, layer }, { i: b.i, j: b.j, layer }, net, { rules, allowSoft: true });
+          path = findPath(grid, { i: a.i, j: a.j, layer }, { i: b.i, j: b.j, layer }, net, { rules, allowSoft: true, width: w });
           if (path) break;
         }
       }
@@ -363,20 +382,20 @@ function routePcb(opts) {
       }
       const { segments, vias: pathVias } = pathToTracks(path, grid);
       for (const s of segments) {
-        tracks.push({ net, layer: s.layer, x1: s.a.x, y1: s.a.y, x2: s.b.x, y2: s.b.y, width: rules.trackWidth });
+        tracks.push({ net, layer: s.layer, x1: s.a.x, y1: s.a.y, x2: s.b.x, y2: s.b.y, width: w });
         // Reserve the copper just laid: the keep-out radius is measured from the
         // centreline, so it must cover this track's half-width, the clearance,
         // and the NEXT track's half-width, or the DRC will see edge-to-edge.
-        const r = rules.clearance + rules.trackWidth;
+        const r = rules.clearance + w;
         grid.blockRect({
           x1: Math.min(s.a.x, s.b.x) - r, y1: Math.min(s.a.y, s.b.y) - r,
           x2: Math.max(s.a.x, s.b.x) + r, y2: Math.max(s.a.y, s.b.y) + r
-        }, `T:${net}`, [s.layer]);
+        }, `T:${net}`, [s.layer], 'track');
       }
       for (const v of pathVias) {
         vias.push({ net, x: v.x, y: v.y, diameter: rules.viaDiameter, drill: rules.viaDrill });
-        const r = rules.viaDiameter / 2 + rules.clearance + rules.trackWidth / 2;
-        grid.blockRect({ x1: v.x - r, y1: v.y - r, x2: v.x + r, y2: v.y + r }, net, allLayers);
+        const r = rules.viaDiameter / 2 + rules.clearance + boardMaxTrack / 2;
+        grid.blockRect({ x1: v.x - r, y1: v.y - r, x2: v.x + r, y2: v.y + r }, net, allLayers, 'via');
       }
       current = next;
     }

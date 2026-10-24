@@ -76,7 +76,22 @@ function existsOrDie(p) {
   return p;
 }
 
-function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
+function readJson(p) { return JSON.parse(readJsonText(p)); }
+
+/**
+ * Read a JSON file tolerantly. Windows editors (Notepad, VS Code with
+ * "UTF-8 with BOM", Excel exports) prepend U+FEFF, and a bare JSON.parse then
+ * fails with "Unexpected token '﻿'" — a design file the agent wrote itself can
+ * therefore be unreadable. Strip the BOM, do not make the user fight it.
+ */
+function readJsonText(p) {
+  const text = fs.readFileSync(p, 'utf8');
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
+function parseJsonText(text) {
+  return JSON.parse(text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text);
+}
 function writeJson(p, obj) { fs.writeFileSync(p, JSON.stringify(obj, null, 2)); }
 
 function openFile(filePath) {
@@ -91,4 +106,4 @@ function openFile(filePath) {
   child.unref();
 }
 
-module.exports = { parseArgs, printHelp, die, ensureDir, existsOrDie, readJson, writeJson, openFile, execFileSync };
+module.exports = { parseArgs, printHelp, die, ensureDir, existsOrDie, readJson, readJsonText, parseJsonText, writeJson, openFile, execFileSync };

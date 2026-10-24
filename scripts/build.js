@@ -25,20 +25,25 @@ const G = require('./lib/geom');
 const P = require('./lib/parts');
 const D = require('./lib/design');
 const R = require('./lib/route');
+const FA = require('./lib/fp-auto');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory to create', required: true },
   { name: 'design', desc: 'design.json file', required: true },
   { name: 'force', desc: 'overwrite an existing project (deletes skill-owned files only)', hasValue: false },
-  { name: 'schematic-only', desc: 'skip PCB placement/routing', hasValue: false },
-  { name: 'no-route', desc: 'place footprints but do not route the PCB', hasValue: false },
-  { name: 'no-pour', desc: 'skip the copper pour', hasValue: false },
+  { name: 'schematic-only', desc: 'skip the PCB entirely', hasValue: false },
+  { name: 'route', desc: 'opt-in: run the maze router after placement (off by default — the shipped strategy is placement-only)', hasValue: false },
+  { name: 'pour', desc: 'opt-in: add the copper pour + stitching fence (off by default; needs --route to also route the non-poured nets)', hasValue: false },
+  { name: 'no-route', desc: 'legacy no-op — routing is off by default now', hasValue: false },
+  { name: 'no-pour', desc: 'legacy no-op — pouring is off by default now', hasValue: false },
   { name: 'allow-erc', desc: 'do not fail the build on ERC errors', hasValue: false },
+  { name: 'allow-intent', desc: 'do not fail the build on design-intent errors', hasValue: false },
   { name: 'allow-lint', desc: 'do not fail the build on layout errors', hasValue: false },
   { name: 'allow-drc', desc: 'do not fail the build on DRC errors', hasValue: false },
   { name: 'dry-run', desc: 'build into a throwaway directory, report, then delete it', hasValue: false },
   { name: 'report', desc: 'write the machine-readable build report to this file' },
+  { name: 'plan', desc: 'print what would be built (parts, nets, rules, intent gate) and write nothing', hasValue: false },
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
   { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false }
 ];
@@ -118,8 +123,10 @@ function makeLibrary(project, design) {
     }
     const key = `inline:${JSON.stringify(part.footprint)}`;
     if (!footprintCache.has(key)) {
-      const raw = part.footprint.name || part.id;
-      const spec = Object.assign({}, part.footprint, { name: `FP_${raw}`, title: raw });
+      // {auto:"SOP8"} etc. expands into a full pad layout before synthesis.
+      const expanded = FA.expandAuto(part.footprint);
+      const raw = expanded.name || part.id;
+      const spec = Object.assign({}, expanded, { name: `FP_${raw}`, title: raw });
       const entry = P.buildInlineFootprintEntry(spec, ctx);
       project.saveLibrary(entry);
       footprintCache.set(key, Object.assign(P.parseFootprintEntry(entry), { entry }));
@@ -295,14 +302,23 @@ function main() {
   }
   const { opts } = parseArgs(argv, SCHEMA);
   const requestedDir = path.resolve(opts.dir);
-  // --dry-run builds into a throwaway sibling and deletes it on exit, so a
-  // rehearsal costs nothing and never touches the real project directory.
-  const dir = opts['dry-run'] ? requestedDir + '.dryrun' + process.pid : requestedDir;
-  if (opts['dry-run']) {
+  // --dry-run and --plan both build into a throwaway sibling and delete it on
+  // exit: a rehearsal costs nothing and never touches the real project dir.
+  // --plan is the human confirmation gate — it shows the *real* stats (because
+  // it really built them) while writing nothing.
+  const rehearsal = !!(opts['dry-run'] || opts.plan);
+  const dir = rehearsal ? requestedDir + `.${opts.plan ? 'plan' : 'dryrun'}` + process.pid : requestedDir;
+  if (rehearsal) {
     process.on('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } });
   }
   const design = D.readDesign(path.resolve(opts.design));
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
+  // Strategy: ships placement-only. Routing and copper pour are opt-in flags
+  // so the generated board is a clean starting point for a human, not finished
+  // copper a human must first delete. The DRC knows the mode and does not flag
+  // unrouted nets or a missing pour that were never promised.
+  const doRoute = !!opts.route;
+  const doPour = !!opts.pour;
   const log = (msg) => { if (!opts.quiet) console.log(msg); };
 
   // ------------------------------------------------------------ bootstrap
@@ -327,6 +343,35 @@ function main() {
     console.error('design errors:');
     for (const e of check.errors) console.error(`  ✗ ${e}`);
     process.exit(2);
+  }
+
+  // ------------------------------------------------- plan gate (--plan)
+  // What a human must be able to veto before anything is written: the power
+  // chain, the net names, the rule set and the intent declarations. Printed
+  // from the *validated* design, so it cannot disagree with the build.
+  if (opts.plan) {
+    const rules = design.pcbSpec.rules || {};
+    const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
+    console.log(`方案 ${design.name} → ${requestedDir}`);
+    const copper = [];
+    if (doRoute) copper.push('布线(--route)');
+    if (doPour) copper.push(`铺铜 ${design.pcbSpec.pour && design.pcbSpec.pour.net || 'GND'}(--pour)`);
+    console.log(`  板框  ${design.board.width}×${design.board.height} mil · `
+      + `${doPcb ? (copper.length ? `铜皮: ${copper.join(' + ')}` : '只布局（默认不布线/不铺铜；可选 --route / --pour）') : '仅原理图 (--schematic-only)'}`);
+    console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
+    const widths = Object.entries(design.netWidths || {});
+    if (widths.length) console.log(`  线宽  ${widths.map(([n, w]) => `${n}=${w}mil`).join(' ')}`);
+    if (Object.keys(rules).length) console.log(`  规则  ${Object.entries(rules).map(([k, v]) => `${k}=${v}`).join(' ')}`);
+    console.log(`  规模  ${design.parts.length} parts · ${nets.length} nets · ${(design.blocks || []).length} blocks`);
+    console.log(`  模块  ${(design.blocks || []).map((b) => b.title).join(' | ') || '(未分块)'}`);
+    console.log(`  网络  ${nets.slice(0, 18).join(' ')}${nets.length > 18 ? ' …' : ''}`);
+    if (design.expect) {
+      const keys = Object.entries(design.expect).filter(([, v]) => v !== undefined && (!Array.isArray(v) || v.length));
+      console.log(`  意图  ${keys.map(([k, v]) => `${k}${v === true ? '' : `(${Array.isArray(v) ? v.length : v})`}`).join(' ')}`);
+    }
+    if (check.warnings && check.warnings.length) {
+      for (const w of check.warnings) console.log(`  · ${w}`);
+    }
   }
 
   // ------------------------------------------------------------ schematic
@@ -408,7 +453,7 @@ function main() {
     const pcbCfg = design.pcbSpec || {};
     const rules = Object.assign({}, require('./lib/pcb-route').DEFAULT_RULES, pcbCfg.rules || {});
     const pourNet = (pcbCfg.pour && pcbCfg.pour.net) || 'GND';
-    if (!opts['no-route']) {
+    if (doRoute) {
       const { routePcb } = require('./lib/pcb-route');
       // The poured net is joined by the plane itself — routing it would only
       // lay copper that fights the pour.
@@ -416,7 +461,8 @@ function main() {
         pads: pcbGeoPads,
         board: design.board,
         rules,
-        skipNets: opts['no-pour'] ? [] : [pourNet]
+        netWidths: design.netWidths || {},
+        skipNets: doPour ? [pourNet] : []
       });
       for (const t of routing.tracks) {
         pcbEm.addLines([E.pcbTrackLine({
@@ -436,7 +482,7 @@ function main() {
       }
     }
 
-    if (!opts['no-pour']) {
+    if (doPour) {
       const { planPours } = require('./lib/pour');
       pourPlan = planPours(design.board, {
         net: (pcbCfg.pour && pcbCfg.pour.net) || 'GND',
@@ -444,7 +490,13 @@ function main() {
         layers: rules.layers >= 2 ? [1, 2] : [1],
         stitch: pcbCfg.pour ? pcbCfg.pour.stitch !== false : true,
         viaDiameter: rules.viaDiameter,
-        viaDrill: rules.viaDrill
+        viaDrill: rules.viaDrill,
+        viaClearance: rules.clearance,
+        obstacles: {
+          pads: pcbGeoPads,
+          tracks: routing ? routing.tracks : [],
+          vias: routing ? routing.vias : []
+        }
       });
       let n = 0;
       for (const p of pourPlan.pours) {
@@ -472,10 +524,12 @@ function main() {
     pcbEm.flush();
     if (nets.size) E.ensurePcbNets(pcbDoc.file, [...nets]);
     project.save();
-    log(`pcb: ${pcbParts.length} footprints` +
-      (routing ? `, ${routing.stats.tracks} tracks, ${routing.stats.vias} vias (${routing.stats.routedNets}/${routing.stats.nets} nets)` : '') +
-      (pourPlan ? `, ${pourPlan.pours.length} pours, ${pourPlan.vias.length} stitching vias` : ''));
+    log(`pcb: ${pcbParts.length} footprints`
+      + (routing ? `, ${routing.stats.tracks} tracks, ${routing.stats.vias} vias (${routing.stats.routedNets}/${routing.stats.nets} nets)` : '')
+      + (pourPlan ? `, ${pourPlan.pours.length} pours, ${pourPlan.vias.length} stitching vias` : '')
+      + (!routing && !pourPlan ? ' · placement-only (no routing/pour — add --route / --pour for copper)' : ''));
     for (const u of (routing ? routing.unrouted : [])) log(`  ! unrouted ${u}`);
+    if (pourPlan) for (const n of pourPlan.notes) log(`  · pour: ${n}`);
   }
 
   // ------------------------------------------------------------ validate
@@ -488,7 +542,7 @@ function main() {
       blocks: blocks.map((b) => b.title),
       ...routed.stats
     },
-    pcb: { parts: pcbParts.length },
+    pcb: { parts: pcbParts.length, mode: doPcb ? (doRoute || doPour ? 'copper' : 'placed-only') : null },
     issues: routed.issues
   };
 
@@ -505,6 +559,15 @@ function main() {
   const erc = runErc(dir, { design, pcb: doPcb });
   report.erc = erc;
 
+  // Fifth gate: design intent (polarity, decoupling, declared pairs, ranges).
+  // It fails the build like the others; --allow-intent skips it.
+  let intent = null;
+  if (design.expect) {
+    const { runIntent } = require('./lib/intent');
+    intent = runIntent(design);
+    report.intent = intent;
+  }
+
   const { lintProject } = require('./lib/lint');
   const lint = lintProject(dir);
   report.lint = lint;
@@ -513,8 +576,28 @@ function main() {
   if (doPcb) {
     const { runDrc } = require('./lib/drc');
     const pcbDoc2 = project.requirePcb(design.pcb);
+    // Judge the copper against the SAME rules the router built it with — the
+    // DRC's own defaults are only a fallback, not the design's contract.
+    const dr = design.pcbSpec.rules || {};
     drc = runDrc(project.pcbFile(pcbDoc2), {
-      pourNet: (design.pcbSpec.pour && design.pcbSpec.pour.net) || 'GND'
+      pourNet: (design.pcbSpec.pour && design.pcbSpec.pour.net) || 'GND',
+      netWidths: design.netWidths || {},
+      // The mode is a fact, not a guess: this build either laid routing or it
+      // did not. D004/D006 (connectivity + pour promises) only apply to a
+      // routed board; judging a placement-only deliverable by them would flag
+      // copper that was never promised.
+      placedOnly: !doRoute,
+      rules: {
+        clearance: dr.clearance,
+        minTrack: dr.trackWidth,
+        edge: dr.edgeClearance,
+        // DFM thresholds ride the same contract: a design may declare its fab
+        // floor (minDrill/minRing/minAngle); undefined keys fall back to the
+        // DRC defaults (runDrc strips them).
+        minDrill: dr.minDrill,
+        minRing: dr.minRing,
+        minAngle: dr.minAngle
+      }
     });
     report.drc = drc;
   }
@@ -524,12 +607,19 @@ function main() {
     console.log(`validate: ${v.errors.length} errors, ${v.warnings.length} warnings`);
     for (const e of v.errors) console.log(`  ✗ ${e}`);
     for (const w of v.warnings) console.log(`  · ${w}`);
-    for (const w of erc.warnings) console.log(`  erc warn ${w.id}: ${w.msg}`);
-    for (const e of erc.errors) console.log(`  erc ${e.id}: ${e.msg}`);
-    for (const f of lint.findings) console.log(`  lint ${f.code}: ${f.msg}`);
+    for (const w of erc.warnings) console.log(`  erc warn ${w.id}: ${w.msg}${w.fix ? `\n      fix: ${w.fix}` : ''}`);
+    for (const e of erc.errors) console.log(`  erc ${e.id}: ${e.msg}${e.fix ? `\n      fix: ${e.fix}` : ''}`);
+    if (intent) {
+      for (const w of intent.warnings) console.log(`  intent warn ${w.id}: ${w.msg}${w.fix ? `\n      fix: ${w.fix}` : ''}`);
+      for (const e of intent.errors) console.log(`  intent ${e.id}: ${e.msg}${e.fix ? `\n      fix: ${e.fix}` : ''}`);
+      if (intent.errors.length || intent.warnings.length) {
+        console.log(`intent: ${intent.errors.length} error(s), ${intent.warnings.length} warning(s) over ${intent.checks.length} rule(s)`);
+      }
+    }
+    for (const f of lint.findings) console.log(`  lint ${f.code}: ${f.msg}${f.fix ? `\n      fix: ${f.fix}` : ''}`);
     console.log(`lint score ${lint.score}/100 (${lint.errors} error(s), ${lint.warnings} warning(s))`);
     if (drc) {
-      for (const f of drc.findings) console.log(`  drc ${f.code}: ${f.msg}`);
+      for (const f of drc.findings) console.log(`  drc ${f.code}: ${f.msg}${f.fix ? `\n      fix: ${f.fix}` : ''}`);
       console.log(`drc score ${drc.score}/100 (${drc.errors} error(s), ${drc.warnings} warning(s))`);
     }
   }
@@ -544,6 +634,10 @@ function main() {
     console.error(`build finished with ${erc.errors.length} ERC error(s) — fix the design or pass --allow-erc`);
     process.exit(1);
   }
+  if (intent && intent.errors.length && !opts['allow-intent']) {
+    console.error(`build finished with ${intent.errors.length} intent error(s) — the design contradicts its own "expect" block`);
+    process.exit(1);
+  }
   if (lint.errors && !opts['allow-lint']) {
     console.error(`build finished with ${lint.errors} layout error(s) — fix the layout or pass --allow-lint`);
     process.exit(1);
@@ -554,10 +648,15 @@ function main() {
   }
   const extra = [];
   if (erc.warnings.length) extra.push(`${erc.warnings.length} ERC warning(s)`);
+  if (intent && intent.warnings.length) extra.push(`${intent.warnings.length} intent warning(s)`);
   if (drc && drc.warnings.length) extra.push(`${drc.warnings.length} DRC warning(s)`);
-  const where = opts['dry-run'] ? `${design.name} (dry run, nothing written)` : `${design.name}.eprj3 at ${dir}`;
+  const where = opts['dry-run']
+    ? `${design.name} (dry run, nothing written)`
+    : opts.plan
+      ? `${design.name} → ${requestedDir} (plan only, nothing written)`
+      : `${design.name}.eprj3 at ${dir}`;
   console.log(`${where} — ${placements.length} components, ${routed.stats.segments} wire segments, `
-    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
+    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100${doPcb && !doRoute && !doPour ? ' (placed-only)' : ''}` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
 }
 
 main();

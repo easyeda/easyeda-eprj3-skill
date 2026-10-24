@@ -27,7 +27,7 @@
 const fs = require('fs');
 const path = require('path');
 const E = require('../lib/eprj3');
-const { parseArgs, printHelp, die } = require('../lib/utils');
+const { parseArgs, printHelp, die, readJsonText } = require('../lib/utils');
 
 const SCHEMA = [
   { name: 'file', desc: '.elibu file to split', required: true },
@@ -209,7 +209,7 @@ function main() {
   }
   const { opts } = parseArgs(argv, SCHEMA);
   const outDir = path.resolve(opts.out || E.LIBRARY_DIR);
-  const text = fs.readFileSync(opts.file, 'utf8');
+  const text = readJsonText(opts.file);
 
   // Dedupe: two META stubs + one body doc per uuid.
   const stubMeta = new Map();

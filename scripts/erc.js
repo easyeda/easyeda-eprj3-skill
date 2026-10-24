@@ -44,8 +44,8 @@ function main() {
   if (opts.json) {
     console.log(JSON.stringify(r, null, 2));
   } else {
-    for (const w of r.warnings) console.log(`warn ${w.id}: ${w.msg}`);
-    for (const e of r.errors) console.error(`error ${e.id}: ${e.msg}`);
+    for (const w of r.warnings) console.log(`warn ${w.id}: ${w.msg}${w.fix ? `\n  fix: ${w.fix}` : ''}`);
+    for (const e of r.errors) console.error(`error ${e.id}: ${e.msg}${e.fix ? `\n  fix: ${e.fix}` : ''}`);
     if (r.errors.length) console.error(`ERC FAILED: ${r.errors.length} error(s), ${r.warnings.length} warning(s)`);
     else console.log(`ERC OK (0 errors, ${r.warnings.length} warning(s))`);
   }

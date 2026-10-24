@@ -1,0 +1,362 @@
+{
+  "_comment": [
+    "Illegal corpus, STRUCTURE / FORMAT half. Every variant is a copy of a legal",
+    "baseline (see legal.json, key = base) with ONE minimal tampering.",
+    "expect.validate / expect.validateWarnings are substrings of the messages the",
+    "format gate prints (it has no codes — docs/checks.md); expect.erc / expect.lint /",
+    "expect.drc are real finding ids. All values come from `node test/corpus.js --probe`.",
+    "expect.leak = true records a KNOWN BLIND SPOT: the tampering is asserted to slip",
+    "through; suggest documents the code a future checker should use."
+  ],
+  "illegal": [
+    {
+      "name": "index-profile-pcbs-missing",
+      "base": "blink",
+      "category": "index field",
+      "title": "index.profile.pcbs deleted — the folder no longer declares its PCB",
+      "mutate": "json_delete profile.pcbs from <name>.eprj3",
+      "mutation": [{ "op": "json_delete", "target": "index", "path": "profile.pcbs" }],
+      "expect": { "validate": ["index.profile.pcbs must be an object"] }
+    },
+    {
+      "name": "index-not-json",
+      "base": "blink",
+      "category": "index format",
+      "title": "index truncated mid-write — not parseable JSON",
+      "mutate": "overwrite <name>.eprj3 with a half-written object",
+      "mutation": [{ "op": "json_raw", "target": "index", "content": "{ \"name\": \"blink\", \"format\": \"fold" }],
+      "expect": { "validate": ["index not valid JSON"] }
+    },
+    {
+      "name": "index-format-not-folder",
+      "base": "blink",
+      "category": "index format",
+      "title": "index.format switched from \"folder\" to \"zip\"",
+      "mutate": "json_set format = \"zip\"",
+      "mutation": [{ "op": "json_set", "target": "index", "path": "format", "value": "zip" }],
+      "expect": { "validate": ["index format must be"] }
+    },
+    {
+      "name": "index-owner-uuid-short",
+      "base": "blink",
+      "category": "index field",
+      "title": "owner/creator/modifier uuid is not 32 hex characters",
+      "mutate": "json_set owner_uuid = a 12-char string",
+      "mutation": [{ "op": "json_set", "target": "index", "path": "owner_uuid", "value": "65aaf28b554d" }],
+      "expect": { "validate": ["owner/creator/modifier uuid must be 32-hex"] }
+    },
+    {
+      "name": "index-timestamp-not-string",
+      "base": "blink",
+      "category": "index field",
+      "title": "created_at turned into a number instead of a date string",
+      "mutate": "json_set created_at = 1792832835531",
+      "mutation": [{ "op": "json_set", "target": "index", "path": "created_at", "value": 1792832835531 }],
+      "expect": { "validate": ["created_at/updated_at must be strings"] }
+    },
+    {
+      "name": "index-second-project-file",
+      "base": "blink",
+      "category": "folder layout",
+      "title": "a stray second .eprj3 index in the project root",
+      "mutate": "copy the index to backup.eprj3",
+      "mutation": [{ "op": "stray_file", "target": "root", "name": "backup.eprj3", "content": "{}\n" }],
+      "expect": { "validate": ["exactly one .eprj3 index expected"] }
+    },
+    {
+      "name": "ecfg-fifth-record",
+      "base": "blink",
+      "category": "container structure",
+      "title": "Schematic1.ecfg carries a 5th record (it is fixed at DOCHEAD META RULE RULE)",
+      "mutate": "raw_append one RULE line to the .ecfg",
+      "mutation": [{
+        "op": "raw_append",
+        "target": "ecfg",
+        "lines": ["{\"type\":\"RULE\",\"ticket\":9,\"id\":\"e9\"}||{\"name\":\"strayRule\",\"value\":\"DEFAULT\"}|"]
+      }],
+      "expect": { "validate": ["want 4 records"] }
+    },
+    {
+      "name": "sheet-unparseable-line",
+      "base": "blink",
+      "category": "record encoding",
+      "title": "a record line whose head JSON is broken",
+      "mutate": "append a line whose head is truncated JSON",
+      "mutation": [{
+        "op": "raw_append",
+        "target": "sheet",
+        "lines": ["{\"type\":\"ATTR\",\"ticket\":98765,\"id\":\"broken\"||{\"key\":\"NET\"}|"]
+      }],
+      "expect": { "validate": ["unparseable record"] }
+    },
+    {
+      "name": "sheet-missing-separator",
+      "base": "blink",
+      "category": "record encoding",
+      "title": "a line with no '||' head/body separator at all",
+      "mutate": "append a bare token line",
+      "mutation": [{ "op": "raw_append", "target": "sheet", "lines": ["not-a-record-just-text"] }],
+      "expect": { "validate": ["unparseable record"] }
+    },
+    {
+      "name": "sheet-double-separator",
+      "base": "blink",
+      "category": "record encoding",
+      "title": "a stray '||' inside the body: the rejoined body is not valid JSON",
+      "mutate": "append an ATTR whose body is split by a second '||'",
+      "mutation": [{
+        "op": "raw_append",
+        "target": "sheet",
+        "lines": ["{\"type\":\"ATTR\",\"ticket\":98766,\"id\":\"dualbar\"}||{\"key\":\"NET\",\"value\":\"X\"}||{\"orphan\":true}|"]
+      }],
+      "expect": { "validate": ["record body is not valid JSON"] }
+    },
+    {
+      "name": "ticket-duplicate",
+      "base": "blink",
+      "category": "ticket",
+      "title": "the same ticket number used twice inside one document",
+      "mutate": "duplicate the first Designator attr line at end of the sheet main doc",
+      "mutation": [{
+        "op": "record_dup",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Designator", "nth": 0 }
+      }],
+      "expect": { "validate": ["duplicate ticket"] }
+    },
+    {
+      "name": "ticket-regression",
+      "base": "blink",
+      "category": "ticket",
+      "title": "tickets go backwards at the tail of the PCB main doc (unique, but out of order)",
+      "mutate": "swap the ticket numbers of the last two records",
+      "mutation": [{ "op": "ticket_swap_tail", "target": "pcb" }],
+      "expect": { "validateWarnings": ["out of file order"] }
+    },
+    {
+      "name": "dochead-client-mismatch",
+      "base": "blink",
+      "category": "doc head",
+      "title": "an embedded SYMBOL doc keeps a foreign DOCHEAD client id",
+      "mutate": "set the second SYMBOL doc's DOCHEAD body.client to a wrong id",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "SYMBOL", "type": "DOCHEAD", "nth": 1 },
+        "set": { "body.client": "000000000000dead" }
+      }],
+      "expect": { "validateWarnings": ["DOCHEAD client"] }
+    },
+    {
+      "name": "symbol-attr-missing-doc",
+      "base": "blink",
+      "category": "library reference",
+      "title": "the A4 frame's Symbol attr points at a SYMBOL doc that is not embedded",
+      "mutate": "set the first Symbol attr value to an unembedded uuid",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Symbol", "nth": 0 },
+        "set": { "body.value": "ffffffffffffffff" }
+      }],
+      "expect": { "validate": ["Symbol attr references missing SYMBOL doc"] }
+    },
+    {
+      "name": "doc-uuid-duplicate",
+      "base": "blink",
+      "category": "doc head",
+      "title": "two docs in one container share the same uuid",
+      "mutate": "copy the A4 SYMBOL doc uuid onto the second DEVICE doc",
+      "mutation": [{
+        "op": "doc_uuid_duplicate",
+        "target": "sheet",
+        "source": { "doc": "SYMBOL", "nth": 0 },
+        "into": { "doc": "DEVICE", "nth": 1 }
+      }],
+      "expect": {
+        "validate": ["duplicate/missing doc uuid", "Device attr references missing DEVICE doc"]
+      }
+    },
+    {
+      "name": "attr-parent-dangling",
+      "base": "blink",
+      "category": "attr linkage",
+      "title": "an ATTR whose parentId names no object in the document",
+      "mutate": "reparent the first Unique ID attr onto a missing component id",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Unique ID", "nth": 0 },
+        "set": { "body.parentId": "decafbaddecafbad" }
+      }],
+      "expect": { "validate": ["references nothing in the document"] }
+    },
+    {
+      "name": "component-head-id-missing",
+      "base": "blink",
+      "category": "record head",
+      "title": "a COMPONENT head without an id — nothing can link attrs to it",
+      "mutate": "drop head.id from the R1 component record",
+      "mutation": [{
+        "op": "record_unset",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "COMPONENT", "byDesignator": "R1" },
+        "keys": ["head.id"]
+      }],
+      "expect": { "validate": ["head has no id"], "erc": ["E002", "E003"] }
+    },
+    {
+      "name": "padnet-id-malformed",
+      "base": "blink",
+      "category": "pad_net id shape",
+      "title": "PAD_NET head id is not a JSON array",
+      "mutate": "set the first PAD_NET head.id to a comma string",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "PAD_NET", "nth": 0 },
+        "set": { "head.id": "PAD_NET,1,V_LED" }
+      }],
+      "expect": { "validate": ["references missing COMPONENT"] }
+    },
+    {
+      "name": "padnet-orphan-component",
+      "base": "blink",
+      "category": "pad_net reference",
+      "title": "PAD_NET references a COMPONENT id that is not on the board",
+      "mutate": "rewrite the component slot of the first PAD_NET id",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "PAD_NET", "nth": 0 },
+        "set": { "head.id": "[\"PAD_NET\",\"decafbaddecafbad\",\"1\",\"e1\"]" }
+      }],
+      "expect": { "validate": ["references missing COMPONENT"] }
+    },
+    {
+      "name": "padnet-net-without-net-record",
+      "base": "blink",
+      "category": "pad_net ↔ net",
+      "title": "PAD_NET carries a net the NET table never declares",
+      "mutate": "set the first PAD_NET padNet to an undeclared net name",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "PAD_NET", "nth": 0 },
+        "set": { "body.padNet": "GND_X" }
+      }],
+      "expect": { "validate": ["without a NET record"] }
+    },
+    {
+      "name": "pour-flat-path",
+      "base": "blink",
+      "category": "pour geometry",
+      "title": "POUR path loses its nesting (a flat ring instead of an array of rings)",
+      "mutate": "replace POUR1's nested path with a flat one",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "POUR", "nth": 0 },
+        "set": { "body.path": ["R", 24, 976, 1552, 952] }
+      }],
+      "expect": { "validate": ["path must be an array of polygon arrays"] }
+    },
+    {
+      "name": "pour-undeclared-net",
+      "base": "blink",
+      "category": "pour ↔ net",
+      "title": "POUR named against a net the PCB never declared",
+      "mutate": "set POUR1 netName to an undeclared net",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "POUR", "nth": 0 },
+        "set": { "body.netName": "GND_X" }
+      }],
+      "expect": { "validate": ["uses net", "without a NET record"] }
+    },
+    {
+      "name": "pcb-board-outline-missing",
+      "base": "blink",
+      "category": "preamble",
+      "title": "the BOARD_OUTLINE poly deleted from the PCB document",
+      "mutate": "remove the BOARD_OUTLINE POLY record",
+      "mutation": [{
+        "op": "record_remove",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "POLY", "where": { "body.polyType": "BOARD_OUTLINE" }, "all": true }
+      }],
+      "expect": { "validate": ["lacks the BOARD_OUTLINE poly"], "drc": ["D005"] }
+    },
+    {
+      "name": "pcb-empty-net-missing",
+      "base": "blink",
+      "category": "preamble",
+      "title": "the mandatory empty NET record deleted",
+      "mutate": "remove every NET record whose id is [\"NET\",\"\"]",
+      "mutation": [{
+        "op": "record_remove",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "NET", "where": { "id": "[\"NET\",\"\"]" }, "all": true }
+      }],
+      "expect": { "validate": ["lacks the empty NET record"] }
+    },
+    {
+      "name": "pcb-layer-records-missing",
+      "base": "blink",
+      "category": "preamble",
+      "title": "the LAYER preamble deleted — the board declares no stackup",
+      "mutate": "remove every LAYER record from the PCB main doc",
+      "mutation": [{
+        "op": "record_remove",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "LAYER", "all": true }
+      }],
+      "expect": { "validate": ["lacks LAYER records"] }
+    },
+    {
+      "name": "pcb-footprint-attr-missing-doc",
+      "base": "blink",
+      "category": "library reference",
+      "title": "the PCB Footprint attr points at a FOOTPRINT doc that is not embedded",
+      "mutate": "set the first PCB Footprint attr value to an unembedded uuid",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Footprint", "nth": 0 },
+        "set": { "body.value": "ffffffffffffffff" }
+      }],
+      "expect": { "validate": ["Footprint attr references missing FOOTPRINT doc"] }
+    },
+    {
+      "name": "stray-file-in-schematic-dir",
+      "base": "blink",
+      "category": "folder layout",
+      "title": "an unexplained extra file inside sch/Schematic1",
+      "mutate": "write NOTES.txt next to the sheet documents",
+      "mutation": [{ "op": "stray_file", "target": "schDir", "name": "NOTES.txt", "content": "harmless\n" }],
+      "expect": { "validateWarnings": ["unexpected file"] }
+    },
+    {
+      "name": "sheet-document-deleted",
+      "base": "blink",
+      "category": "folder layout",
+      "title": "the sheet document P1.esch2 deleted while the index still lists it",
+      "mutate": "remove sch/Schematic1/P1.esch2",
+      "mutation": [{ "op": "file_delete", "target": "sheet" }],
+      "expect": { "validate": ["missing sheet document"], "erc": ["E000"] }
+    },
+    {
+      "name": "sheet-file-truncated-empty",
+      "base": "blink",
+      "category": "container structure",
+      "title": "P1.esch2 present but empty (crash after a half-finished write)",
+      "mutate": "overwrite the sheet document with zero bytes",
+      "mutation": [{ "op": "json_raw", "target": "sheet", "content": "" }],
+      "expect": {
+        "validate": ["document file has no DOCHEAD records"],
+        "erc": ["E003"]
+      }
+    }
+  ]
+}

@@ -59,7 +59,11 @@ function readSheet(file) {
       if (r) cur.records.push(r);
     }
   }
-  const main = docs.find((d) => d.docType === 'SCH_PAGE') || docs[docs.length - 1];
+  // An empty/truncated file has no DOCHEAD at all. Returning a record-less
+  // stub lets ERC report the real condition (netlist ≠ design) instead of
+  // crashing on `main.records`.
+  const main = docs.find((d) => d.docType === 'SCH_PAGE') || docs[docs.length - 1]
+    || { docType: null, uuid: null, records: [] };
   return { docs, main };
 }
 

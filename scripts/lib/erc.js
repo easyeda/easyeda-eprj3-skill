@@ -75,7 +75,8 @@ function runErc(dir, opts) {
         id: 'E001',
         sheet: label,
         msg: `unconnected pin ${u.ref}.${u.num} (${u.name}) at ${u.x},${u.y}`,
-        ref: u.ref, pin: u.num
+        ref: u.ref, pin: u.num,
+        fix: `set parts[].pins["${u.num}"] of ${u.ref} in the design to a net (or "NC" if intentionally unused), then re-run build.js --force`
       });
     }
 
@@ -87,18 +88,25 @@ function runErc(dir, opts) {
       seen.set(c.ref, seen.get(c.ref) + 1);
     }
     for (const [ref, n] of seen) {
-      if (n > 1) errors.push({ id: 'E004', sheet: label, msg: `duplicate designator "${ref}" (${n}×)` });
+      if (n > 1) errors.push({
+        id: 'E004', sheet: label,
+        msg: `duplicate designator "${ref}" (${n}×)`,
+        fix: `give each occurrence a unique parts[].id (e.g. ${ref}A / ${ref}B)`
+      });
     }
 
     // E002 / E007 / W003 — per net
     for (const net of nl.nets) {
       const real = net.pins;
-      if (real.length === 1 && !net.flags) {
+      // NC/DNC nets are the deliberate "no connect" convention: a lone pin on
+      // one of them is intentional, not a wiring mistake.
+      if (real.length === 1 && !net.flags && !/^(NC|DNC\d*)$/i.test(net.name)) {
         errors.push({
           id: 'E002',
           sheet: label,
           net: net.name,
-          msg: `net "${net.name}" has only one pin (${real[0].ref}.${real[0].num})`
+          msg: `net "${net.name}" has only one pin (${real[0].ref}.${real[0].num})`,
+          fix: `wire the pin to something, declare the net in "powers", or rename it "NC" in parts[].pins if intentionally unconnected`
         });
       }
       if (net.auto || /^N\$/.test(net.name)) {
@@ -106,7 +114,8 @@ function runErc(dir, opts) {
           id: 'E007',
           sheet: label,
           net: net.name,
-          msg: `auto-named net "${net.name}" — pins touch but no label/wire names it`
+          msg: `auto-named net "${net.name}" — pins touch but no label/wire names it`,
+          fix: `rename the net in parts[].pins to something meaningful (uppercase, e.g. SPI_CLK)`
         });
       }
       const refs = new Set(real.map((p) => p.ref));
@@ -115,7 +124,8 @@ function runErc(dir, opts) {
           id: 'W003',
           sheet: label,
           net: net.name,
-          msg: `net "${net.name}" only bridges two pins of the same part (${real[0].ref})`
+          msg: `net "${net.name}" only bridges two pins of the same part (${real[0].ref})`,
+          fix: `check ${real[0].ref}'s parts[].pins — two of its pins map to "${net.name}"; usually one of them is a typo`
         });
       }
       if (POWER_ISH.test(net.name) && !net.flags) {
@@ -123,7 +133,8 @@ function runErc(dir, opts) {
           id: 'W001',
           sheet: label,
           net: net.name,
-          msg: `power net "${net.name}" has no power flag (drawn as a plain wire)`
+          msg: `power net "${net.name}" has no power flag (drawn as a plain wire)`,
+          fix: `declare "${net.name}" in the design's "powers" (style "up" for supplies, "down" for ground)`
         });
       }
     }
@@ -141,7 +152,8 @@ function runErc(dir, opts) {
           id: 'W002',
           sheet: label,
           net: n.name,
-          msg: `supply net "${n.name}" powers ${ics.join(', ')} with no decoupling capacitor`
+          msg: `supply net "${n.name}" powers ${ics.join(', ')} with no decoupling capacitor`,
+          fix: `add a 100nF capacitor from "${n.name}" to ground — or run: node scripts/autofix.js --design <file> (adds them automatically)`
         });
       }
       users.filter((r) => /^C\d/.test(r)).forEach((r) => capRefs.add(r));
@@ -170,7 +182,11 @@ function runErc(dir, opts) {
     for (const [net, want] of expected) {
       const have = built.get(net);
       if (!have) {
-        errors.push({ id: 'E003', net, msg: `design net "${net}" is missing from the built schematic` });
+        errors.push({
+          id: 'E003', net,
+          msg: `design net "${net}" is missing from the built schematic`,
+          fix: `re-run build.js --force; if it persists, check which parts[].pins reference "${net}"`
+        });
         continue;
       }
       const missing = [...want].filter((p) => !have.has(p));
@@ -181,12 +197,19 @@ function runErc(dir, opts) {
           net,
           msg: `net "${net}" differs from the design: expected {${[...want].join(', ')}}, built {${[...have].join(', ')}}`
             + (missing.length ? ` — missing ${missing.join(', ')}` : '')
-            + (extra.length ? ` — extra ${extra.join(', ')}` : '')
+            + (extra.length ? ` — extra ${extra.join(', ')}` : ''),
+          fix: `re-run build.js --force; if it persists, check parts[].pins entries that reference "${net}" (suspect: ${[...missing, ...extra][0].split('.')[0]})`
         });
       }
     }
     for (const net of built.keys()) {
-      if (!expected.has(net)) errors.push({ id: 'E003', net, msg: `built net "${net}" is not in the design` });
+      if (!expected.has(net)) {
+        errors.push({
+          id: 'E003', net,
+          msg: `built net "${net}" is not in the design`,
+          fix: `remove or rename "${net}" in parts[].pins, then re-run build.js --force`
+        });
+      }
     }
   }
 
@@ -210,7 +233,8 @@ function runErc(dir, opts) {
           if (pcbRefs.has(pin.split('.')[0])) {
             errors.push({
               id: 'E006',
-              msg: `PCB pad ${pin} has no net, but the schematic puts it on "${net}"`
+              msg: `PCB pad ${pin} has no net, but the schematic puts it on "${net}"`,
+              fix: `re-run build.js --force (PCB pad nets are generated from the design)`
             });
           }
           continue;
@@ -218,14 +242,19 @@ function runErc(dir, opts) {
         if (pcbNet !== net) {
           errors.push({
             id: 'E006',
-            msg: `PCB pad ${pin} is on net "${pcbNet}" but the schematic puts it on "${net}"`
+            msg: `PCB pad ${pin} is on net "${pcbNet}" but the schematic puts it on "${net}"`,
+            fix: `re-run build.js --force; if it persists, fix the "${pin.split('.')[0]}" entry in parts[]`
           });
         }
       }
       const schRefs = new Set([...schByPin.keys()].map((k) => k.split('.')[0]));
       for (const r of schRefs) {
         if (!pcbRefs.has(r) && r !== '?') {
-          errors.push({ id: 'E005', msg: `part "${r}" is in the schematic but has no PCB footprint` });
+          errors.push({
+            id: 'E005',
+            msg: `part "${r}" is in the schematic but has no PCB footprint`,
+            fix: `give "${r}" a "footprint" in the design (or set "pcb": false)`
+          });
         }
       }
     }

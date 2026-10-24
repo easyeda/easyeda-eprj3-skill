@@ -19,6 +19,12 @@
 const fs = require('fs');
 const path = require('path');
 
+// BOM-tolerant text reading, inlined: this tool is dependency-free on purpose.
+// An editor-written example file starting with U+FEFF would otherwise corrupt
+// the first record line and break the per-line JSON.parse below.
+const stripBom = (t) => (t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
+const readText = (p) => stripBom(fs.readFileSync(p, 'utf8'));
+
 const exampleDir = process.argv[2];
 if (!exampleDir) {
   console.error('usage: node extract-example.js <eprj3-example-dir>');
@@ -35,8 +41,7 @@ function head(line) {
 }
 
 // ---------------------------------------------------------------- frame (A4)
-const schLines = fs
-  .readFileSync(path.join(exampleDir, 'sch', 'Schematic1', 'P1.esch2'), 'utf8')
+const schLines = readText(path.join(exampleDir, 'sch', 'Schematic1', 'P1.esch2'))
   .split(/\r?\n/)
   .filter(Boolean);
 
@@ -88,8 +93,7 @@ const symTpl = symLines.filter(keep).map(subst);
 const devTpl = devLines.map(subst);
 
 // ------------------------------------------------------------- pcb preamble
-const pcbLines = fs
-  .readFileSync(path.join(exampleDir, 'pcb', 'PCB1.epcb2'), 'utf8')
+const pcbLines = readText(path.join(exampleDir, 'pcb', 'PCB1.epcb2'))
   .split(/\r?\n/)
   .filter(Boolean);
 

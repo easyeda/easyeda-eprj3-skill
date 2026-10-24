@@ -31,6 +31,10 @@
 const fs = require('fs');
 const path = require('path');
 const G = require('./geom');
+// BOM-tolerant JSON reading: user-authored design.json files often carry a
+// U+FEFF (Notepad / "UTF-8 with BOM"). `utils` requires nothing from lib/, so
+// this dependency direction cannot form a cycle.
+const { readJsonText, parseJsonText } = require('./utils');
 
 const DEFAULTS = {
   schematic: 'Schematic1',
@@ -50,7 +54,7 @@ function readDesign(file) {
   if (!fs.existsSync(file)) fail(`design file not found: ${file}`);
   let raw;
   try {
-    raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    raw = parseJsonText(readJsonText(file));
   } catch (e) {
     fail(`design file is not valid JSON: ${e.message}`);
   }
@@ -73,13 +77,26 @@ function normalize(raw, file) {
     blocks: [],
     parts: [],
     pcbSpec: raw.pcb && typeof raw.pcb === 'object' ? raw.pcb : {},
-    skipPcb: raw.pcb === false
+    skipPcb: raw.pcb === false,
+    expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null
   };
 
   // nets may also declare power style: "nets": { "VCC": { "power": "up" } }
-  for (const [name, spec] of Object.entries(d.nets)) {
-    if (spec && typeof spec === 'object' && spec.power) d.powers[name] = spec.power;
+  // or a per-net track width: "nets": { "MOTOR_A": { "width": 30 } }.
+  // netClasses group knobs: "netClasses": { "POWER": { "width": 30 } },
+  // "nets": { "VCC": { "class": "POWER" } }.
+  const netWidths = {};
+  const netClasses = {};
+  for (const [name, spec] of Object.entries(raw.netClasses || {})) {
+    if (spec && typeof spec === 'object' && Number(spec.width) > 0) netClasses[name] = { width: Number(spec.width) };
   }
+  for (const [name, spec] of Object.entries(d.nets)) {
+    if (!spec || typeof spec !== 'object') continue;
+    if (spec.power) d.powers[name] = spec.power;
+    if (Number(spec.width) > 0) netWidths[name] = Number(spec.width);
+    else if (spec.class && netClasses[spec.class]) netWidths[name] = netClasses[spec.class].width;
+  }
+  d.netWidths = netWidths;
 
   const partsIn = Array.isArray(raw.parts) ? raw.parts : [];
   if (!partsIn.length) fail('design has no "parts" — nothing to build');
@@ -113,6 +130,7 @@ function normalize(raw, file) {
       value: p.value === undefined ? null : String(p.value),
       name: p.name || null,
       pins,
+      polarity: p.polarity && typeof p.polarity === 'object' ? p.polarity : null,
       rotation: rot,
       block: p.block === undefined ? null : (typeof p.block === 'number' ? p.block : String(p.block))
     };
@@ -204,6 +222,15 @@ function validateDesign(d, lib) {
   for (const [net, users] of netUsers) {
     if (users.length === 1 && !d.powerNets.has(net)) {
       warnings.push(`net "${net}" has only one connection (${users[0]}) — dead-end net`);
+    }
+  }
+  // per-net track width sanity: below 4 mil does not etch reliably, above 100
+  // is never a trace (that is a plane), non-powers with a custom width are fine.
+  for (const [net, width] of Object.entries(d.netWidths || {})) {
+    if (width < 4 || width > 100) {
+      errors.push(`net "${net}": track width ${width} mil is out of range (4–100)`);
+    } else if (width > 40) {
+      warnings.push(`net "${net}": track width ${width} mil is very wide — consider a copper pour or region instead`);
     }
   }
   return { errors, warnings, netUsers };
@@ -309,17 +336,39 @@ function layoutSchematic(d, lib) {
     const n = ordered.length;
     const cols = Math.max(1, Math.min(L.cols, Math.ceil(Math.sqrt(n)) || 1));
 
-    let box = null;
-    ordered.forEach((part, i) => {
+    // Row/column pitch adapts to the real symbol extents: small parts keep the
+    // default grid, a 48-pin IC stretches its cell instead of overlapping.
+    const rels = ordered.map((part) => {
       const sym = lib.symbolOf(part);
+      const rot = part.rotation || 0;
+      return { part, sym, rot, rel: partExtent(sym, 0, 0, rot) };
+    });
+    const rows = Math.ceil(n / cols) || 1;
+    const colW = new Array(cols).fill(0);
+    const rowH = new Array(rows).fill(0);
+    rels.forEach((r, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      colW[col] = Math.max(colW[col], r.rel.x2 - r.rel.x1);
+      rowH[row] = Math.max(rowH[row], r.rel.y2 - r.rel.y1);
+    });
+    const colPitch = colW.map((w) => grid(Math.max(L.cellW, w + 60)));
+    const rowPitch = rowH.map((h) => grid(Math.max(L.cellH, h + 60)));
+
+    let box = null;
+    rels.forEach((r, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
       // Y-up: rows march downward from the block's top, columns left→right.
+      // Origins sit on the cumulative row/column starts (as before); the
+      // adaptive pitch is what makes room for a large symbol's extent box.
       // Origins snap to the 10 mil grid so pins keep landing on it too.
-      const px = grid(cursorX + L.margin + col * L.cellW);
-      const py = grid(-L.margin - row * L.cellH);
-      const pl = { part, sym, x: px, y: py, rotation: part.rotation || 0, block };
-      pl.extent = partExtent(sym, px, py, pl.rotation);
+      const colLeft = colPitch.slice(0, col).reduce((a, b) => a + b, 0);
+      const rowTop = -(L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0));
+      const px = grid(cursorX + L.margin + colLeft);
+      const py = grid(rowTop);
+      const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block };
+      pl.extent = partExtent(r.sym, px, py, r.rot);
       placements.push(pl);
       box = unionRect(box, pl.extent);
     });

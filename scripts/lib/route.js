@@ -25,8 +25,18 @@ const STUB = 40;
 const TRUNK_OFFSET = 60;
 const LABEL_DISTANCE = 900; // mil: beyond this, prefer a label over a long wire
 
-/** Unit vector pointing away from the component body at this pin tip. */
-function exitDir(pl, tip) {
+/** Unit vector pointing away from the component body at this pin tip.
+ *  Derived from the pin's own stub geometry when available: the tip sits
+ *  `length` beyond the pin base opposite the pin rotation, so the exit
+ *  direction continues that way (then the placement rotation is applied).
+ *  A large IC (60 mil wide, 700 mil tall) must not let the |dx| vs |dy|
+ *  heuristic call a right-facing pin "vertical". */
+function exitDir(pl, tip, pin) {
+  if (pin && pin.length > 0) {
+    const v = G.rotate(-Math.cos(((pin.rotation || 0) * Math.PI) / 180),
+      -Math.sin(((pin.rotation || 0) * Math.PI) / 180), pl.rotation || 0);
+    return { x: Math.abs(v.x) < 1e-9 ? 0 : Math.sign(v.x), y: Math.abs(v.y) < 1e-9 ? 0 : Math.sign(v.y) };
+  }
   const dx = tip.x - pl.x;
   const dy = tip.y - pl.y;
   if (Math.abs(dx) >= Math.abs(dy)) return { x: Math.sign(dx) || 1, y: 0 };
@@ -47,7 +57,7 @@ function collectNodes(d, placements) {
         part: pl.part.id,
         pin: String(pin.num),
         tip,
-        dir: exitDir(pl, tip),
+        dir: exitDir(pl, tip, pin),
         placement: pl,
         block: pl.block ? pl.block.title : null
       });
@@ -308,7 +318,9 @@ function routeNet(net, nodes, ctx) {
   }
 
   if (nodes.length === 1) {
-    const enc = labelEncoding(nodes, net, issues,
+    // NC/DNC nets are the deliberate no-connect convention — encode silently.
+    const isNC = /^(NC|DNC\d*)$/i.test(net);
+    const enc = labelEncoding(nodes, net, issues, isNC ? null :
       `net "${net}" has a single pin (${nodes[0].part}.${nodes[0].pin}) -?labelled as a dead end`);
     enc.wires.forEach((w) => commitSegs(w, used));
     return { wires: enc.wires, flags, labels: enc.labels, issues };

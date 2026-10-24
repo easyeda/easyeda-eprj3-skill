@@ -16,7 +16,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
-const { parseArgs, printHelp, die } = require('../lib/utils');
+const { parseArgs, printHelp, die, readJson } = require('../lib/utils');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SCRIPTS = path.join(ROOT, 'scripts');
@@ -89,7 +89,7 @@ function main() {
   function validator(key) {
     if (!compiled.has(key)) {
       const raw = key === 'DOCHEAD' ? DOCHEAD_SCHEMA
-        : JSON.parse(fs.readFileSync(path.join(skillDir, 'schemas', key + '.json'), 'utf8'));
+        : readJson(path.join(skillDir, 'schemas', key + '.json'));
       (function dedupe(o) {
         if (!o || typeof o !== 'object' || Array.isArray(o)) return;
         if (Array.isArray(o.enum)) {

@@ -24,7 +24,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
-const { parseArgs, printHelp, die } = require('./lib/utils');
+const { parseArgs, printHelp, die, readJsonText, parseJsonText } = require('./lib/utils');
 
 const schema = [
   { name: 'dir', alias: 'd', hasValue: true, desc: 'Project root (must contain <name>.eprj3)' },
@@ -52,7 +52,7 @@ function configPaths(projectDir) {
 function readConfigClient(projectDir) {
   for (const p of configPaths(projectDir)) {
     try {
-      const json = JSON.parse(fs.readFileSync(p, 'utf8'));
+      const json = parseJsonText(readJsonText(p));
       if (json.client && fs.existsSync(json.client)) return { client: json.client, source: p };
     } catch {}
   }

@@ -15,7 +15,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { spawnCaptured } = require('./capture');
 
 const ROOT = path.join(__dirname, '..');
 const TMP = path.join(os.tmpdir(), `eprj3-pipeline-${process.pid}`);
@@ -30,16 +30,9 @@ function ok(cond, name, detail) {
 }
 
 function run(script, args, expect = 0) {
-  let out = '';
-  let code = 0;
-  try {
-    out = execFileSync(process.execPath, [path.join(ROOT, script)].concat(args), {
-      cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
-    });
-  } catch (e) {
-    out = `${e.stdout || ''}${e.stderr || ''}`;
-    code = e.status === undefined ? 1 : e.status;
-  }
+  const r = spawnCaptured(process.execPath, [path.join(ROOT, script)].concat(args), { cwd: ROOT });
+  const out = `${r.stdout || ''}${r.stderr || ''}`;
+  const code = r.status === null || r.status === undefined ? 1 : r.status;
   if (code !== expect) {
     failures += 1;
     console.error(`FAIL ${script} ${args.join(' ')} exited ${code} (want ${expect})\n${out.slice(0, 1200)}`);
@@ -68,10 +61,12 @@ function main() {
   const proj = path.join(TMP, 'blink');
 
   // ---------------------------------------------------------------- build
+  // Default strategy: placement-only. The board ships footprints, not copper.
   const buildOut = run('scripts/build.js', ['--design', design, '--dir', proj]);
   ok(/4 components/.test(buildOut), 'build reports 4 components', buildOut);
   ok(/lint 100\/100/.test(buildOut), 'build reports lint 100', buildOut);
   ok(/drc 100\/100/.test(buildOut), 'build reports drc 100', buildOut);
+  ok(/placement-only/.test(buildOut), 'default build is placement-only', buildOut);
   ok(fs.existsSync(proj), 'project directory exists');
   ok(!fs.existsSync(path.join(proj, '.tmp')), 'temp staging removed from the finished project');
 
@@ -89,8 +84,22 @@ function main() {
 
   const drc = json('scripts/drc.js', ['--dir', proj, '--json']);
   ok(drc && drc.errors === 0, 'drc has no errors', drc ? JSON.stringify(drc.findings.filter((f) => f.level === 'error')) : 'no json');
-  ok(drc && drc.counts.pours >= 2, 'two copper pours exist');
-  ok(drc && drc.counts.vias > 10, 'stitching vias were added');
+  ok(drc && drc.mode === 'placed-only', 'drc reads the board as placed-only', drc ? drc.mode : 'no json');
+  ok(drc && drc.counts.tracks === 0 && drc.counts.pours === 0, 'no copper was added to the deliverable');
+  ok(drc && drc.counts.pads > 0, 'footprints/pads ARE placed (the deliverable is placement)', drc ? String(drc.counts.pads) : 'no json');
+
+  // ------------------------------------------------- opt-in copper path
+  // --route/--pour must still produce the full board the old default did:
+  // maze routing, ground pour on both layers, stitching fence.
+  const projCopper = path.join(TMP, 'blink-copper');
+  const copperOut = run('scripts/build.js', ['--design', design, '--dir', projCopper, '--route', '--pour']);
+  ok(/drc 100\/100/.test(copperOut), 'routed+poured build still scores drc 100', copperOut);
+  ok(/tracks/.test(copperOut) && /pours/.test(copperOut), 'copper build reports tracks and pours', copperOut);
+  const drcC = json('scripts/drc.js', ['--dir', projCopper, '--json']);
+  ok(drcC && drcC.mode === 'routed', 'copper board judged in routed mode', drcC ? drcC.mode : 'no json');
+  ok(drcC && drcC.counts.pours >= 2, 'two copper pours exist (opt-in)');
+  ok(drcC && drcC.counts.vias > 10, 'stitching vias were added (opt-in)');
+  ok(drcC && drcC.errors === 0, 'copper board has no DRC errors', drcC ? JSON.stringify(drcC.findings.filter((f) => f.level === 'error')) : 'no json');
 
   // -------------------------------------------------------------- netlist
   const nl = json('scripts/netlist.js', ['--dir', proj, '--json']);

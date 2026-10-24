@@ -19,7 +19,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const { spawnCaptured } = require('./capture');
 
 const ROOT = path.resolve(__dirname, '..');
 const SCRIPTS = path.join(ROOT, 'scripts');
@@ -34,7 +34,7 @@ function assert(cond, name, detail = '') {
 }
 
 function run(args, expectCode = 0) {
-  const r = spawnSync(process.execPath, args, { encoding: 'utf8', cwd: ROOT });
+  const r = spawnCaptured(process.execPath, args, { cwd: ROOT });
   if (expectCode !== null && r.status !== expectCode) {
     assert(false, `node ${path.basename(args[0])} ${args.slice(1, 3).join(' ')}`,
       `exit ${r.status} (expected ${expectCode})\n${(r.stdout || '') + (r.stderr || '')}`.trim());

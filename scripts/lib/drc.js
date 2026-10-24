@@ -16,6 +16,10 @@
  *   D006 no copper pour on a ground net (warning)
  *   D007 pad with no net (warning)
  *   D008 via drill/size out of range
+ *   D009 drill below the manufacturing minimum (DFM)
+ *   D010 annular ring below the minimum (DFM, warning)
+ *   D011 silkscreen text overlapping a copper pad (DFM, warning)
+ *   D012 same-net track segments meeting at an acute angle (DFM, warning)
  */
 
 const fs = require('fs');
@@ -31,10 +35,17 @@ const RULES = {
   D005: { level: 'error', weight: 10, text: 'board outline missing or degenerate' },
   D006: { level: 'warn', weight: 4, text: 'no ground pour' },
   D007: { level: 'warn', weight: 2, text: 'pad without a net' },
-  D008: { level: 'warn', weight: 2, text: 'via geometry out of range' }
+  D008: { level: 'warn', weight: 2, text: 'via geometry out of range' },
+  D009: { level: 'error', weight: 6, text: 'drill below the manufacturing minimum' },
+  D010: { level: 'warn', weight: 3, text: 'annular ring below the minimum' },
+  D011: { level: 'warn', weight: 2, text: 'silkscreen text overlaps a pad' },
+  D012: { level: 'warn', weight: 2, text: 'track bends at an acute angle' }
 };
 
-const DEFAULTS = { clearance: 10, minTrack: 8, edge: 12, viaMin: 16, viaMax: 60 };
+// minDrill 12 mil = 0.30 mm (JLC basic process); minRing 4 mil ≈ 0.10 mm,
+// deliberately below the ~0.15 mm most fabs ask for so the rule warns only on
+// clear violations; minAngle 45 keeps a 45° corner/chamfer legal.
+const DEFAULTS = { clearance: 10, minTrack: 8, edge: 12, viaMin: 16, viaMax: 60, minDrill: 12, minRing: 4, minAngle: 45 };
 
 function docSplit(lines) {
   const docs = [];
@@ -56,7 +67,9 @@ function docSplit(lines) {
 function pcbGeometry(file) {
   const lines = E.readLines(file);
   const docs = docSplit(lines);
-  const main = docs.find((d) => d.docType === 'PCB') || docs[docs.length - 1];
+  const main = docs.find((d) => d.docType === 'PCB') || docs[docs.length - 1]
+    // empty/truncated PCB file → no records: D005 reports the missing outline
+    || { docType: null, uuid: null, records: [] };
   const fpDocs = new Map();
   for (const d of docs) {
     if (d.docType === 'FOOTPRINT') fpDocs.set(d.uuid, d);
@@ -98,6 +111,7 @@ function pcbGeometry(file) {
         y: G.round(b.y + off.y),
         w: d.width || 20,
         h: d.height || 20,
+        hole: typeof pb.hole === 'number' && pb.hole > 0 ? pb.hole : null,
         layer: pb.layerId || 1
       });
     }
@@ -106,6 +120,7 @@ function pcbGeometry(file) {
   const tracks = [];
   const vias = [];
   const pours = [];
+  const strings = [];
   let outline = null;
   for (const r of recs) {
     if (r.type === 'LINE' && r.body) {
@@ -117,20 +132,33 @@ function pcbGeometry(file) {
         width: r.body.width || 10
       });
     } else if (r.type === 'VIA' && r.body) {
+      // The PCB format spells vias centerX/centerY/viaDiameter/holeDiameter;
+      // accept x/y/width/hole too (older/plan shapes).
       vias.push({
         net: r.body.netName || '',
-        x: r.body.x, y: r.body.y,
-        width: r.body.width || 24, hole: r.body.hole || 12
+        x: r.body.centerX !== undefined ? r.body.centerX : r.body.x,
+        y: r.body.centerY !== undefined ? r.body.centerY : r.body.y,
+        width: r.body.viaDiameter !== undefined ? r.body.viaDiameter : (r.body.width || 24),
+        hole: r.body.holeDiameter !== undefined ? r.body.holeDiameter : (r.body.hole || 12)
       });
     } else if (r.type === 'POUR' && r.body) {
       pours.push({ net: r.body.netName || '', layer: r.body.layerId });
+    } else if (r.type === 'STRING' && r.body) {
+      strings.push({
+        text: String(r.body.text === undefined ? '' : r.body.text),
+        x: r.body.x, y: r.body.y,
+        layer: r.body.layerId,
+        fontSize: r.body.fontSize || 60,
+        angle: r.body.angle || 0,
+        origin: r.body.origin || 'CENTER_MIDDLE'
+      });
     } else if (r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE') {
       const pts = P.pathToPoints(r.body.path);
       const bb = G.bboxOfPoints(pts);
       if (bb) outline = bb;
     }
   }
-  return { pads, tracks, vias, pours, outline };
+  return { pads, tracks, vias, pours, strings, outline };
 }
 
 function segRect(t) {
@@ -156,12 +184,49 @@ function rectEdgeGap(r, board) {
   return Math.min(...gaps);
 }
 
+// Silk text has no stored bbox: the client renders it from the anchor, so the
+// checker estimates one. A glyph cell of 0.6×0.7 em is roughly where Helvetica
+// lands; the estimate only feeds a warning, so it errs slightly generous.
+const GLYPH_W = 0.6;
+const GLYPH_H = 0.7;
+
+function stringRect(s) {
+  if (typeof s.x !== 'number' || typeof s.y !== 'number' || !s.text) return null;
+  const rows = s.text.split(/\r?\n/);
+  const w = rows.reduce((n, r) => Math.max(n, r.length), 0) * s.fontSize * GLYPH_W;
+  const h = rows.length * s.fontSize * GLYPH_H;
+  const o = String(s.origin || 'CENTER_MIDDLE');
+  const x0 = o.indexOf('LEFT') === 0 ? 0 : o.indexOf('RIGHT') === 0 ? -w : -w / 2;
+  const y0 = o.indexOf('TOP') >= 0 ? -h : o.indexOf('MIDDLE') >= 0 ? -h / 2 : 0;
+  const corners = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]]
+    .map(([dx, dy]) => G.rotate(dx, dy, s.angle || 0));
+  return G.bboxOfPoints(corners.map((c) => ({ x: c.x + s.x, y: c.y + s.y })));
+}
+
+/** Interior angle (deg) between two segments' far vectors at a shared vertex. */
+function jointAngle(a, b) {
+  const l1 = Math.hypot(a.vx, a.vy);
+  const l2 = Math.hypot(b.vx, b.vy);
+  if (l1 < 1e-9 || l2 < 1e-9) return null;
+  const cos = Math.max(-1, Math.min(1, (a.vx * b.vx + a.vy * b.vy) / (l1 * l2)));
+  return Math.acos(cos) * 180 / Math.PI;
+}
+
 /**
  * @param file  pcb document path
- * @param opts  {rules, pourNet}
+ * @param opts  {rules, pourNet, netWidths:{net:mil}, placedOnly}
+ *
+ * placedOnly — the board ships as a placement deliverable: D004 (net fully
+ * routed) and D006 (ground pour exists) judge copper that was never promised,
+ * so they are skipped. Pass false for a routed board; leave undefined and the
+ * mode is read off the file itself (no tracks → nothing was routed).
  */
 function runDrc(file, opts) {
-  const rules = Object.assign({}, DEFAULTS, (opts && opts.rules) || {});
+  const given = (opts && opts.rules) || {};
+  // Undefined overrides must not clobber the defaults.
+  for (const k of Object.keys(given)) if (given[k] === undefined) delete given[k];
+  const rules = Object.assign({}, DEFAULTS, given);
+  const netWidths = (opts && opts.netWidths) || {};
   const pourNet = (opts && opts.pourNet) || 'GND';
   const findings = [];
   const add = (code, msg, extra) => findings.push(Object.assign({
@@ -169,6 +234,9 @@ function runDrc(file, opts) {
   }, extra || {}));
 
   const geo = pcbGeometry(file);
+  const placedOnly = opts && opts.placedOnly !== undefined
+    ? !!opts.placedOnly
+    : geo.tracks.length === 0;
 
   // D005 — outline
   if (!geo.outline) {
@@ -178,10 +246,15 @@ function runDrc(file, opts) {
   }
   const board = geo.outline || G.rect(0, 0, 4000, 3000);
 
-  // D002 — track width
+  // D002 — track width. A net with a declared width satisfies its own contract
+  // at that width, so the floor is the narrower of the two.
   for (const t of geo.tracks) {
-    if ((t.width || 10) < rules.minTrack) {
-      add('D002', `track on net "${t.net}" is ${t.width} mil wide (min ${rules.minTrack})`, { net: t.net });
+    const floor = Math.min(rules.minTrack, netWidths[t.net] || Infinity);
+    if ((t.width || 10) < floor) {
+      add('D002', `track on net "${t.net}" is ${t.width} mil wide (min ${floor === rules.minTrack ? rules.minTrack : netWidths[t.net]})`, {
+        net: t.net,
+        fix: `raise pcb.rules.trackWidth (or the net's width in "nets") and re-run build.js --force`
+      });
     }
   }
 
@@ -206,7 +279,10 @@ function runDrc(file, opts) {
         const la = a.kind === 'pad' ? `pad ${a.ref}.${a.num}` : 'track';
         const lb = b.kind === 'pad' ? `pad ${b.ref}.${b.num}` : 'track';
         add('D001', `${la} (${a.net}) is ${gap.toFixed(1)} mil from ${lb} (${b.net}) — min ${rules.clearance}`, {
-          a: a.net, b: b.net
+          a: a.net, b: b.net,
+          fix: a.kind === 'pad' && b.kind === 'pad' && a.ref === b.ref
+            ? `fix the land pattern of ${a.ref} in parts[].footprint — its own pads must clear each other`
+            : `space is tight: enlarge the board, move the parts with pcb.place, or lower pcb.rules.clearance for fine-pitch parts`
         });
       }
     }
@@ -217,7 +293,8 @@ function runDrc(file, opts) {
     const gap = rectEdgeGap(c.rect, board);
     if (gap < rules.edge - 0.001) {
       add('D003', `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} is ${gap.toFixed(1)} mil from the board edge — min ${rules.edge}`, {
-        net: c.net
+        net: c.net,
+        fix: `grow board.width/height or raise pcb.rules.edgeClearance, then re-run build.js --force`
       });
     }
   }
@@ -252,7 +329,10 @@ function runDrc(file, opts) {
     if (onPad.length) union(keyPoint(p.x, p.y), `net:${p.net}`);
   }
   const pouredNets = new Set(geo.pours.map((p) => p.net).filter(Boolean));
-  for (const [net, count] of byNet) {
+  // D004 judges routing that was promised. A placement-only board promised
+  // none — flagging every signal net would punish the deliverable for
+  // following the strategy.
+  if (!placedOnly) for (const [net, count] of byNet) {
     if (count < 2) continue;
     // a poured net is connected by the plane, not by tracks
     if (pouredNets.has(net)) continue;
@@ -261,32 +341,146 @@ function runDrc(file, opts) {
       && (G.rectContains(padRect(p), { x: t.x1, y: t.y1 }) || G.rectContains(padRect(p), { x: t.x2, y: t.y2 })))
       || geo.vias.some((v) => v.net === net && G.rectContains(padRect(p), { x: v.x, y: v.y })));
     if (attached.length < count) {
-      add('D004', `net "${net}" is not fully routed (${attached.length}/${count} pads have copper)`, { net });
+      add('D004', `net "${net}" is not fully routed (${attached.length}/${count} pads have copper)`, {
+        net,
+        fix: `the router could not reach every pad: enlarge the board, pin the parts apart with pcb.place, or lower pcb.rules.clearance/trackWidth for fine-pitch parts`
+      });
     }
   }
 
-  // D006 — ground pour
-  if (!geo.pours.length) {
-    add('D006', 'no copper pour on the board (expected a ground plane)');
-  } else if (!geo.pours.some((p) => p.net === pourNet)) {
-    add('D006', `a pour exists but none on net "${pourNet}"`);
+  // D006 — ground pour. Expected on a routed board; on a placement-only board
+  // only checked when copper already exists (a stray pour on the wrong net is
+  // still a defect the deliverable should report).
+  if (geo.pours.length && !geo.pours.some((p) => p.net === pourNet)) {
+    add('D006', `a pour exists but none on net "${pourNet}"`, {
+      fix: `set pcb.pour.net to "${pourNet}" (or pass --pour-net) and re-run build.js --force`
+    });
+  } else if (!placedOnly && !geo.pours.length) {
+    add('D006', 'no copper pour on the board (expected a ground plane)', {
+      fix: `enable the pour: build with --pour, or set the design's pcb.pour and re-run build.js --force`
+    });
   }
 
   // D007 — pads without a net
   const orphan = geo.pads.filter((p) => !p.net);
   if (orphan.length) {
-    add('D007', `${orphan.length} pad(s) have no net: ${orphan.slice(0, 6).map((p) => `${p.ref}.${p.num}`).join(' ')}`);
+    add('D007', `${orphan.length} pad(s) have no net: ${orphan.slice(0, 6).map((p) => `${p.ref}.${p.num}`).join(' ')}`, {
+      fix: `re-run build.js --force — PCB pad nets come from parts[].pins; a pad with no net means its pin mapping lost an entry`
+    });
   }
 
   // D008 — via geometry
   for (const v of geo.vias) {
     if (v.width < rules.viaMin || v.width > rules.viaMax || v.hole >= v.width) {
-      add('D008', `via at ${v.x},${v.y} has size ${v.width}/drill ${v.hole}`);
+      add('D008', `via at ${v.x},${v.y} has size ${v.width}/drill ${v.hole}`, {
+        fix: `set pcb.rules.viaDiameter/viaDrill inside ${rules.viaMin}–${rules.viaMax} with drill < diameter`
+      });
+    }
+  }
+
+  // D009 — minimum drill (DFM). 0.3 mm ≈ 12 mil is the basic-process floor
+  // for plated holes; smaller drills need a special fab capability.
+  for (const v of geo.vias) {
+    if (v.hole < rules.minDrill - 0.001) {
+      add('D009', `via at ${v.x},${v.y} on net "${v.net}" has a ${v.hole} mil drill (min ${rules.minDrill})`, {
+        net: v.net,
+        fix: `raise pcb.rules.viaDrill to ${rules.minDrill} mil (0.3 mm) or more and re-run build.js --force`
+      });
+    }
+  }
+  for (const p of geo.pads) {
+    if (p.hole && p.hole < rules.minDrill - 0.001) {
+      add('D009', `pad ${p.ref}.${p.num} is drilled ${p.hole} mil (min ${rules.minDrill})`, {
+        net: p.net, ref: p.ref,
+        fix: `swap in a footprint whose through-hole pads drill ${rules.minDrill} mil (0.3 mm) or more — sub-12 mil drills are a paid upgrade at most fabs`
+      });
+    }
+  }
+
+  // D010 — minimum annular ring (DFM). ring = (outer − drill) / 2; a ring that
+  // is too thin lets the drill break out of the copper pad during plating.
+  for (const v of geo.vias) {
+    const ring = (v.width - v.hole) / 2;
+    if (ring < rules.minRing - 0.001) {
+      add('D010', `via at ${v.x},${v.y} has a ${ring.toFixed(1)} mil annular ring (outer ${v.width}, drill ${v.hole}) — min ${rules.minRing}`, {
+        net: v.net,
+        fix: `enlarge pcb.rules.viaDiameter (or shrink viaDrill) so (diameter − drill)/2 reaches ${rules.minRing} mil, then re-run build.js --force`
+      });
+    }
+  }
+  for (const p of geo.pads) {
+    if (!p.hole) continue;
+    const ring = (Math.min(p.w, p.h) - p.hole) / 2;
+    if (ring < rules.minRing - 0.001) {
+      add('D010', `pad ${p.ref}.${p.num} has a ${ring.toFixed(1)} mil annular ring (copper ${Math.min(p.w, p.h)}, drill ${p.hole}) — min ${rules.minRing}`, {
+        net: p.net, ref: p.ref,
+        fix: `grow the pad in the footprint (generate-footprint.js pads num:x:y:w:h[:drill]) so the ring reaches ${rules.minRing} mil`
+      });
+    }
+  }
+
+  // D011 — silkscreen onto copper pads (DFM). Silk on a pad site prints over
+  // solderable metal and bakes into the joint; keep text in the silk-safe gap.
+  // Layer 3 (top silk) can only hit top/multi pads, layer 4 only bottom/multi.
+  const silkToPad = { 3: [1, 12], 4: [2, 12] };
+  for (const s of geo.strings) {
+    const padLayers = silkToPad[s.layer];
+    if (!padLayers) continue;
+    const sr = stringRect(s);
+    if (!sr) continue;
+    const hit = geo.pads.find((p) => padLayers.indexOf(p.layer) >= 0 && G.rectsOverlap(sr, padRect(p)));
+    if (hit) {
+      const label = s.text.length > 20 ? `${s.text.slice(0, 20)}…` : s.text;
+      add('D011', `silkscreen "${label}" at ${s.x},${s.y} (${s.layer === 3 ? 'top' : 'bottom'} silk) overlaps pad ${hit.ref}.${hit.num}`, {
+        net: hit.net, ref: hit.ref,
+        fix: `move the text (add-pcb-text.js --x/--y) into the silk-safe gap between pads — silk must not print on exposed copper`
+      });
+    }
+  }
+
+  // D012 — acute-angle track bends (DFM). Only same-net, same-copper-layer
+  // segments that SHARE an endpoint count; a sharp bend leaves a wedge of thin
+  // insulation and traps etchant. A 0° join is copper folded back on itself
+  // (the router emits these next to pads) — that is an overlap, not a wedge,
+  // so joins under 1° are left to the spacing rules.
+  const joints = new Map();
+  geo.tracks.forEach((t, ti) => {
+    if (!t.net) return;
+    if (t.layer !== 1 && t.layer !== 2) return; // copper layers only
+    const ends = [
+      { vx: t.x2 - t.x1, vy: t.y2 - t.y1, x: t.x1, y: t.y1 },
+      { vx: t.x1 - t.x2, vy: t.y1 - t.y2, x: t.x2, y: t.y2 }
+    ];
+    for (const e of ends) {
+      const k = `${t.net}|${t.layer}|${G.round(e.x)},${G.round(e.y)}`;
+      if (!joints.has(k)) joints.set(k, []);
+      joints.get(k).push(Object.assign({ ti }, e));
+    }
+  });
+  const seenPairs = new Set();
+  for (const [k, arms] of joints) {
+    if (arms.length < 2) continue;
+    const [net, layer] = k.split('|');
+    for (let i = 0; i < arms.length; i += 1) {
+      for (let j = i + 1; j < arms.length; j += 1) {
+        if (arms[i].ti === arms[j].ti) continue;
+        const pk = arms[i].ti < arms[j].ti ? `${arms[i].ti}:${arms[j].ti}` : `${arms[j].ti}:${arms[i].ti}`;
+        if (seenPairs.has(pk)) continue;
+        const ang = jointAngle(arms[i], arms[j]);
+        if (ang === null || ang < 1 || ang >= rules.minAngle - 0.001) continue;
+        seenPairs.add(pk);
+        add('D012', `net "${net}" bends ${ang.toFixed(0)}° at ${arms[i].x},${arms[i].y} on layer ${layer} — min ${rules.minAngle}°`, {
+          net,
+          fix: `reroute that corner as a 45° chamfer or an arc (two segments meeting at ≥ ${rules.minAngle}°) — giving the run more room with pcb.place and re-running build.js --force usually clears it`
+        });
+      }
     }
   }
 
   const score = Math.max(0, 100 - findings.reduce((n, f) => n + RULES[f.code].weight, 0));
   return {
+    mode: placedOnly ? 'placed-only' : 'routed',
+    skipped: placedOnly ? ['D004', 'D006'] : [],
     findings,
     errors: findings.filter((f) => f.level === 'error').length,
     warnings: findings.filter((f) => f.level === 'warn').length,
@@ -300,5 +494,5 @@ function runDrc(file, opts) {
   };
 }
 
-module.exports = { RULES, DEFAULTS, runDrc, pcbGeometry, docSplit };
+module.exports = { RULES, DEFAULTS, runDrc, pcbGeometry, docSplit, stringRect };
 void fs;

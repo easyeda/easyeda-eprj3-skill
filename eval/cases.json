@@ -1,7 +1,8 @@
 {
-  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<folder>/<file>' without .json. Missing entries fall back to the defaults below.",
+  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<topdir>/<file stem>' as eval prints them: examples/designs/x → 'examples/x', recipe/x → 'recipe/x', examples/intake/x.req.json → 'intake/x'. 'copper': true builds that case with --route --pour so the router + pour path stays under regression while the shipped default is placement-only.",
   "_defaults": { "minLint": 85, "minDrc": 80, "maxSeconds": 20 },
-  "examples/designs/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
-  "examples/designs/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "examples/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10, "copper": true },
+  "examples/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "recipe/ldo-3v3": { "minDrc": 100, "maxSeconds": 10, "copper": true },
   "recipe/rs485": { "minLint": 95, "minDrc": 100, "maxSeconds": 10 }
 }

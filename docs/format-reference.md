@@ -1,6 +1,6 @@
 # eprj3 Format Reference
 
-Compact reference for the records the scripts in this skill produce — verified against the official example at https://github.com/easyeda/easyeda-pro-eprj3-format (its `example/eprj3-example` project is the ground truth) and cross-checked against the JSON Schemas and real record samples of the **easyeda-pro-format-skill** repo: https://github.com/easyeda/easyeda-pro-format-skill. Every JSON snippet below is quoted from a real record or a sample-backed merge.
+Compact reference for the records the scripts in this skill produce — verified against the official example at https://github.com/easyeda/easyeda-eprj3-format (its `example/eprj3-example` project is the ground truth) and cross-checked against the JSON Schemas and real record samples of the **easyeda-format-skill** repo: https://github.com/easyeda/easyeda-format-skill. Every JSON snippet below is quoted from a real record or a sample-backed merge.
 
 ## Project layout (folder format)
 

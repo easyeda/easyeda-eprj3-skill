@@ -23,7 +23,7 @@
 const fs = require('fs');
 const path = require('path');
 const E = require('./lib/eprj3');
-const { parseArgs, printHelp, die } = require('./lib/utils');
+const { parseArgs, printHelp, die, readJsonText, parseJsonText } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory (required for power/port/remove)' },
@@ -32,7 +32,7 @@ const SCHEMA = [
   { name: 'style', desc: 'up (default) or down (power)', default: 'up' }
 ];
 
-function loadEntryAt(file) { return JSON.parse(fs.readFileSync(file, 'utf8')); }
+function loadEntryAt(file) { return parseJsonText(readJsonText(file)); }
 
 function resolveEntry(opts, name) {
   if (!name) die('missing --name');

@@ -1,6 +1,6 @@
 # Checks: codes and what to do about them
 
-Four independent gates. Run them individually, or let `build.js` run all four and
+Five independent gates. Run them individually, or let `build.js` run all five and
 fail on the first error class.
 
 ```bash
@@ -8,10 +8,15 @@ node scripts/validate.js     --dir <p> [--json]
 node scripts/erc.js          --dir <p> [--design design.json] [--json] [--strict] [--no-pcb]
 node scripts/lint-layout.js  --dir <p> [--json] [--strict] [--min-score 90] [--rules]
 node scripts/drc.js          --dir <p> [--json] [--strict] [--min-score 90] [--rules]
+node scripts/intent.js       --design design.json [--json] [--strict] [--rules]
 ```
 
 `--strict` promotes warnings to failure. `--min-score` fails on a low score even
 with no errors. Scores are `100 − Σ(rule weight)` per gate, clamped at 0.
+
+Every finding (in text and in `--json`) carries a `fix:` field — the exact edit
+to make. Mechanical fixes (NC for unconnected pins, decoupling caps) are
+automated: `node scripts/autofix.js --design design.json [--check]`.
 
 ## Format — `validate.js`
 
@@ -20,6 +25,15 @@ uniqueness, Device/Symbol/Footprint reference integrity, wire↔LINE linkage,
 PAD_NET↔NET↔COMPONENT references, missing panel files and stray files in a
 schematic directory. Any error means the file is corrupt — rebuild rather than
 patch, unless you know exactly which record is wrong.
+
+Since 1.10 it also catches the corruption classes the corpus found blind:
+a record body that is not valid JSON after a stray `||` (*error* — bodies used
+to vanish silently into `{}`), an `ATTR.parentId` that names nothing in the
+document (*error*), `COMPONENT`/`WIRE` heads without an id (*error*),
+ticket order regressions in MAIN docs (*warning* — client-authored embedded
+docs are unordered by design), a `DOCHEAD.client` differing from the project
+client (*warning* — merged real projects legitimately differ), and zero-byte
+containers (*error* — every reader now reports instead of throwing).
 
 ## Electric — `erc.js`
 
@@ -33,12 +47,13 @@ patch, unless you know exactly which record is wrong.
 | `E006` | error | PCB pad net ≠ schematic net | PCB placement lost its `--nets` map |
 | `E007` | warn | auto-named net (`N$…`) | name it, or it will not survive a refactor |
 | `W001` | warn | supply-looking net without a power flag | declare it in `powers` |
-| `W002` | warn | IC on a supply with no decoupling cap | add one (0.1 µF per supply pin) |
+| `W002` | warn | IC on a supply with no decoupling cap | add one (0.1 µF per supply pin) — or run autofix |
 | `W003` | warn | net bridges two pins of the same part | usually a typo in `pins` |
 
 `E003` is the important one: it compares the netlist recovered from the files
 against the one the design file asked for, pin by pin. It is what catches a wire
-that visually looks right and electrically is not.
+that visually looks right and electrically is not. The `NC`/`DNC` net names are
+the accepted no-connect convention: a lone pin on one of them passes.
 
 ## Layout — `lint-layout.js`
 
@@ -63,26 +78,91 @@ the block is too dense — raise `layout.cellW/cellH` or split the block.
 | Code | Level | Weight | Meaning |
 | --- | --- | --- | --- |
 | `D001` | error | 12 | copper-to-copper spacing below clearance (different nets) |
-| `D002` | error | 8 | track narrower than the minimum |
+| `D002` | error | 8 | track narrower than the minimum (per-net declared widths satisfy their own floor) |
 | `D003` | error | 8 | copper too close to the board edge |
 | `D004` | error | 12 | a net with 2+ pads is not fully routed |
 | `D005` | error | 10 | board outline missing or degenerate |
 | `D006` | warn | 4 | no ground pour |
 | `D007` | warn | 2 | pad without a net |
 | `D008` | warn | 2 | via geometry out of range |
+| `D009` | error | 6 | via/pad drill below the manufacturing minimum (`minDrill`) |
+| `D010` | warn | 3 | annular ring below the minimum (`minRing`) |
+| `D011` | warn | 2 | silkscreen text overlapping a copper pad (same board side) |
+| `D012` | warn | 2 | same-net track segments meeting at an acute angle (`minAngle`) |
 
 `D001` on two pads of the *same* footprint is ignored (that is the package's land
 pattern), but everything else is enforced. `D004` skips poured nets, because the
 plane is what connects them.
 
-Defaults: clearance 10, min track 8, edge 12 mil, via 16–60. The built-in router
-uses stricter numbers so that its output passes the defaults with headroom.
+**Placement-only mode.** The build strategy ships boards with footprints placed
+but not routed (routing/pour are `--route`/`--pour` opt-ins). A placed-only
+board has no copper to judge, so `D004` (net not routed) and `D006` (no ground
+pour) are skipped — flagging copper that was never promised would punish every
+correct deliverable. `runDrc` reports `mode: 'placed-only' | 'routed'` and
+`skipped: ['D004','D006']`; the mode is explicit from `build.js` and, when the
+CLI runs alone, read off the file (a board with no tracks is placed-only). The
+CLI can force it with `--placed-only` / `--routed`. Everything that applies to
+placement itself — `D001` pad spacing, `D003` edge, `D005` outline, `D007`
+orphan pad, and all four DFM rules — still runs.
+
+### DFM rules (D009–D012)
+
+- **`D009` min drill** — plated holes under `minDrill` (default 12 mil = 0.30 mm,
+  the JLCPCB basic-process floor) are unbuildable, so this is an error. It checks
+  via `holeDiameter` and the footprint pad `hole` field; exactly 12 mil passes
+  (the shipped default via is 24/12). Fix: raise `pcb.rules.viaDrill`, or pick a
+  footprint whose through-hole pads drill ≥ 12 mil.
+- **`D010` min annular ring** — ring = (outer − drill)/2, under `minRing`
+  (default 4 mil ≈ 0.1 mm) the drill can break out of the copper during
+  plating. A warning with a deliberately conservative floor: fabs quote
+  0.10–0.15 mm, and the 24/12 default via (ring 6 mil) must stay quiet.
+- **`D011` silk on pad** — a `STRING` record on the top/bottom silkscreen layer
+  (layerId 3/4) whose estimated text bbox crosses a copper pad *of that board
+  side* (top silk vs layer 1/12 pads, bottom silk vs layer 2/12). Silk printed
+  on exposed solder metal bakes into the joint. The bbox is estimated from
+  `x/y/text/fontSize/origin/angle` at 0.6×0.7 em per glyph — the client stores
+  no text outline. Footprint silk (LINE records in the FOOTPRINT doc) is not
+  covered. Fix: move the text with `add-pcb-text.js` into the silk-safe gap.
+- **`D012` acute track angle** — two same-net, same-copper-layer (`layerId` 1/2)
+  track segments that SHARE an endpoint and bend under `minAngle` (default 45°)
+  form an etch wedge that traps acid and thins the insulation. Only segments
+  meeting at a shared endpoint are compared, never every pair. A join folded
+  back exactly (0°) is overlapping copper — what the router emits as pad stubs —
+  and is left to the spacing rules; 45° chamfers are legal. Fix: reroute as a
+  45° chamfer/arc, more room via `pcb.place`, re-run `build.js --force`.
+
+Defaults: clearance 10, min track 8, edge 12 mil, via 16–60, min drill 12, min
+ring 4, min angle 45. `build.js` judges the copper against the SAME `pcb.rules`
+the router built it with, so a design that declares fine-pitch rules is judged
+by them, not by these defaults. The three DFM thresholds are configurable the
+same way through `runDrc(file, {rules})` — and through the design contract:
+`pcb.rules.minDrill` / `minRing` / `minAngle` are forwarded by `build.js`, so a
+design that declares a fab floor is judged by its own floor, not the default.
+
+## Intent — `intent.js` (the fifth gate)
+
+Catches mistakes that live *inside* design.json, which no connectivity or copper
+check can see. Rules run only when the relevant declaration exists, so a design
+without `expect`/`polarity` skips the gate entirely.
+
+| Code | Level | Weight | Meaning |
+| --- | --- | --- | --- |
+| `I001` | error | 15 | a `polarity`-marked pin sits on the wrong power domain ("+" on ground / "-" on a supply) — the LED/diode/electrolytic reverse-polarity killer |
+| `I002` | error | 10 | `expect.decoupling`: a supply net has no capacitor to ground |
+| `I003` | error | 8 | `expect.pairs`: a declared pair is unused or has unbalanced pin counts |
+| `I004` | error | 8 | `expect.valueRange`: a part's value is outside its declared range (unparseable values warn) |
+| `I005` | error | 10 | `expect.divider`: top/bottom resistors are mis-wired, or the actual ratio (from parsed values) is outside `ratio ± tol` |
+| `I006` | warn | 2 | a declared pair is remembered but the 2-layer router will not route it as a pair |
+
+Values parse in engineering notation: `10k` `330R` `100nF` `4.7uF` `1MΩ`.
 
 ## Using the scores as a regression signal
 
 ```bash
 node scripts/eval.js                 # every recipe + example, builds and gates each
 node scripts/eval.js --case blink    # one case
+node scripts/eval.js --design my.json  # measure a new design with the same yardstick
+node scripts/eval.js --diff          # compare against the previous run in history
 node scripts/eval.js --json          # machine-readable
 ```
 

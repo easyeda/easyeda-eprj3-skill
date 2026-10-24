@@ -13,11 +13,13 @@
 const fs = require('fs');
 const path = require('path');
 const E = require('./eprj3');
+// BOM-tolerant JSON reading (utils requires nothing from lib/, so no cycle).
+const { readJsonText, parseJsonText } = require('./utils');
 
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
-/** Split a container file into docs: [{docType, uuid, lines}]. */
+/** Split a container file into docs: [{docType, uuid, client, lines}]. */
 function docsOf(file) {
   const lines = E.readLines(file);
   const docs = [];
@@ -25,7 +27,12 @@ function docsOf(file) {
   for (const l of lines) {
     if (l.startsWith('{"type":"DOCHEAD"}')) {
       const r = E.parseRecord(l);
-      cur = { docType: r && r.body && r.body.docType, uuid: r && r.body && r.body.uuid, lines: [l] };
+      cur = {
+        docType: r && r.body && r.body.docType,
+        uuid: r && r.body && r.body.uuid,
+        client: r && r.body && r.body.client,
+        lines: [l]
+      };
       docs.push(cur);
     } else if (cur) {
       cur.lines.push(l);
@@ -40,20 +47,83 @@ function runValidate(dir) {
   const check = (cond, msg) => { if (!cond) errors.push(msg); };
   const warn = (cond, msg) => { if (!cond) warnings.push(msg); };
 
-  function checkTicketsAndRecords(doc, label) {
+  function checkTicketsAndRecords(doc, label, mainDoc) {
     const seen = new Set();
-    for (const l of doc.lines.slice(1)) {
-      const r = E.parseRecord(l);
-      check(r, `${label}: unparseable record ${l.slice(0, 60)}...`);
+    let lastTicket = -1;
+    let orderBad = null;
+    let orderCount = 0;
+    for (let li = 1; li < doc.lines.length; li += 1) {
+      const line = doc.lines[li];
+      const r = E.parseRecord(line);
+      check(r, `${label}: unparseable record ${line.slice(0, 60)}...`);
       if (!r) continue;
+      // V001 — a line can split into head+body while the body is corrupt JSON
+      // (stray '||' inside it). parseRecord tolerates that as `{}`; the
+      // validator must not stay silent about copper that silently disappears.
+      const sep = line.indexOf('||');
+      if (sep >= 0) {
+        const bodySrc = line.slice(sep + 2).replace(/\|+\s*$/, '');
+        if (bodySrc.trim() && r.head && r.type) {
+          try { JSON.parse(bodySrc); }
+          catch { check(false, `${label}: ${r.type} record body is not valid JSON ${bodySrc.slice(0, 60)}`); }
+        }
+      }
       if (typeof r.ticket === 'number') {
         check(!seen.has(r.ticket), `${label}: duplicate ticket ${r.ticket} (${r.type})`);
+        // V002 — the client writes MAIN docs (SCH_PAGE/PCB/SCH) with tickets in
+        // increasing file order; a regression there signals hand-editing or a
+        // torn append. Embedded SYMBOL/DEVICE docs really are unordered in
+        // client-authored projects (examples/blink proves it), so the rule is
+        // scoped to main documents only — where it has meaning.
+        if (mainDoc && r.ticket <= lastTicket) {
+          orderCount += 1;
+          if (!orderBad) orderBad = `${r.ticket} (after ${lastTicket}) ${r.type}`;
+        }
+        lastTicket = Math.max(lastTicket, r.ticket);
         seen.add(r.ticket);
       }
+      // COMPONENT/WIRE heads must carry an id — everything links through it.
+      if ((r.type === 'COMPONENT' || r.type === 'WIRE') && !r.id) {
+        check(false, `${label}: ${r.type} head has no id`);
+      }
+    }
+    if (orderCount) warnings.push(`${label}: ${orderCount} ticket(s) out of file order (first: ${orderBad})`);
+  }
+
+  /**
+   * V004 — ATTR.parentId must name a record in the same document. A dangling
+   * parentId is how a renamed/deleted component silently keeps rendering an
+   * orphan label that no tool can find again.
+   */
+  function checkAttrParents(doc, label) {
+    const ids = new Set();
+    const attrs = [];
+    for (const l of doc.lines.slice(1)) {
+      const r = E.parseRecord(l);
+      if (!r) continue;
+      if (r.id) ids.add(r.id);
+      if (doc.uuid) ids.add(doc.uuid);
+      if (r.type === 'ATTR' && r.body && r.body.parentId) attrs.push(r);
+    }
+    for (const a of attrs) {
+      check(ids.has(a.body.parentId),
+        `${label}: ATTR ${a.body.key || ''} parentId ${a.body.parentId} references nothing in the document`);
     }
   }
 
   const done = () => ({ errors, warnings });
+
+  // V003 — every DOCHEAD must carry the project client id (md5 of the owner
+  // uuid). A foreign client id is what a hand-copied embedded doc leaves
+  // behind; the client silently drops such docs when it opens the project.
+  // Warn level until every committed client sample is proven clean.
+  function checkDocClients(docs, label, expectedClient) {
+    for (const d of docs) {
+      if (d.client && expectedClient && d.client !== expectedClient) {
+        warnings.push(`${label}: DOCHEAD client ${d.client} ≠ project client ${expectedClient} (${d.docType} ${d.uuid})`);
+      }
+    }
+  }
 
   // ---------------------------------------------------------------- index
   const idxFiles = fs.existsSync(dir)
@@ -63,7 +133,7 @@ function runValidate(dir) {
   const indexFile = path.join(dir, idxFiles[0]);
   let index = null;
   try {
-    index = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
+    index = parseJsonText(readJsonText(indexFile));
   } catch (e) {
     errors.push(`index not valid JSON: ${e.message}`);
     return done();
@@ -82,6 +152,7 @@ function runValidate(dir) {
   check(isObj(profile.owner) && hex(profile.owner.uuid, 32), 'profile.owner.uuid must be 32-hex');
   if (!isObj(profile.boards) || !isObj(profile.schematics) || !isObj(profile.sheets)
     || !isObj(profile.pcbs)) return done();
+  const projectClient = index.owner_uuid ? E.clientIdFrom(index.owner_uuid) : null;
 
   // -------------------------------------------------------------- schematic
   const schDirOf = (sch) => path.join(dir, 'sch', sch.name);
@@ -97,7 +168,11 @@ function runValidate(dir) {
         `${ecfg}: want a single SCH doc with uuid ${sch.uuid}`);
       check(fs.readFileSync(ecfg, 'utf8').trim().split('\n').length === 4,
         `${ecfg}: want 4 records (DOCHEAD META RULE RULE)`);
-      if (docs.length === 1) checkTicketsAndRecords(docs[0], path.basename(ecfg));
+      if (docs.length === 1) {
+        checkTicketsAndRecords(docs[0], path.basename(ecfg), docs[0].docType === 'SCH');
+        checkAttrParents(docs[0], path.basename(ecfg));
+        checkDocClients(docs, path.basename(ecfg), projectClient);
+      }
     } else {
       errors.push(`missing ${ecfg}`);
     }
@@ -112,13 +187,18 @@ function runValidate(dir) {
     const file = path.join(schDirOf(sch), `${sheet.title}.esch2`);
     if (!fs.existsSync(file)) { errors.push(`missing sheet document ${file}`); continue; }
     const docs = docsOf(file);
+    // A crash after a half-finished write leaves an empty file; `main` below
+    // would be undefined and the validator would throw instead of reporting.
+    if (!docs.length) { errors.push(`${file}: document file has no DOCHEAD records (empty or truncated)`); continue; }
     check(docs.length >= 3, `${file}: want >= 3 docs (frame symbol, device, page), got ${docs.length}`);
     const uuids = new Set();
     for (const d of docs) {
       check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
       uuids.add(d.uuid);
-      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`, d.docType === 'SCH_PAGE');
+      checkAttrParents(d, `${path.basename(file)}[${d.docType}]`);
     }
+    checkDocClients(docs, path.basename(file), projectClient);
     const main = docs[docs.length - 1];
     check(main.docType === 'SCH_PAGE' && main.uuid === sheet.uuid,
       `${file}: last doc must be SCH_PAGE with uuid ${sheet.uuid}, got ${main.docType} ${main.uuid}`);
@@ -156,12 +236,15 @@ function runValidate(dir) {
     const file = path.join(dir, 'pcb', `${pcb.title}.epcb2`);
     if (!fs.existsSync(file)) { errors.push(`missing PCB document ${file}`); continue; }
     const docs = docsOf(file);
+    if (!docs.length) { errors.push(`${file}: document file has no DOCHEAD records (empty or truncated)`); continue; }
     const uuids = new Set();
     for (const d of docs) {
       check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
       uuids.add(d.uuid);
-      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`, d.docType === 'PCB');
+      checkAttrParents(d, `${path.basename(file)}[${d.docType}]`);
     }
+    checkDocClients(docs, path.basename(file), projectClient);
     const main = docs[docs.length - 1];
     check(main.docType === 'PCB' && main.uuid === pcb.uuid,
       `${file}: last doc must be PCB with uuid ${pcb.uuid}, got ${main.docType} ${main.uuid}`);

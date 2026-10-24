@@ -1,0 +1,11 @@
+{
+  "name": "sensor-board",
+  "function": "读取 BME280 温湿度传感器并通过 UART 上报",
+  "power": { "input": "5V USB-C", "rails": ["3V3"], "current_mA": 120 },
+  "interfaces": ["USB-C", "UART", "I2C"],
+  "mcu": "STM32F103C8T6",
+  "board": { "layers": 2 },
+  "package": "0603",
+  "constraints": { "crystal": "8MHz" },
+  "output": { "pour": "GND" }
+}

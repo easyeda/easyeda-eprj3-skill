@@ -1,0 +1,6 @@
+{
+  "name": "partial-example",
+  "function": "锂电池充电与 5V 输出",
+  "interfaces": ["USB-C"],
+  "notes": "故意缺 power.input——eval 的 intake/ 案例断言追问协议必须点名缺的必填字段"
+}

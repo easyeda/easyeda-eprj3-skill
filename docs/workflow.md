@@ -61,7 +61,7 @@ Inspect or prune with `load-library.js list|show|remove` (`remove` only deletes 
 
 ## 4. Place on schematic
 
-Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 3–10 components each, decoupling caps with their IC — with ≥150 mil gutters between them. Full rules with worked coordinates: [SKILL.md → Schematic layout & wiring rules](../SKILL.md#schematic-layout--wiring-rules).
+Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 2–8 components each, decoupling caps with their IC — with ≥150 mil gutters between them. Full rules with worked coordinates: [SKILL.md → Layout rules the builder already enforces](../SKILL.md#layout-rules-the-builder-already-enforces).
 
 `add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port, `special` → DIFF_PAIR/SHORT flag):
 
@@ -120,7 +120,11 @@ node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
 
 Both commands act on the single sheet or PCB document passed (`--sch/--sheet` or `--pcb`); with multiple sheets, renumber each one and keep prefixes globally unique yourself.
 
-## 8. PCB placement and routing
+## 8. PCB placement (and, by hand, copper)
+
+The declared strategy is placement-only: `add-footprint` is the deliverable.
+`add-track` / `add-via` / `add-pour` below are the manual opt-in path for when
+you want copper — the declarative equivalents are `build.js --route` / `--pour`.
 
 ```bash
 node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0603 \

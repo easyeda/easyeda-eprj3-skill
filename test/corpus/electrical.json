@@ -1,0 +1,172 @@
+{
+  "_comment": [
+    "Illegal corpus, ELECTRICAL / CONSISTENCY half. Same shape as format.json:",
+    "one minimal tampering per variant; expect lists the finding ids the real gates print",
+    "(verified with `node test/corpus.js --probe`). Cascades are listed too — a renamed",
+    "power net breaks both the netlist diff and the PCB agreement, and the manifest says so.",
+    "ERC: E000 no sheets, E001 unconnected pin, E002 single-pin net, E003 netlist differs from",
+    "the design, E004 duplicate designator, E005 part missing from the PCB, E006 PCB pad net",
+    "disagrees with the schematic. DRC: D001 spacing, D004 net not fully routed, D007 pad without",
+    "a net. LINT: L003 non-orthogonal wire, L004 wire crosses a symbol, L008 off the grid.",
+    "expect.leak = recorded blind spot (nothing reports); expect.crash = recorded robustness gap."
+  ],
+  "illegal": [
+    {
+      "name": "pcb-padnet-against-schematic",
+      "base": "blink",
+      "category": "pad net ↔ schematic pin",
+      "title": "a pad wired to the wrong net: the board says GND where the schematic says V_LED",
+      "mutate": "flip the padNet of the C1 pad the design puts on V_LED",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "PAD_NET", "where": { "body.padNet": "V_LED" }, "nth": 0 },
+        "set": { "body.padNet": "GND" }
+      }],
+      "expect": { "erc": ["E006"], "drc": ["D001"] }
+    },
+    {
+      "name": "pcb-padnet-net-blank",
+      "base": "blink",
+      "category": "pad net unmapped",
+      "title": "a pad left without a net while the schematic drives it",
+      "mutate": "clear padNet on the V_LED pad of C1",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "PAD_NET", "where": { "body.padNet": "V_LED" }, "nth": 0 },
+        "set": { "body.padNet": "" }
+      }],
+      "expect": { "erc": ["E006"], "drc": ["D007"] }
+    },
+    {
+      "name": "schematic-wire-segment-dropped",
+      "base": "blink",
+      "category": "copper silently lost",
+      "title": "one segment of a two-segment wire deleted: the net still connects, the copper is gone",
+      "mutate": "drop the last LINE segment of the wire labelled LED_A",
+      "mutation": [{ "op": "line_remove_of_net", "target": "sheet", "net": "LED_A" }],
+      "expect": { "leak": true },
+      "suggest": "a WIRE whose body carries no surviving LINE segment (or whose segment count shrinks) is invisible to every gate — connectivity-only reasoning cannot see it"
+    },
+    {
+      "name": "schematic-wire-and-label-gone",
+      "base": "blink",
+      "category": "dangling pin",
+      "title": "the whole LED_A wire deleted: two pins land on nothing, the net disappears",
+      "mutate": "remove the WIRE carrying LED_A together with its LINEs and attrs",
+      "mutation": [{
+        "op": "wire_remove",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "NET", "where": { "body.value": "LED_A" }, "nth": 0 }
+      }],
+      "expect": { "erc": ["E001", "E003"] }
+    },
+    {
+      "name": "schematic-part-moved-off-its-net",
+      "base": "blink",
+      "category": "single-pin net",
+      "title": "R1 nudged 37 mil right: both pads dangle and LED_A keeps a single pin",
+      "mutate": "move the R1 COMPONENT body.x by +37",
+      "mutation": [{ "op": "component_move", "target": "sheet", "designator": "R1", "dx": 37 }],
+      "expect": { "erc": ["E001", "E002", "E003"], "lint": ["L004", "L008"] }
+    },
+    {
+      "name": "power-flag-net-renamed",
+      "base": "blink",
+      "category": "power net vs net table",
+      "title": "the VCC power flag names a net the net table does not carry",
+      "mutate": "set the VCC Global Net Name attr to VCC_5V",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Global Net Name", "where": { "body.value": "VCC" }, "nth": 0 },
+        "set": { "body.value": "VCC_5V" }
+      }],
+      "expect": { "erc": ["E003", "E006"] }
+    },
+    {
+      "name": "power-flag-net-collides-with-ground",
+      "base": "blink",
+      "category": "power net vs net table",
+      "title": "the VCC flag renamed to GND — a supply flag feeding the ground net",
+      "mutate": "set the VCC Global Net Name attr to GND",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Global Net Name", "where": { "body.value": "VCC" }, "nth": 0 },
+        "set": { "body.value": "GND" }
+      }],
+      "expect": { "erc": ["E003", "E006"] }
+    },
+    {
+      "name": "duplicate-designator",
+      "base": "blink",
+      "category": "reference uniqueness",
+      "title": "two components labelled D1",
+      "mutate": "rename the C1 Designator attr to D1",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "Designator", "where": { "body.value": "C1" }, "nth": 0 },
+        "set": { "body.value": "D1" }
+      }],
+      "expect": { "erc": ["E004", "E003"] }
+    },
+    {
+      "name": "part-missing-from-pcb",
+      "base": "blink",
+      "category": "schematic ↔ pcb agreement",
+      "title": "R1 placed in the schematic but deleted from the board",
+      "mutate": "remove the R1 component record with its attrs and PAD_NETs",
+      "mutation": [{ "op": "component_remove", "target": "pcb", "designator": "R1" }],
+      "expect": { "erc": ["E005"] }
+    },
+    {
+      "name": "schematic-part-missing-from-netlist",
+      "base": "blink",
+      "category": "schematic ↔ pcb agreement",
+      "title": "R1 removed from the schematic while it is still on the board",
+      "mutate": "remove the R1 component record with all its attrs",
+      "mutation": [{ "op": "component_remove", "target": "sheet", "designator": "R1" }],
+      "expect": { "erc": ["E002", "E003"] }
+    },
+    {
+      "name": "pcb-net-left-unrouted",
+      "base": "blink",
+      "category": "copper continuity",
+      "title": "every track and via of LED_A erased — two pads, no copper",
+      "mutate": "delete all LINE/VIA records whose netName is LED_A",
+      "mutation": [{ "op": "remove_net_copper", "target": "pcb", "net": "LED_A" }],
+      "expect": { "drc": ["D004"] }
+    },
+    {
+      "name": "pcb-track-net-retagged",
+      "base": "blink",
+      "category": "copper consistency",
+      "title": "a routed track relabelled to another net: clearance and continuity both wake up",
+      "mutate": "rename the net of the first LED_A track to GND",
+      "mutation": [{
+        "op": "record_set",
+        "target": "pcb",
+        "sel": { "doc": "main", "type": "LINE", "where": { "body.netName": "LED_A" }, "nth": 0 },
+        "set": { "body.netName": "GND" }
+      }],
+      "expect": { "drc": ["D001", "D004"] }
+    },
+    {
+      "name": "schematic-wire-skewed",
+      "base": "blink",
+      "category": "wire geometry",
+      "title": "a wire segment bent off the orthogonal grid",
+      "mutate": "shift the first sheet wire LINE by +7 mil in Y",
+      "mutation": [{
+        "op": "line_skew",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "LINE", "nth": 0 },
+        "dy": 7
+      }],
+      "expect": { "lint": ["L003"] }
+    }
+  ]
+}

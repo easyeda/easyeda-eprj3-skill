@@ -1,0 +1,52 @@
+{
+  "_comment": [
+    "Legal corpus — projects every gate must ACCEPT.",
+    "build:<design> means 'produce it with scripts/build.js first'; dir:<path> means 'a project",
+    "already committed in this repo'. key is the baseline id the illegal variants clone from.",
+    "A build entry must exit 0 and show 0 validate errors and 0 ERC errors.",
+    "formatOnly: true is for projects this skill did not author: the FORMAT gate must accept",
+    "them, their circuit is out of scope (their ERC findings are printed, not asserted).",
+    "Maintainers: run `node test/corpus.js --probe` to see what each gate reports."
+  ],
+  "legal": [
+    {
+      "name": "build/blink",
+      "key": "blink",
+      "build": "examples/designs/blink.json",
+      "note": "the reference design: schematic + PCB, routed and poured, every gate clean"
+    },
+    {
+      "name": "build/inline-spec",
+      "key": "inline",
+      "build": "examples/designs/inline-spec.json",
+      "note": "inline symbol/footprint specs instead of preset library entries"
+    },
+    {
+      "name": "build/mcu-min",
+      "key": "mcu",
+      "build": "recipe/mcu-min.json",
+      "note": "an IC with decoupling: the shape most real projects have"
+    },
+    {
+      "name": "build/rs485",
+      "key": "rs485",
+      "build": "recipe/rs485.json",
+      "note": "declared net classes + a differential pair"
+    },
+    {
+      "name": "committed/examples/blink",
+      "key": "blink-example",
+      "dir": "examples/blink",
+      "design": "examples/designs/blink.json",
+      "formatOnly": true,
+      "note": "the shipped sample: format-clean; it is hand-curated, so its ERC is informational only"
+    },
+    {
+      "name": "committed/easyeda-eprj3-project",
+      "key": "client",
+      "dir": "examples/easyeda-eprj3-project",
+      "formatOnly": true,
+      "note": "a real client-generated project (2 sheets, a panel): foreign authoring must pass the format gate"
+    }
+  ]
+}

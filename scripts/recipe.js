@@ -20,10 +20,15 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { parseArgs, printHelp, die } = require('./lib/utils');
+const { parseArgs, printHelp, die, readJsonText, parseJsonText } = require('./lib/utils');
+const M = require('./lib/merge');
 
 const ROOT = path.join(__dirname, '..');
-const RECIPE_DIR = path.join(ROOT, 'recipe');
+const RECIPE_DIR = M.RECIPE_DIR;
+const recipeFiles = M.recipeFiles;
+const loadRecipe = M.loadRecipe;
+const expand = M.expand;
+const parsePairs = M.parsePairs;
 
 const SCHEMA = [
   { name: 'recipe', desc: 'recipe name (omit for `list`)' },
@@ -34,40 +39,6 @@ const SCHEMA = [
   { name: 'suffix', desc: 'suffix for colliding part ids (default _2)' },
   { name: 'json', desc: 'machine-readable output', hasValue: false }
 ];
-
-function recipeFiles() {
-  if (!fs.existsSync(RECIPE_DIR)) return [];
-  return fs.readdirSync(RECIPE_DIR).filter((f) => f.endsWith('.json')).sort();
-}
-
-function loadRecipe(name) {
-  const file = path.join(RECIPE_DIR, `${name}.json`);
-  if (!fs.existsSync(file)) {
-    const known = recipeFiles().map((f) => f.replace(/\.json$/, '')).join(', ');
-    die(`recipe "${name}" not found (have: ${known})`);
-  }
-  const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-  return { file, raw, params: Object.assign({}, raw.params || {}) };
-}
-
-/** Substitute ${NAME} placeholders from `params`; unchanged if unknown. */
-function expand(raw, params) {
-  const text = JSON.stringify(raw).replace(/\$\{(\w+)\}/g, (m, k) => (params[k] === undefined ? m : String(params[k])));
-  return JSON.parse(text);
-}
-
-function parsePairs(spec, flag) {
-  const out = {};
-  if (!spec) return out;
-  for (const item of String(spec).split(',')) {
-    const t = item.trim();
-    if (!t) continue;
-    const eq = t.indexOf('=');
-    if (eq <= 0) die(`bad --${flag} item "${t}" (want key=value)`);
-    out[t.slice(0, eq).trim()] = t.slice(eq + 1).trim();
-  }
-  return out;
-}
 
 function summarize(name, raw) {
   const parts = Array.isArray(raw.parts) ? raw.parts : [];
@@ -86,7 +57,7 @@ function summarize(name, raw) {
 function cmdList(opts) {
   const rows = recipeFiles().map((f) => {
     const name = f.replace(/\.json$/, '');
-    const raw = JSON.parse(fs.readFileSync(path.join(RECIPE_DIR, f), 'utf8'));
+    const raw = parseJsonText(readJsonText(path.join(RECIPE_DIR, f)));
     return summarize(name, raw);
   });
   if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return; }
@@ -128,96 +99,34 @@ function cmdApply(opts) {
   if (!opts.to) die('apply needs --to <design.json>');
   const target = path.resolve(opts.to);
   if (!fs.existsSync(target)) die(`target design not found: ${target}`);
-  const { params: declared, raw } = loadRecipe(opts.recipe);
   const overrides = parsePairs(opts.set, 'set');
-  for (const k of Object.keys(overrides)) {
-    if (!(k in declared)) {
-      console.error(`warning: "${k}" is not a declared param of ${opts.recipe} (declared: ${Object.keys(declared).join(', ') || 'none'})`);
-    }
-  }
-  const params = Object.assign({}, declared, overrides);
-  const recipe = expand(raw, params);
-
   const netRenames = parsePairs(opts.net, 'net');
-  if (Object.keys(netRenames).length) {
-    for (const p of recipe.parts || []) {
-      for (const [pin, net] of Object.entries(p.pins || {})) {
-        if (netRenames[net]) p.pins[pin] = netRenames[net];
-      }
-    }
-    for (const [from, to] of Object.entries(netRenames)) {
-      recipe.powers = recipe.powers || {};
-      if (recipe.powers[from] !== undefined) {
-        recipe.powers[to] = recipe.powers[from];
-        delete recipe.powers[from];
-      }
-    }
+  const { declared, unknown, params, recipe } = M.resolveRecipe(opts.recipe, overrides, netRenames);
+  for (const k of unknown) {
+    console.error(`warning: "${k}" is not a declared param of ${opts.recipe} (declared: ${Object.keys(declared).join(', ') || 'none'})`);
   }
 
-  const design = JSON.parse(fs.readFileSync(target, 'utf8'));
-  design.parts = design.parts || [];
-  design.blocks = design.blocks || [];
-  design.powers = design.powers || {};
-
-  const taken = new Set(design.parts.map((p) => p.id));
-  const suffix = opts.suffix || '_2';
-  const rename = new Map();
-  for (const p of recipe.parts || []) {
-    let id = p.id;
-    if (taken.has(id)) {
-      let candidate = `${id}${suffix}`;
-      let n = 2;
-      while (taken.has(candidate)) { n += 1; candidate = `${id}${suffix}${n}`; }
-      id = candidate;
-    }
-    rename.set(p.id, id);
-    taken.add(id);
-  }
-
-  const addedParts = [];
-  for (const p of recipe.parts || []) {
-    const copy = JSON.parse(JSON.stringify(p));
-    copy.id = rename.get(p.id);
-    design.parts.push(copy);
-    addedParts.push(copy.id);
-  }
-  const addedBlocks = [];
-  for (const b of recipe.blocks || []) {
-    const copy = JSON.parse(JSON.stringify(b));
-    copy.parts = (copy.parts || []).map((id) => rename.get(id) || id);
-    const clash = design.blocks.find((x) => (x.title || x.name) === (copy.title || copy.name));
-    if (clash) {
-      clash.parts = (clash.parts || []).concat(copy.parts);
-    } else {
-      design.blocks.push(copy);
-    }
-    addedBlocks.push(copy.title || copy.name);
-  }
-  for (const [net, style] of Object.entries(recipe.powers || {})) {
-    if (design.powers[net] && design.powers[net] !== style) {
-      console.error(`warning: net "${net}" already declares power "${design.powers[net]}", keeping it`);
-      continue;
-    }
-    design.powers[net] = style;
-  }
-
-  const outPath = opts.out ? path.resolve(opts.out) : target;
-  fs.writeFileSync(outPath, JSON.stringify(design, null, 2), 'utf8');
-
-  const summary = {
-    recipe: opts.recipe,
+  const design = parseJsonText(readJsonText(target));
+  const merged = M.merge(design, recipe, {
+    suffix: opts.suffix,
     params,
     netRenames,
-    addedParts,
-    addedBlocks,
-    written: outPath,
-    totalParts: design.parts.length
-  };
-  if (opts.json) { console.log(JSON.stringify(summary, null, 2)); return; }
+    onPowerConflict: (net, kept, wanted) => {
+      console.error(`warning: net "${net}" already declares power "${kept}", keeping it`);
+    }
+  });
+  const out = merged.design;
+  const summary = merged.summary;
+
+  const outPath = opts.out ? path.resolve(opts.out) : target;
+  fs.writeFileSync(outPath, JSON.stringify(out, null, 2), 'utf8');
+
+  const json = Object.assign({ recipe: opts.recipe, params, netRenames, written: outPath }, summary);
+  if (opts.json) { console.log(JSON.stringify(json, null, 2)); return; }
   console.log(`merged ${opts.recipe} into ${path.basename(target)} → ${outPath}`);
-  console.log(`  parts: +${addedParts.length} (${addedParts.join(', ')}) — ${design.parts.length} total`);
-  console.log(`  blocks: ${addedBlocks.join(' | ') || '(none)'}`);
-  if (Object.keys(params).length && overrides && Object.keys(overrides).length) {
+  console.log(`  parts: +${summary.addedParts.length} (${summary.addedParts.join(', ')}) — ${out.parts.length} total`);
+  console.log(`  blocks: ${summary.addedBlocks.join(' | ') || '(none)'}`);
+  if (Object.keys(overrides).length) {
     console.log(`  params: ${Object.entries(overrides).map(([k, v]) => `${k}=${v}`).join(', ')}`);
   }
   console.log(`next: node scripts/build.js --design ${path.relative(process.cwd(), outPath)} --dir <project dir>`);

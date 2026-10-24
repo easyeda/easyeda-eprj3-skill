@@ -1,0 +1,8 @@
+{
+  "name": "psu-12to5-3v3",
+  "function": "12V 输入，输出 5V 与 3.3V 两路电源，带电源指示",
+  "power": { "input": "12V DC", "rails": ["5V", "3V3"], "current_mA": 800 },
+  "interfaces": ["DC 端子", "LED"],
+  "board": { "width": 2000, "height": 1200, "layers": 2 },
+  "output": { "pour": "GND" }
+}

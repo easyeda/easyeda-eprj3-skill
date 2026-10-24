@@ -17,7 +17,8 @@ const { docsOf } = require('./checks');
 function sheetPins(file) {
   if (!fs.existsSync(file)) throw new Error(`sheet document missing: ${file}`);
   const docs = docsOf(file);
-  const main = docs[docs.length - 1];
+  // empty/truncated file → no main doc: report no pins instead of crashing
+  const main = docs[docs.length - 1] || { docType: null, uuid: null, lines: [] };
   const symbolByUuid = new Map();
   for (const d of docs) {
     if (d.docType !== 'SYMBOL') continue;

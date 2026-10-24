@@ -22,6 +22,14 @@ const crypto = require('crypto');
 const { buildFrameDocs, FRAME_TITLE } = require('./frame-a4');
 const { buildPcbPreamble } = require('./pcb-preamble');
 
+// BOM-tolerant JSON reading, inlined on purpose: eprj3.js is the widest-used
+// lib module, so this file keeps its require graph unchanged rather than
+// pulling in utils.js. Windows editors (Notepad, VS Code "UTF-8 with BOM",
+// Excel exports) prepend U+FEFF, which makes a bare JSON.parse fail with
+// "Unexpected token '﻿'" on files a user (or the agent) authored by hand.
+const stripBom = (t) => (t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t);
+const readJsonBomSafe = (p) => JSON.parse(stripBom(fs.readFileSync(p, 'utf8')));
+
 const PART_ID = 'pid8a0e77bacb214e';
 const EDIT_VERSION = '2.3.0';
 const FRAME_DEVICE_NAME = FRAME_TITLE; // "Drawing-Symbol_A4"
@@ -35,12 +43,70 @@ const SKILL_ROOT = path.resolve(__dirname, '..', '..');
 const LIBRARY_DIR = path.join(SKILL_ROOT, 'templates', 'library');
 
 // ---------------------------------------------------------------- ids
+// EPRJ3_DETERMINISTIC=1 swaps every random source for a fixed counter stream
+// and freezes the clock, so the same design.json builds byte-identical
+// projects. That is what makes golden-file diffs (and thus fidelity
+// regressions) possible — see docs/development.md "迭代协议".
+const DETERMINISTIC = process.env.EPRJ3_DETERMINISTIC === '1';
+const DET_EPOCH = 1735689600000; // 2025-01-01T00:00:00Z
+// The stream is seeded from the invocation, not from a constant: every
+// `node scripts/x.js` is a fresh process, and a constant seed would hand the
+// very same id to two different steps of one project (a WIRE in add-wire.js and
+// a SYMBOL doc in add-symbol.js) — validate then reports a dangling reference.
+// Seeding per argv keeps one identical command byte-reproducible (the golden-file
+// use case) while different commands never collide. Set EPRJ3_DET_SALT to pin a
+// stream across steps.
+let detState = 0x2f6e2b1;
+// Pure output/cleanup booleans: excluded from the seed so a --force rebuild is
+// byte-identical to the first build of the same command. Semantic booleans
+// (--replace, --no-pour, …) stay in — they change what is written.
+const DET_IGNORE_FLAGS = new Set(['--force', '--quiet', '--json', '--keep-tmp',
+  '--dry-run', '--plan', '--strict', '--all', '--rules', '--help', '-h']);
+if (DETERMINISTIC) {
+  detState = detSeedFrom(process.argv) & 0x7fffffff;
+}
+
+/**
+ * Seed the deterministic stream from the invocation.
+ *
+ * Path-like arguments are ignored on purpose, so the same design built into
+ * two different directories still produces byte-identical files (that is what
+ * a golden-file diff needs); everything else — the script itself, the symbol
+ * names, the coordinates, the net names — participates, which is what keeps two
+ * separate `node scripts/*.js` steps from handing out the same id twice inside
+ * one project. Pure output/cleanup booleans are excluded, so a `--force`
+ * rebuild stays byte-identical to the first build of that command; semantic
+ * booleans (`--replace`, `--no-pour`, …) stay in, because they change what is
+ * written. Set EPRJ3_DET_SALT to pin one stream across several steps.
+ */
+function detSeedFrom(argv) {
+  const isPath = (s) => (typeof s === 'string'
+    && (/[/\\]/.test(s) || /\.(json|eprj3|esch2|epcb2|epan2|ecfg|evar|svg|txt)$/i.test(s)));
+  const parts = [process.argv[1] || ''];
+  for (const a of argv || []) {
+    if (DET_IGNORE_FLAGS.has(a) || isPath(a)) continue;
+    parts.push(a);
+  }
+  const text = parts.join('\u0000') + '\u0001' + (process.env.EPRJ3_DET_SALT || '');
+  return crypto.createHash('sha256').update(text).digest().readUInt32BE(0);
+}
+
+function detBytes(n) {
+  const buf = Buffer.alloc(n);
+  for (let i = 0; i < n; i += 1) {
+    detState = (detState * 1103515245 + 12345) & 0x7fffffff;
+    buf[i] = (detState >>> 16) & 0xff;
+  }
+  return buf;
+}
+const rng = (n) => (DETERMINISTIC ? detBytes(n) : crypto.randomBytes(n));
+const nowMs = () => (DETERMINISTIC ? DET_EPOCH : Date.now());
 function uuid(len = 16) {
-  return crypto.randomBytes(len).toString('hex').slice(0, len);
+  return rng(len).toString('hex').slice(0, len);
 }
 function uuid16() { return uuid(16); }
 function uuid32() { return uuid(32); }
-function randId() { return crypto.randomBytes(8).toString('hex'); }
+function randId() { return rng(8).toString('hex'); }
 // The client derives its client id from the owner uuid (md5 hex, first 16).
 function clientIdFrom(ownerUuid) {
   return crypto.createHash('md5').update(ownerUuid).digest('hex').slice(0, 16);
@@ -72,7 +138,7 @@ function parseRecord(line) {
 }
 
 function readLines(filePath) {
-  return fs.readFileSync(filePath, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+  return stripBom(fs.readFileSync(filePath, 'utf8')).split(/\r?\n/).filter((l) => l.trim());
 }
 
 function readRecords(filePath) {
@@ -1340,7 +1406,7 @@ class Project {
     if (!fs.existsSync(p.indexFile)) {
       throw new Error(`Project index not found: ${p.indexFile}`);
     }
-    p.index = JSON.parse(fs.readFileSync(p.indexFile, 'utf8'));
+    p.index = readJsonBomSafe(p.indexFile);
     if (typeof p.index.name === 'string' && p.index.name) p.name = p.index.name;
     if (!p.index.profile || p.index.format !== 'folder') {
       throw new Error(`Not a folder-format eprj3 project: ${p.indexFile}`);
@@ -1358,7 +1424,7 @@ class Project {
     const p = new Project(rootDir);
     p.name = finalName;
     p.indexFile = indexFile;
-    const now = Date.now();
+    const now = nowMs();
     const owner = uuid32();
     p.index = {
       name: finalName,
@@ -1400,11 +1466,11 @@ class Project {
   }
 
   save() {
-    this.index.updated_at = formatDate(Date.now());
+    this.index.updated_at = formatDate(nowMs());
     fs.writeFileSync(this.indexFile, JSON.stringify(this.index, null, 2));
   }
 
-  ms() { return Date.now(); }
+  ms() { return nowMs(); }
 
   // ------------------------------------------------------------ board
   ensureBoard() {
@@ -1509,7 +1575,7 @@ class Project {
   presetHas(name) { return libraryFileIn(LIBRARY_DIR, name) !== null; }
   loadLibrary(name) {
     const hit = this.resolveLibraryFile(name);
-    return hit ? JSON.parse(fs.readFileSync(hit.file, 'utf8')) : null;
+    return hit ? readJsonBomSafe(hit.file) : null;
   }
   saveLibrary(entry) {
     const sub = entry.kind === 'footprint' ? 'footprint' : 'symbol';

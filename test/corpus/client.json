@@ -1,0 +1,60 @@
+{
+  "_comment": [
+    "Illegal variants cloned from the COMMITTED real-client project (base: \"client\").",
+    "These prove the format gate is not tuned to build.js output only: a project the",
+    "official EasyEDA Pro client authored must still fail loudly when corrupted.",
+    "The clone lives in a temp directory; the repository is never modified."
+  ],
+  "illegal": [
+    {
+      "name": "client-panel-file-deleted",
+      "base": "client",
+      "category": "folder layout",
+      "title": "panel/Panel1.epan2 deleted while profile.panels still lists it",
+      "mutate": "remove the panel document",
+      "mutation": [{ "op": "file_delete", "target": "panel" }],
+      "expect": { "validate": ["missing panel/Panel1.epan2"] }
+    },
+    {
+      "name": "client-sheet-uuid-mismatch",
+      "base": "client",
+      "category": "index ↔ doc reference",
+      "title": "the sheet's SCH_PAGE doc uuid no longer matches the uuid the index lists",
+      "mutate": "rewrite the main DOCHEAD uuid of P1.esch2",
+      "mutation": [{
+        "op": "record_set",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "DOCHEAD" },
+        "set": { "body.uuid": "0123456789abcdef" }
+      }],
+      "expect": { "validate": ["last doc must be SCH_PAGE with uuid"] }
+    },
+    {
+      "name": "client-schematic-uuid-mismatch",
+      "base": "client",
+      "category": "index ↔ doc reference",
+      "title": "Schematic1.ecfg carries a doc uuid the index does not know",
+      "mutate": "rewrite the SCH DOCHEAD uuid inside the .ecfg",
+      "mutation": [{
+        "op": "record_set",
+        "target": "ecfg",
+        "sel": { "doc": "SCH", "type": "DOCHEAD" },
+        "set": { "body.uuid": "fedcba9876543210" }
+      }],
+      "expect": { "validate": ["want a single SCH doc with uuid"] }
+    },
+    {
+      "name": "auto-named-net",
+      "base": "blink",
+      "category": "auto-named net",
+      "title": "the NET label removed from a wired node: an unnamed N$ net reaches the layout",
+      "mutate": "delete the ATTR whose key is NET and value LED_A",
+      "mutation": [{
+        "op": "record_remove",
+        "target": "sheet",
+        "sel": { "doc": "main", "type": "ATTR", "key": "NET", "where": { "body.value": "LED_A" }, "nth": 0 }
+      }],
+      "expect": { "erc": ["E003", "E006"], "ercWarnings": ["E007"] }
+    }
+  ]
+}
