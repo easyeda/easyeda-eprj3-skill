@@ -625,6 +625,90 @@ function main() {
         'examples/blink passes validate', rBlink.stdout.trim());
       realClientInvariants(blinkDir, 'examples/blink');
     }
+
+    // ---- declarative pipeline: build a design file end to end ----
+    // The record-level checks above prove the primitives; this proves they still
+    // compose into a project that passes every gate.
+    const design = path.join(ROOT, 'examples', 'designs', 'blink.json');
+    const built = path.join(tmp, 'built');
+    if (fs.existsSync(design)) {
+      const rBuild = run([SCRIPTS + '/build.js', '--design', design, '--dir', built, '--quiet']);
+      assert(rBuild.status === 0, 'build.js exits 0 on examples/designs/blink', rBuild.stderr.trim());
+      assert(/lint 100\/100/.test(rBuild.stdout), 'build reports a perfect layout score', rBuild.stdout.trim());
+      assert(/drc 100\/100/.test(rBuild.stdout), 'build reports a perfect DRC score', rBuild.stdout.trim());
+      assert(!fs.existsSync(path.join(built, '.tmp')), 'build removes its own .tmp staging area');
+
+      const rErc = run([SCRIPTS + '/erc.js', '--dir', built, '--design', design, '--json']);
+      let erc = null;
+      try { erc = JSON.parse(rErc.stdout.slice(rErc.stdout.indexOf('{'))); } catch { /* leave null */ }
+      assert(erc && erc.errors.length === 0, 'erc reports no errors on the built project',
+        erc ? JSON.stringify(erc.errors) : rErc.stdout.trim());
+
+      const rNl = run([SCRIPTS + '/netlist.js', '--dir', built, '--json']);
+      let nl = null;
+      try { nl = JSON.parse(rNl.stdout.slice(rNl.stdout.indexOf('['))); } catch { /* leave null */ }
+      const names = nl && nl[0] ? nl[0].nets.map((n) => n.name).sort().join(',') : '';
+      assert(names === 'GND,LED_A,VCC,V_LED', 'netlist recovers exactly the four designed nets', names);
+
+      const rPins = run([SCRIPTS + '/pins.js', '--dir', built]);
+      assert(/R1\.2/.test(rPins.stdout), 'pins.js lists placed pins with their nets', rPins.stdout.trim());
+
+      const rWire = run([SCRIPTS + '/add-wire.js', '--dir', built, '--sch', 'Schematic1',
+        '--sheet', 'P1', '--from', 'R1.2', '--to', 'D2.1', '--net', 'LED_A']);
+      assert(/R1\.2/.test(rWire.stdout) && /D2\.1/.test(rWire.stdout),
+        'add-wire resolves pin references instead of raw coordinates', rWire.stdout.trim());
+
+      const rRender = run([SCRIPTS + '/render.js', '--dir', built]);
+      const svg = path.join(built, 'preview', 'Schematic1_P1.svg');
+      assert(fs.existsSync(svg), 'render.js writes an SVG preview', rRender.stdout.trim());
+      if (fs.existsSync(svg)) {
+        const text = fs.readFileSync(svg, 'utf8');
+        assert(/^<svg /.test(text) && /<\/svg>\s*$/.test(text), 'the SVG preview is well formed');
+      }
+
+      const rDry = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'dry'), '--dry-run', '--quiet']);
+      assert(/dry run/.test(rDry.stdout), 'build --dry-run says so', rDry.stdout.trim());
+      assert(!fs.existsSync(path.join(tmp, 'dry')), 'build --dry-run leaves no directory behind');
+
+      // ---- pour-auto: idempotent re-pour from the board outline ----
+      const rPour = run([SCRIPTS + '/pour-auto.js', '--dir', built, '--replace', '--json']);
+      let pour = null;
+      try { pour = JSON.parse(rPour.stdout.slice(rPour.stdout.indexOf('{'))); } catch { /* leave null */ }
+      assert(pour && pour.pours === 2, 'pour-auto re-pours both layers from the board outline',
+        pour ? JSON.stringify(pour) : rPour.stdout.trim() + rPour.stderr.trim());
+      assert(pour && pour.stitchingVias > 10, 'pour-auto adds a stitching via fence');
+      const rDrc = run([SCRIPTS + '/drc.js', '--dir', built, '--json']);
+      let drcAfter = null;
+      try { drcAfter = JSON.parse(rDrc.stdout.slice(rDrc.stdout.indexOf('{'))); } catch { /* leave null */ }
+      assert(drcAfter && drcAfter.errors === 0, 'DRC is still clean after pour-auto --replace',
+        drcAfter ? JSON.stringify(drcAfter.findings.filter((f) => f.level === 'error')) : rDrc.stdout.trim());
+    }
+
+    // ---- recipe library: list / show / apply ----
+    const rRecipes = run([SCRIPTS + '/recipe.js', 'list', '--json']);
+    let recipes = null;
+    try { recipes = JSON.parse(rRecipes.stdout); } catch { /* leave null */ }
+    assert(recipes && recipes.length >= 15, 'recipe.js lists at least 15 recipes',
+      recipes ? String(recipes.length) : rRecipes.stdout.trim());
+    if (recipes && recipes.length) {
+      const pick = recipes.find((r) => r.name === 'ldo-3v3') || recipes[0];
+      const rShow = run([SCRIPTS + '/recipe.js', 'show', pick.name, '--json']);
+      assert(rShow.status === 0, `recipe.js show ${pick.name} works`, rShow.stderr.trim());
+      const mergeTarget = path.join(tmp, 'merge.json');
+      fs.writeFileSync(mergeTarget, JSON.stringify({
+        name: 'merge-test',
+        parts: [{ id: 'R1', symbol: 'RES', footprint: 'R0603', pins: { 1: 'A', 2: 'B' } }],
+        powers: {}
+      }), 'utf8');
+      const rApply = run([SCRIPTS + '/recipe.js', 'apply', pick.name, '--to', mergeTarget, '--json']);
+      let merged = null;
+      try { merged = JSON.parse(fs.readFileSync(mergeTarget, 'utf8')); } catch { /* leave null */ }
+      assert(merged && merged.parts.length > 1, 'recipe.js apply merges parts into a design',
+        rApply.stderr.trim());
+      assert(merged && merged.parts.some((p) => p.id === 'R1'), 'apply keeps the target design intact');
+      const ids = merged ? merged.parts.map((p) => p.id) : [];
+      assert(new Set(ids).size === ids.length, 'apply keeps part ids unique', ids.join(','));
+    }
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }

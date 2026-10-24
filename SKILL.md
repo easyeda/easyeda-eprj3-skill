@@ -1,240 +1,198 @@
 ---
 name: easyeda-eprj3
-description: Create and edit EasyEDA Pro folder-based .eprj3 PCB projects. Use this skill whenever the user wants to author a schematic/PCB in EasyEDA Pro offline-client format from AI prompts, build symbols/footprints/devices, or run validation. Drives the Node.js scripts under scripts/.
+description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto layout, auto routing, auto copper pour, then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
 ---
 
-# EasyEDA Pro eprj3 Project Skill
+# EasyEDA Pro eprj3 Skill
 
-This skill teaches any coding agent to author **EasyEDA Pro** (嘉立创EDA专业版) projects in the folder-based `.eprj3` format. The format spec is documented in [`docs/format-reference.md`](docs/format-reference.md); the authoritative, machine-checkable spec lives in the **easyeda-pro-format-skill** repo at https://github.com/easyeda/easyeda-pro-format-skill (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). The official example project (https://github.com/easyeda/easyeda-pro-eprj3-format) remains the ground truth for record shapes — where a schema and a real record disagree, the record wins.
+Author **EasyEDA Pro** (嘉立创EDA专业版) folder-format `.eprj3` projects. One design
+file in, one validated project out: schematic laid out in signal-flow blocks,
+every net wired, PCB placed + routed + poured, then four independent gates.
 
-## When to invoke
+Format ground truth: [`docs/format-reference.md`](docs/format-reference.md). Deep
+details are load-on-demand — see [Where to read next](#where-to-read-next) instead
+of reading everything up front.
 
-Trigger this skill when the user wants any of the following:
-
-- Create a new `.eprj3` project (schematic + PCB) from scratch.
-- Generate symbols / footprints / devices and place them on a sheet or the PCB.
-- Draw wires, net labels, power symbols, net ports, free text, graphic shapes, vias, copper pours, or copper tracks.
-- Validate the format of an existing `.eprj3` directory.
-- Open the resulting project in the EasyEDA Pro (or LCEDA Pro / 嘉立创EDA专业版) offline client.
-
-KiCad → eprj3 conversion is out of scope for this skill — it lives in the separate **kicad-to-easyeda-eprj3** project. Do not invoke this skill for it.
-
-Do not invoke it for the legacy single-file `.eprj`/`.eprj2` SQLite format, or for `.elibz2` library archives — neither is supported.
-
-## Required user inputs
-
-Ask the user the following before writing any file. Stop and ask again if a key piece is missing — do not invent values.
-
-1. **Project storage path** (absolute, must be writable, no existing `.eprj3` there).
-2. **Project name** (defaults to the folder basename).
-3. **Schematic requirements** — components, pin numbers/names, nets, power symbols, sheet count.
-4. **PCB requirements** — board outline size, component placement, which pads join which net, tracks.
-5. **Component library** — the scripts auto-generate minimal symbols/footprints from pin/pad specs (see below). There is no `.elibz2` import; if the user needs a specific vendor part, derive its pin/pad geometry from the datasheet and generate it.
-
-Always confirm the resolved path/name before running `init.js`.
-
-## Standard workflow
-
-**Path note:** every `node scripts/...` invocation below is relative to **this skill's repository root** (the directory containing SKILL.md) — not the user's project directory. `cd` into the skill directory or use absolute paths. The `docs/` links are relative to the same directory.
-
-All coordinates are **mil** unless a script's help says otherwise.
-
-```
-1.  Resolve paths & project name                    (AskUserQuestion)
-2.  node scripts/init.js --dir <dir> --name <name>
-    [--schematic Schematic1] [--sheet P1] [--pcb PCB1] [--panel Panel1]
-    [--board-w 4000] [--board-h 3000]          (board outline size, mil)
-3.  Pick library entries — check the preset templates first:
-      node scripts/load-library.js list             (presets; add --dir to also list project staging)
-    Place a preset directly (resolved first on every placement), e.g.:
-      node scripts/add-symbol.js ... --symbol RES --footprint R0603
-      node scripts/add-symbol.js ... --symbol VCC             (power flag)
-      node scripts/add-symbol.js ... --symbol PORT_IN         (net port)
-      node scripts/add-footprint.js ... --symbol RES --footprint R0603
-    No preset fits? Stage a temp entry under <dir>/.tmp/library/
-    (names must not shadow a preset — the scripts reject that):
-      node scripts/generate-symbol.js from-pins --dir <dir> --name <sym>
-           [--designator R] [--pins "1:A;2:B" | "1:A:x:y:rot;..."] [--pitch 10]
-      node scripts/generate-footprint.js from-pads --dir <dir> --name <fp>
-           [--pads "1:x:y:w:h[:holeD];..."] [--outline "R,x,y,w,h"] [--silk "rect,x1,y1,x2,y2;..."]
-      node scripts/load-library.js power --dir <dir> --net VCC [--style up|down]
-      node scripts/load-library.js port  --dir <dir> --net SIG [--name <entry>]
-4.  node scripts/add-symbol.js --dir <dir> --sch <s> --sheet <p>
-    --symbol <entry> [--footprint <fp>] --x <mil> --y <mil>
-    [--rotation 0|90|180|270] [--refdes R1] [--name <device title>]
-    (unified placement, dispatched by entry kind: symbol -> component block,
-     power -> power flag, port -> net port, special -> DIFF_PAIR/SHORT flag)
-    (choose every x/y per "Schematic layout & wiring rules" below:
-     partition into titled module blocks first, wire = visible, labels = last resort)
-5.  node scripts/add-wire.js --dir <dir> --sch <s> --sheet <p>
-    --segs "x1,y1,x2,y2;..." [--net SIG]
-6.  node scripts/add-netlabel.js --dir <dir> --sch <s> --sheet <p> --net SIG --at x,y
-7.  node scripts/add-text.js --dir <dir> --sch <s> --sheet <p>
-    --value "text" --x .. --y .. [--size N] [--rotation N]
-    node scripts/add-shape.js <rect|poly|circle|ellipse|arc|bezier> --dir <dir>
-    --sch <s> --sheet <p> <shape options>                    (annotation graphics)
-8.  node scripts/set-refdes.js renumber --dir <dir> --sch <s> --sheet <p> --prefix R
-    (or: set --designator R1 --value R5)
-9.  node scripts/add-footprint.js --dir <dir> --pcb <pcb>
-    --symbol <entry> --footprint <fp> --x <mil> --y <mil>
-    [--angle 0] [--refdes R1] [--nets "1:VCC,2:GND"]
-10. node scripts/add-track.js --dir <dir> --pcb <pcb> --net SIG --x1 .. --y1 .. --x2 .. --y2 ..
-    [--layer 1] [--width 10]
-    node scripts/add-via.js  --dir <dir> --pcb <pcb> --x .. --y .. [--net SIG]
-    node scripts/add-pcb-shape.js <rect|poly|circle|arc> --dir <dir> --pcb <pcb> ...
-    node scripts/add-pcb-text.js --dir <dir> --pcb <pcb> --value "text" --x .. --y ..
-    [--layer 1] [--size 60] [--origin 0-8]
-    node scripts/add-pour.js <rect|poly> --dir <dir> --pcb <pcb> --net GND ...
-    node scripts/add-fill.js <rect|poly> --dir <dir> --pcb <pcb> [--net N] ...
-    node scripts/add-region.js <rect|poly> --dir <dir> --pcb <pcb>
-    --prohibit "COMPONENT,TRACK" ...                        (keepout region)
-11. node scripts/validate.js --dir <dir>            (always run this)
-12. If validation reports errors, fix and re-run until clean.
-13. node scripts/cleanup.js --dir <dir>             (remove <dir>/.tmp — run once validation passes)
-14. node scripts/open.js open --dir <dir>           (launch the offline client)
-```
-
-Two library tiers: **preset templates** ship with the skill under `templates/library/{symbol,footprint}/` (committed with the skill, resolved FIRST on every placement) and **temp entries** generated during authoring under `<project>/.tmp/library/` (tooling metadata — the client never sees it). `load-library.js list` shows both tiers (`preset`/`tmp`), `show --name <entry>` dumps one, `remove --name <entry>` deletes a temp entry (presets are committed — not removable). Temp entry names must not shadow a preset name.
-
-`generate-symbol.js` auto-layout mirrors the official example: two pin columns at x=±20, pin length 10, vertical pitch `--pitch` (default 10). Pin spec entries are all-auto (`num:name`) or all-explicit (`num:name:x:y:rot`, rot 0 = left column / 180 = right column — vertical columns have no real-client sample and are rejected); the body rect always derives from the actual pin geometry. `generate-footprint.js` pads take an optional 6th field — a drill diameter in mil switches the pad to through-hole (ROUND hole + ELLIPSE pad on the MULTI layer).
-
-Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 errors, 0 warnings`.
-
-## Schematic layout & wiring rules
-
-`validate.js` checks structure, not readability. When choosing coordinates, follow these rules — they are what makes an AI-authored schematic readable: signal flow left→right, components grouped into titled module blocks, connections shown as visible wires, net labels only as their intended shortcut.
-
-### Partition into module blocks first
-
-1. Before placing anything, split the design into functional blocks (Power Input, Decoupling, Core IC, Interface, LED Driver, …). Blocks stay **coarse**: one block = 3–10 related components; never isolate a single resistor, and put decoupling caps with the IC they decouple.
-2. Lay blocks out **along signal flow**: power entry left or top, processing chain left→right, outputs right, ground/decoupling below their IC. Keep ≥150 mil gutters between blocks; labels and ports live in the gutters.
-3. **Enclose every block** with a rectangle and a title — this is required, not optional:
-   ```bash
-   node scripts/add-shape.js rect --dir <dir> --sch Schematic1 --sheet P1 --x1 250 --y1 -350 --x2 550 --y2 -570
-   node scripts/add-text.js --dir <dir> --sch Schematic1 --sheet P1 --x 255 --y -340 \
-     --value "PWM FILTER — R14/C13, fc ≈ 1.6 kHz"
-   ```
-   Keep 60–80 mil margin between the box edge and the outermost stub; the title sits just above the top edge, left-aligned.
-
-### Placement
-
-- All sheet coordinates are mil with Y up. Put everything on the 10 mil grid: component origins on multiples of 100 (`--x 300 --y -400`), wire endpoints on multiples of 10. Aligned rows/columns: share one `y` across a chain, and use row pitch ≥200 mil so the Designator/Name labels (which sit ±25 mil around the origin) never collide.
-- **Connectivity is exact coordinate equality** — a wire touches a pin only when the endpoint coincides with the pin tip. Compute tips from the entry (`load-library show --name <sym>`): a pin `(px, py, length L, rotation r)` has its tip at `(px − L·cos r, py − L·sin r)` relative to the component origin, then rotated CCW by the component's `--rotation`. Do not assume — RES/CAP/DIODE/LED presets use length 10 (tips `(X±30, Y)` at rotation 0, `(X, Y±30)` at 90) but IND uses length 3 (tips `X±17`), TEST_POINT connects at its origin. Power flags and ports connect at their origin point.
-- Orientation: signal enters the left column and leaves the right (that is the preset/generator convention); rotate 180 only when the flow demands swapping. Series parts horizontal; pull-ups/pull-downs vertical toward the rail they attach to.
-
-### Wiring — prefer visible copper over labels
-
-For every pair of connected pins pick the **weakest** encoding that keeps the drawing clear:
-
-| Situation | Encoding |
-| --- | --- |
-| Same block / nearby (a few hundred mil) | one straight or ≤2-bend **wire**, no label |
-| Same sheet, far apart, or routing would cross other blocks | short **stub** (≥30 mil out of the pin) + `add-netlabel` at both ends |
-| Across sheets | `PORT_IN/OUT/BI` or off-page connector |
-| Power / ground rail | stub + power flag (`GND`, `VCC`, …) |
-
-Hard rules:
-
-- **Never label a pin directly, and never let labels replace wires between nearby pins.** A component whose every pin fans straight into net labels has an unreadable schematic — that is the anti-pattern to avoid.
-- Orthogonal segments only (horizontal/vertical). If wires would cross, move components first; a crossing you cannot route around means the block layout is wrong, not the wiring.
-- Net names: meaningful UPPERCASE (`SPI_CLK`, `LED_PWM`), never auto-style (`N$1`); one name per net everywhere.
-- Worked example — RC low-pass inside its block (RES/CAP presets, tips ±30 mil; GND flag connects at its origin):
-  ```bash
-  node scripts/add-symbol.js ... --symbol RES --footprint R0603 --x 300 --y -400   # tips 270/330,-400
-  node scripts/add-symbol.js ... --symbol CAP --footprint C0603 --x 400 --y -430 --rotation 90   # tips 400,-400/-460
-  node scripts/add-wire.js ... --segs "330,-400,470,-400" --net PWM_OUT
-      # one wire: R.right tip → through C.top tip (T-junction) → output label anchor
-  node scripts/add-wire.js ... --segs "400,-460,400,-520"          # C.bottom stub down to GND flag
-  node scripts/add-symbol.js ... --symbol GND --x 400 --y -520
-  ```
-
-Before running `validate.js`, self-check: every component sits inside a titled block, every wire endpoint equals a pin tip or another wire endpoint, no floating label, no unconnected stub.
-
-### Launching the client — non-default install paths
-
-The EasyEDA Pro / LCEDA Pro installer lets the user pick any directory. The documented Windows default locations are:
-
-- `C:\Program Files\easyeda-pro\easyeda-pro.exe` (English brand)
-- `C:\Program Files\lceda-pro\lceda-pro.exe` (Chinese brand)
-
-On Windows the installer also supports `C:\Program Files (x86)\...` and the per-user `%LOCALAPPDATA%\Programs\...` layout — `open.js` probes those automatically. macOS and Linux install paths are not officially documented; the script probes the standard `Applications/` and `/usr/bin/` / `/opt/` locations but the user should pass `--client` or run `open.js set` once.
-
-If the client is not in any of those locations, ask once and persist the path:
+## Fast path (use this unless the user asks otherwise)
 
 ```bash
-node scripts/open.js set --client "<absolute path to easyeda-pro.exe or lceda-pro.exe>" --dir <projectDir>
+# 1. write a design file (see below), then:
+node scripts/build.js --design design.json --dir <absolute project dir>
+#    ... builds schematic + PCB, routes, pours, and runs validate + ERC + lint + DRC
+node scripts/render.js --dir <project dir>      # SVG preview → <project>/preview/
+node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
 
-This writes `<projectDir>/.easyeda-pro-client.json`. Subsequent `open` / `where` / `install` commands pick it up.
-
-If the user prefers a one-time override without saving, set `$EASYEDA_PRO_CLIENT` or pass `--client` on the command line.
-
-## What every eprj3 project contains
+`build.js` exits non-zero if any gate has an error, so a clean exit *is* the
+quality proof. It prints one summary line:
 
 ```
-<dir>/<name>.eprj3                       project index (pretty JSON, format:"folder")
-<dir>/sch/<schematic>/<sheet>.esch2      sheet docs: frame SYMBOL + embedded SYMBOL/DEVICE docs + SCH_PAGE main
-<dir>/sch/<schematic>/<schematic>.ecfg   4 records: DOCHEAD(META SCH)+META+RULE+RULE
-<dir>/sch/<schematic>/<schematic>.evar   empty (variant data)
-<dir>/pcb/<pcb>.epcb2                    PCB docs: embedded SYMBOL/FOOTPRINT/DEVICE docs + PCB main
-<dir>/panel/<panel>.epan2                panel document — optional, only with init --panel
-<dir>/.tmp/library/                      temp library entries (generation-time only; cleanup.js deletes it)
+blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/100.
 ```
 
-Preset library templates (always consulted first when placing) live in the skill repo at `templates/library/{symbol,footprint}/` — see [templates/README.md](templates/README.md) for the entry catalog.
+`--force` rebuilds an existing directory (deletes only skill-owned files:
+index, `sch/`, `pcb/`, `panel/`, `.tmp/`). `--dry-run` rehearses into a throwaway
+directory and deletes it. `--schematic-only` skips the PCB.
+`--report <file>` writes the machine-readable report (validate/erc/lint/drc + stats).
 
-Key format invariants (enforced by `validate.js`):
+## design.json — the whole contract
 
-- A placed component embeds its SYMBOL/DEVICE docs in the same file; `Symbol`/`Device` attrs reference those doc uuids. PCB components additionally embed the FOOTPRINT doc.
-- Power symbols and net ports are special devices: the COMPONENT carries `DeviceName: null` and the net lives in `Name` / `Global Net Name` ATTR records. Port symbol docs use META `docType: 19` (NetPort), power uses `docType: 18` (NetFlag).
-- PCB named NET records sit after the empty NET (`["NET",""]`) and before the first PAD_NET.
-- Tickets are unique within each document (not globally monotonic).
-- Named wires carry a NET attr (client-generated unnamed wires omit it); every LINE references its WIRE via `lineGroup`. Every ATTR head carries an id the client links through `parentId`; every doc DOCHEAD carries the project `client` id.
+All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 
-## Script reference
+```json
+{
+  "name": "blink",
+  "board": { "width": 1600, "height": 1000 },
+  "sheet": { "schematic": "Schematic1", "name": "P1" },
+  "powers": { "VCC": "up", "GND": "down" },
+  "blocks": [
+    { "title": "POWER INPUT", "parts": ["D1", "C1"] },
+    { "title": "LED DRIVER", "parts": ["R1", "D2"] }
+  ],
+  "parts": [
+    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "330R",
+      "pins": { "1": "V_LED", "2": "LED_A" } }
+  ],
+  "pcb": { "place": { "R1": [400, 400, 0] }, "pour": { "net": "GND" } }
+}
+```
 
-All scripts accept `--help` and follow the convention `<script> [subcommand] [options]`.
-
-| Script | Purpose |
+| Field | Meaning |
 | --- | --- |
-| `scripts/init.js` | Create the project skeleton (index, schematic container, sheet, PCB). `--board-w/--board-h` size the board outline (mil, default 4000×3000); pass `--panel` to also create a panel document. |
-| `scripts/generate-symbol.js` | Build a schematic SYMBOL from a pin list → temp entry `<dir>/.tmp/library/symbol/<name>.json`. |
-| `scripts/generate-footprint.js` | Build a FOOTPRINT from a pad list (SMD, or through-hole with a drill diameter) → temp entry `<dir>/.tmp/library/footprint/<name>.json`. |
-| `scripts/load-library.js` | Stage power flags / net ports as temp entries; inspect the two-tier library (`power`/`port`/`list`/`show`/`remove`). |
-| `scripts/add-symbol.js` | Unified schematic placement — resolves the entry preset-first and dispatches by kind (symbol/power/port/special); pairs a symbol with a footprint entry and composes the DEVICE doc on the fly. |
-| `scripts/add-wire.js` | Draw wires (WIRE + LINE records, optional net). |
-| `scripts/add-netlabel.js` | Label the wire under a point with a net name. |
-| `scripts/add-text.js` | Place free text on a sheet (TEXT record). |
-| `scripts/add-pcb-text.js` | Place text on the PCB (STRING record). |
-| `scripts/add-shape.js` | Draw schematic annotation graphics (`rect`/`poly`/`circle`/`ellipse`/`arc`/`bezier`). |
-| `scripts/add-footprint.js` | Place a symbol+footprint pair on the PCB, wiring pads to nets (DEVICE doc composed on the fly). |
-| `scripts/add-track.js` | Draw a copper track segment on the PCB. |
-| `scripts/add-via.js` | Place a via on the PCB. |
-| `scripts/add-pcb-shape.js` | Draw PCB graphics (`rect`/`poly`/`circle` → POLY, `arc` → ARC). |
-| `scripts/add-pour.js` | Add a copper pour region (POUR record) to the PCB. |
-| `scripts/add-fill.js` | Add a static copper fill (FILL record) to the PCB — SOLID style only. |
-| `scripts/add-region.js` | Add a keepout/constraint region (REGION record) with `--prohibit "COMPONENT,TRACK"` style rules. |
-| `scripts/set-refdes.js` | Rename or auto-renumber reference designators (`set`/`renumber`). |
-| `scripts/validate.js` | Check format invariants; exit 1 on errors. |
-| `scripts/cleanup.js` | Remove the project's temp staging area (`<dir>/.tmp/`) — run after validation passes. |
-| `scripts/open.js` | Launch / locate / register the offline client (`open`/`where`/`set`/`install`). |
+| `name` | project/index name (does not have to match the directory) |
+| `board.width/height` | board outline size in mil; the outline is drawn for you |
+| `powers` | net → `"up"` (supply) or `"down"` (ground): these get **power flags** instead of wires |
+| `blocks` | titled boxes in signal-flow order; parts left out join the last block |
+| `parts[].id` | reference designator **and** the part key used by `blocks` / `pcb.place` |
+| `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
+| `parts[].footprint` | preset name (`R0603`, `C0603`, `SMA`, `TP0.5`…) **or** an inline spec |
+| `parts[].pins` | pin **number** → net name. Every unlisted pin becomes an ERC error, so list them all |
+| `parts[].rotation` | 0 / 90 / 180 / 270 |
+| `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed |
+| `pcb.pour` | `{ "net": "GND", "stitch": true }` — pour on both layers + via fence |
+| `pcb.rules` | override router/DRC numbers (`clearance`, `trackWidth`, `viaDiameter`, `layers`, `edgeClearance`) |
 
-The lower-level helpers live in `scripts/lib/` (`eprj3.js`, `frame-a4.js`, `pcb-preamble.js`, `utils.js`). `scripts/tools/split-elibu.js` splits a real-client `.elibu` library export into preset template entries under `templates/library/` (maintainer tool for growing the preset catalog). `scripts/tools/audit-format.js` cross-checks every generated record against the easyeda-pro-format-skill JSON Schemas — run it after changing any record builder:
+Inline parts (no library file needed) — use for any IC, connector or module:
+
+```json
+{ "id": "U1",
+  "symbol":    { "name": "LDO", "designator": "U", "pins": ["1:GND", "2:VOUT", "3:VIN"] },
+  "footprint": { "name": "SOT23", "designator": "U",
+                 "pads": [[1,-27,-19,24,30], [2,0,19,24,30], [3,27,-19,24,30]],
+                 "outline": [-45,-30,45,30] },
+  "pins": { "1": "GND", "2": "3V3", "3": "VIN" } }
+```
+
+Pads are `[num, x, y, width, height, drillDiameter?]` in mil; a drill makes the pad
+through-hole. Stick to real land-pattern numbers (0603 pads ≈ 31×35 at ±16.5,
+SOT-23 pads ≈ 24×30 at 37 pitch, 0.1" header ≈ 60×60 at 100 pitch).
+
+Reusable complete examples live in [`recipe/`](recipe) and
+[`examples/designs/`](examples/designs). Copy the closest one and edit it —
+that is faster and safer than writing a design from a blank page.
 
 ```bash
-node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
+node scripts/recipe.js list                       # 15 sub-circuits
+node scripts/recipe.js show rc-lowpass             # parts, nets, params
+node scripts/recipe.js apply ldo-3v3 --to design.json \
+     --set cout=22uF --net VOUT=3V3_RAIL           # merge, rename, de-duplicate ids
 ```
+
+Recipes declare `params` and may use `${name}` placeholders, so `--set` is a
+real override rather than a find-and-replace in your head.
+
+## Checks — run them, read the codes
+
+| Gate | Command | Fails on |
+| --- | --- | --- |
+| format | `node scripts/validate.js --dir <p>` | structural/reference corruption |
+| electric | `node scripts/erc.js --dir <p> [--design design.json]` | floating pins, dead-end nets, netlist≠design, PCB↔schematic mismatch |
+| layout | `node scripts/lint-layout.js --dir <p>` | overlapping symbols, wires through bodies, parts outside their block, off-grid |
+| copper | `node scripts/drc.js --dir <p>` | spacing, track width, edge clearance, unrouted nets, missing pour |
+
+`--json` on any of them gives machine-readable output; lint and DRC also print a
+0–100 score. Rule tables: `node scripts/lint-layout.js --rules`,
+`node scripts/drc.js --rules`, and [`docs/checks.md`](docs/checks.md).
+
+**Repair loop:** read the failing code, fix the *design* (not the generated JSON),
+re-run `build.js --force`. Never hand-edit project files unless you have read
+[`docs/format-reference.md`](docs/format-reference.md).
+
+## Incremental editing (when a design file is overkill)
+
+```bash
+node scripts/pins.js --dir <p>                       # every pin + exact tip + net
+node scripts/add-wire.js --dir <p> --sch S --sheet P \
+     --from R1.2 --to C1.1 [--net SIG]               # wire BY PIN REFERENCE
+node scripts/netlist.js --dir <p>                    # what is actually connected
+node scripts/add-symbol.js  --dir <p> --sch S --sheet P --symbol RES --footprint R0603 --x 300 --y -440 --refdes R1
+node scripts/add-footprint.js --dir <p> --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
+node scripts/add-track.js / add-via.js / add-pour.js / add-text.js / add-shape.js / add-pcb-shape.js / add-pcb-text.js / add-region.js / add-fill.js
+node scripts/pour-auto.js --dir <p> [--net GND] [--layers 1,2] [--replace]  # pour from the board outline + via fence
+node scripts/recipe.js list | show <name> | apply <name> --to <design.json>  # parameterised sub-circuits
+node scripts/generate-symbol.js from-pins --dir <p> --name <sym> --pins "1:A;2:B"
+node scripts/generate-footprint.js from-pads --dir <p> --name <fp> --pads "1:-16,0,31,35;2:16,0,31,35"
+node scripts/set-refdes.js renumber --dir <p> --sch S --sheet P --prefix R
+node scripts/cleanup.js --dir <p>                    # drop .tmp staging (build does this itself)
+```
+
+**Never hand-compute a pin coordinate.** `scripts/pins.js` lists exact tips;
+`add-wire --from/--to` (or `--link "R1.2>C1.1;R1.1>U1.3"`) resolves them and
+routes orthogonally. Hand arithmetic is how a schematic silently loses a net.
+
+Coordinates are mil, Y up, 10 mil grid. Connectivity is exact coordinate equality
+on the pin tip; that is why the helpers above exist.
+
+## Layout rules the builder already enforces
+
+Blocks are grid-packed in declaration order (signal flow left→right), symbols are
+ordered by connectivity inside each block, every block gets a frame + title, nets
+are encoded weakest-to-strongest: straight wire → L/Z → trunk bus → stub+label,
+and power nets become flags. The layout lint verifies the result. If you hand-place
+parts, keep these invariants:
+
+- one block = 3–10 related parts; decoupling caps stay with their IC;
+- wires orthogonal only, endpoints on pin tips;
+- nearby pins get **visible wires**, not labels — a pin fanning into labels is the
+  anti-pattern; labels are for far/cross-block links and need a ≥30 mil stub;
+- net names UPPERCASE and meaningful (`SPI_CLK`), never `N$1`;
+- rows ≥200 mil apart so designator/name labels don't collide.
+
+## Library tiers
+
+Presets ship with the skill (`templates/library/{symbol,footprint}/`) and resolve
+first; generated/inline entries are staged under `<project>/.tmp/library/` during
+authoring and removed by `build.js` or `cleanup.js`. `load-library.js list|show|remove`
+inspects both tiers. Inline entries are staged as `SYM_*` / `FP_*` so a symbol and
+footprint sharing a display name cannot collide.
+
+## Where to read next
+
+| Need | Read |
+| --- | --- |
+| design.json edge cases, multi-sheet, PCB rules | [`docs/build.md`](docs/build.md) |
+| every check code and what it means | [`docs/checks.md`](docs/checks.md) |
+| record-level format spec | [`docs/format-reference.md`](docs/format-reference.md) |
+| a full worked manual flow (no design file) | [`docs/workflow.md`](docs/workflow.md) |
+| launching the client, non-default install paths | `node scripts/open.js --help` |
+| regression / benchmark | `node test/pipeline.js`, `node scripts/eval.js` |
 
 ## Output style
 
-- Show only the script invocations and the validator summary.
-- Do not narrate the format spec, JSON structure, or "what eprj3 is" to the user unless they ask.
-- Use Markdown link syntax for any file references: `[init.js](scripts/init.js)`.
-- After step 13, summarize the result as a single line: `<name>.eprj3 at <dir> — N components, M wires, validated, opened in EasyEDA Pro.`
+- Show the design file you wrote, the `build.js` invocation, and the final summary line.
+- Do not narrate the format spec or "what eprj3 is" unless asked.
+- Reference files as Markdown links: `[build.js](scripts/build.js)`.
+- Report scores and any remaining warning codes honestly; a 82/100 layout with two
+  `L006` warnings is worth stating, not hiding.
 
 ## Known limitations
 
-- The generated files follow the official example byte-pattern closely, but full fidelity is only provable in the real client. If the client refuses to open a project, run `node scripts/validate.js --dir <dir>` first, then compare against [`examples/blink`](examples/blink) (a complete, validated sample project).
-- `add-pour` writes the pour region record only — the client recomputes the filled copper (POURED records) when the project is opened. Pour/fill styles are restricted to SOLID, the only mode backed by a real client record. Differential-pair routing, hierarchical multi-sheet navigation, and simulation documents are not authored by these scripts — finish those in the EasyEDA Pro client.
-- Sheet TEXT/shape and PCB STRING/VIA record bodies follow the real samples in the easyeda-pro-format-skill repo (`examples/SCH_PAGE`, `examples/PCB`); everything else mirrors official example records. Known schema-vs-example conflicts (e.g. numeric `groupId`, `pourType` object, POUR/FILL `path` nesting) are documented in `scripts/tools/audit-format.js` — real records win in every case.
-- The two-tier library: preset templates (`templates/library/`, mostly split from a real-client `.elibu` export) are committed with the skill; temp entries (`<project>/.tmp/library/`) exist only while authoring and are removed by `cleanup.js` — the finished project contains no library metadata. Placing the `special` entries (`DIFF_PAIR`, `SHORT`) and the `A4`/`A3` drawing-frame symbols has not yet been verified against the real client.
+- Fidelity is only provable in the real client. If it refuses to open, run
+  `validate.js` first, then compare with [`examples/blink`](examples/blink).
+- `add-pour` writes the pour *region*; the client recomputes filled copper on open.
+  Pour style is SOLID (the only real-client-backed mode).
+- The router is a 2-layer maze router: no differential pairs, length matching or
+  impedance control. Hierarchical multi-sheet navigation and simulation documents
+  are not authored — finish those in the client.
+- `DIFF_PAIR`/`SHORT` special symbols and the A4/A3 frame symbols are not yet
+  verified against the real client.
