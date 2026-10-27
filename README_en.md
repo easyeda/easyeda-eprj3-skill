@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-[中文](README.md#中文) · bilingual home: [README.md](README.md) · standalone English page · **v1.12.0** · [Changelog](CHANGELOG.md)
+[中文](README.md#中文) · bilingual home: [README.md](README.md) · standalone English page · **v1.12.1** · [Changelog](CHANGELOG.md)
 
 An AI-agent skill that turns a one-sentence feature request — or a single `design.json` — into a complete `.eprj3` folder project for **EasyEDA Pro (嘉立创 EDA 专业版)**: a schematic laid out in signal-flow blocks, a **placement-only PCB** (footprints + pad-net links + outline — routing and copper pour are explicit opt-ins via `--route` / `--pour`), and **five automated gates** proving the result before you ever open the client.
 

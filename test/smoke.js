@@ -626,8 +626,12 @@ function main() {
     const blinkDir = path.join(ROOT, 'examples', 'blink');
     if (fs.existsSync(blinkDir)) {
       const rBlink = run([SCRIPTS + '/validate.js', '--dir', blinkDir]);
-      assert(/OK \(0 errors, 0 warning/.test(rBlink.stdout),
-        'examples/blink passes validate', rBlink.stdout.trim());
+      // This sample has been through the real client (open + save with 4.1.84):
+      // the save re-stamps index.owner_uuid to the editor account and leaves
+      // untouched docs' original client ids — mixed DOCHEAD clients are the
+      // NORMAL state of a round-tripped project, warned, never an error.
+      assert(/^OK \(0 errors/m.test(rBlink.stdout),
+        'examples/blink passes validate (0 errors; client round-trip warnings ok)', rBlink.stdout.trim());
       realClientInvariants(blinkDir, 'examples/blink');
     }
 

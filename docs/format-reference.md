@@ -56,6 +56,19 @@ generation and origin, and `profile.owner.uuid` in local (offline) projects may
 hold a filesystem path instead of a uuid (measured in the wild). Never parse
 them assuming one form; the format skill's own `t-doc-head` says the same.
 
+**Client round-trip facts** (our `examples/blink` and
+`examples/easyeda-eprj3-project` opened + saved in the real client 4.1.84,
+commit 77e2680 — byte-level ground truth):
+- The save stamps fresh `version`/`updateTime` on every document it touches and
+  may re-key touched docs' `client` to the editing installation's id, while
+  untouched embedded docs keep their original hash — **mixed DOCHEAD.client
+  values inside one file are the normal state** (why V003 is a warning, not an
+  error).
+- DOCHEAD outer tickets are rewritten to the document's logical clock with
+  arbitrary values (observed 634) — `ticket: 1` at creation is legal; never
+  assume head tickets are small or ordered relative to record tickets.
+- `editVersion` is NOT blanket-refreshed — unmodified docs keep the writer's value.
+
 ## Container file grammar
 
 `.esch2` / `.epcb2` / `.epan2` files are line-oriented. Each line is one record:

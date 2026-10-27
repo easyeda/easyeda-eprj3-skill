@@ -5,6 +5,32 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.12.1] - 2026-10-27
+
+Ground truth arrived: `examples/blink` and `examples/easyeda-eprj3-project`
+were opened and **re-saved in the real client (4.1.84)** (user commit
+`77e2680`). The gates accept both round-tripped samples (validate 0 errors —
+the aggregated foreign-client warnings are the point, not a problem), and the
+save's byte diff taught the writer side three facts now documented in
+`docs/format-reference.md` ("Client round-trip facts").
+
+### Fixed
+- `test/smoke.js`: the `examples/blink` assertion demanded *zero warnings* —
+  correct for skill-built files, wrong for a client round-trip (the save
+  stamps fresh `version`/`updateTime` on the docs it touches, and may re-key
+  their `client` to the editing installation's id, while untouched embedded
+  docs keep their original hash). Now asserts **0 errors** with the aggregated
+  foreign-client warnings tolerated — exactly the state V003 was designed to
+  describe.
+
+### Changed
+- `docs/format-reference.md`: new "Client round-trip facts" block — per-doc
+  client drift as the normal state, DOCHEAD tickets rewritten to arbitrary
+  document clocks (observed 634; the `ticket: 1` seed is legal), `editVersion`
+  left alone. (An earlier draft of this note blamed the client for deleting the
+  sample's README files — that deletion was manual maintenance, not save
+  behaviour.)
+
 ## [1.12.0] - 2026-10-25
 
 Closes issue #2 — and the calibration turned into a full **V4 format
