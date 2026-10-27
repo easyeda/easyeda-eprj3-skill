@@ -5,7 +5,8 @@
  *
  * `test/smoke.js` covers the record-level primitives (things that must open in
  * the real client). This suite covers the layer above: a design file must build
- * into a project whose netlist, layout and copper all pass their gates, and the
+ * into a project whose netlist and layout pass their gates, the board ships
+ * copper-free (routing/pour are the client's job since 1.13), and the
  * newer CLIs (netlist/erc/lint/drc/pins/render/eval) must behave.
  *
  *   node test/pipeline.js
@@ -88,18 +89,16 @@ function main() {
   ok(drc && drc.counts.tracks === 0 && drc.counts.pours === 0, 'no copper was added to the deliverable');
   ok(drc && drc.counts.pads > 0, 'footprints/pads ARE placed (the deliverable is placement)', drc ? String(drc.counts.pads) : 'no json');
 
-  // ------------------------------------------------- opt-in copper path
-  // --route/--pour must still produce the full board the old default did:
-  // maze routing, ground pour on both layers, stitching fence.
-  const projCopper = path.join(TMP, 'blink-copper');
-  const copperOut = run('scripts/build.js', ['--design', design, '--dir', projCopper, '--route', '--pour']);
-  ok(/drc 100\/100/.test(copperOut), 'routed+poured build still scores drc 100', copperOut);
-  ok(/tracks/.test(copperOut) && /pours/.test(copperOut), 'copper build reports tracks and pours', copperOut);
-  const drcC = json('scripts/drc.js', ['--dir', projCopper, '--json']);
-  ok(drcC && drcC.mode === 'routed', 'copper board judged in routed mode', drcC ? drcC.mode : 'no json');
-  ok(drcC && drcC.counts.pours >= 2, 'two copper pours exist (opt-in)');
-  ok(drcC && drcC.counts.vias > 10, 'stitching vias were added (opt-in)');
-  ok(drcC && drcC.errors === 0, 'copper board has no DRC errors', drcC ? JSON.stringify(drcC.findings.filter((f) => f.level === 'error')) : 'no json');
+  // ------------------------------------------------- copper policy guard
+  // Since 1.13 the skill cannot route or pour AT ALL: the old --route/--pour
+  // flags no longer exist, so a copper-hungry caller fails loudly instead of
+  // quietly laying tracks. The deliverable's handoff is the rats line.
+  const guardRoute = run('scripts/build.js', ['--design', design, '--dir', path.join(TMP, 'blink-route'), '--route'], 1);
+  ok(/Unknown option/.test(guardRoute), '--route is rejected — routing is gone from the skill', guardRoute.slice(0, 200));
+  const guardPour = run('scripts/build.js', ['--design', design, '--dir', path.join(TMP, 'blink-pour'), '--pour'], 1);
+  ok(/Unknown option/.test(guardPour), '--pour is rejected — pouring is gone from the skill', guardPour.slice(0, 200));
+  ok(/rats: \d+ net\(s\) to connect by hand in the client/.test(buildOut),
+    'the build prints the rats handoff for the client', buildOut.slice(0, 400));
 
   // -------------------------------------------------------------- netlist
   const nl = json('scripts/netlist.js', ['--dir', proj, '--json']);

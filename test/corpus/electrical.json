@@ -16,8 +16,12 @@
       "base": "blink",
       "category": "pad net ↔ schematic pin",
       "title": "a pad wired to the wrong net: the board says GND where the schematic says V_LED",
-      "mutate": "flip the padNet of the C1 pad the design puts on V_LED",
+      "mutate": "inject witness copper over the V_LED net (the skill builds none), then flip the padNet of the C1 pad the design puts on V_LED",
       "mutation": [{
+        "op": "copper_prep",
+        "target": "pcb",
+        "net": "V_LED"
+      }, {
         "op": "record_set",
         "target": "pcb",
         "sel": { "doc": "main", "type": "PAD_NET", "where": { "body.padNet": "V_LED" }, "nth": 0 },
@@ -136,8 +140,12 @@
       "base": "blink",
       "category": "copper continuity",
       "title": "every track and via of LED_A erased — two pads, no copper",
-      "mutate": "delete all LINE/VIA records whose netName is LED_A",
-      "mutation": [{ "op": "remove_net_copper", "target": "pcb", "net": "LED_A" }],
+      "mutate": "inject witness copper on LED_A and V_LED, then delete all LINE/VIA records whose netName is LED_A (the surviving V_LED copper keeps the board in routed mode, so D004 must wake)",
+      "mutation": [
+        { "op": "copper_prep", "target": "pcb", "net": "LED_A" },
+        { "op": "copper_prep", "target": "pcb", "net": "V_LED" },
+        { "op": "remove_net_copper", "target": "pcb", "net": "LED_A" }
+      ],
       "expect": { "drc": ["D004"] }
     },
     {
@@ -145,8 +153,12 @@
       "base": "blink",
       "category": "copper consistency",
       "title": "a routed track relabelled to another net: clearance and continuity both wake up",
-      "mutate": "rename the net of the first LED_A track to GND",
+      "mutate": "inject witness copper on LED_A, then rename the net of its first track to GND",
       "mutation": [{
+        "op": "copper_prep",
+        "target": "pcb",
+        "net": "LED_A"
+      }, {
         "op": "record_set",
         "target": "pcb",
         "sel": { "doc": "main", "type": "LINE", "where": { "body.netName": "LED_A" }, "nth": 0 },

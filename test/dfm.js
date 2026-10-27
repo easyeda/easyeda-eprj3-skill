@@ -249,23 +249,25 @@ function main() {
   ok(r.errors === 1 && r.warnings === 1, 'errors/warnings counted', `${r.errors}/${r.warnings}`);
 
   // --------------------------------------------------------- no-regression
-  // real board: vias carry real coordinates, zero DFM findings, score 100.
-  // Built with --route --pour: the shipped default is placement-only, but this
-  // probe needs the stitching fence / track copper to judge DFM floors against.
+  // The shipped deliverable carries NO copper (policy since 1.13): this probe
+  // asserts the placed board is copper-free AND that the DFM floors stay quiet
+  // on pads alone. The copper floors themselves are judged by the synthetic
+  // fixtures above — imported client boards still get the full DRC.
   const proj = path.join(TMP, 'blink');
   const design = path.join(ROOT, 'examples', 'designs', 'blink.json');
-  const rb = spawnCaptured(process.execPath, [path.join(ROOT, 'scripts/build.js'), '--design', design, '--dir', proj, '--route', '--pour'], { cwd: ROOT, encoding: 'utf8' });
+  const rb = spawnCaptured(process.execPath, [path.join(ROOT, 'scripts/build.js'), '--design', design, '--dir', proj], { cwd: ROOT, encoding: 'utf8' });
   const buildOut = `${rb.stdout || ''}${rb.stderr || ''}`;
   ok(rb.status === 0, 'blink builds for the DFM regression probe', buildOut.slice(-500));
   const blinkPcb = path.join(proj, 'pcb', 'PCB1.epcb2');
   if (fs.existsSync(blinkPcb)) {
     const geo = pcbGeometry(blinkPcb);
-    ok(geo.vias.length > 10, 'blink has (stitching) vias to judge', geo.vias.length);
-    ok(geo.vias.every((v) => typeof v.x === 'number' && typeof v.y === 'number' && typeof v.hole === 'number' && typeof v.width === 'number'),
-      'vias carry real coordinates and diameters', JSON.stringify(geo.vias.slice(0, 2)));
-    ok(geo.vias.every((v) => v.hole >= DEFAULTS.minDrill), 'no shipped via is below the drill floor');
+    ok(geo.tracks.length === 0 && geo.vias.length === 0 && geo.pours.length === 0,
+      'the shipped board carries zero copper — by policy, not by luck',
+      `${geo.tracks.length} tracks / ${geo.vias.length} vias / ${geo.pours.length} pours`);
+    ok(geo.pads.length > 0, 'footprints and pads are placed (the deliverable is placement)', String(geo.pads.length));
     ok(geo.pads.every((p) => !p.hole || p.hole >= DEFAULTS.minDrill), 'no shipped pad drill breaks the floor');
     const rr = runDrc(blinkPcb, {});
+    ok(rr.mode === 'placed-only', 'drc auto-detects the placed-only mode', rr.mode);
     ok(rr.findings.length === 0, 'blink gains no DFM findings', JSON.stringify(rr.findings));
     ok(rr.score === 100, 'blink still scores 100', rr.score);
   } else {

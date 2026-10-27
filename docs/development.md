@@ -20,10 +20,7 @@ easyeda-eprj3-skill/
 │   ├── add-shape.js
 │   ├── add-pcb-text.js
 │   ├── add-pcb-shape.js
-│   ├── add-track.js
-│   ├── add-via.js
-│   ├── add-pour.js
-│   ├── add-fill.js
+│   ├── add-pcb-text.js
 │   ├── add-region.js
 │   ├── set-refdes.js
 │   ├── load-library.js
@@ -51,12 +48,8 @@ easyeda-eprj3-skill/
 | `node scripts/add-netlabel.js` | 放置网络标签 |
 | `node scripts/add-text.js` | 原理图文本 |
 | `node scripts/add-shape.js` | 原理图图形（矩形/多边形/圆等） |
-| `node scripts/add-track.js` | PCB 走线 |
-| `node scripts/add-via.js` | PCB 过孔 |
 | `node scripts/add-pcb-shape.js` | PCB 图形 |
 | `node scripts/add-pcb-text.js` | PCB 文本 |
-| `node scripts/add-pour.js` | 铺铜 |
-| `node scripts/add-fill.js` | 静态铜填充 |
 | `node scripts/add-region.js` | 禁止区域 |
 | `node scripts/set-refdes.js` | 设置/重排位号 |
 | `node scripts/generate-symbol.js` | 从引脚定义生成临时符号 |
@@ -65,10 +58,10 @@ easyeda-eprj3-skill/
 | `node scripts/erc.js` | 电气规则检查（E001–E007） |
 | `node scripts/intent.js` | 设计意图门禁（极性/去耦/分压比，I001–I006） |
 | `node scripts/lint-layout.js` | 原理图布局审查（L001–L010） |
-| `node scripts/drc.js` | 铜皮审查（D001–D012，含 DFM；placed-only 板自动跳过 D004/D006，`--placed-only`/`--routed` 可强制） |
+| `node scripts/drc.js` | 铜皮审查（D001–D012，含 DFM；本 skill 自建的板恒为 placed-only，自动跳过 D004/D006，`--placed-only`/`--routed` 可强制；导入/客户端返存的板仍完整判铜） |
 | `node scripts/autofix.js` | 机械修复：NC、补去耦电容 |
-| `node scripts/build.js` | design.json 一键构建 + 全部门禁；**默认只布局**（不布线/不铺铜），`--route` / `--pour` 才落铜；`--plan` 只打印方案摘要并真实预演，不写盘（人工确认点） |
-| `node scripts/intake.js` | 需求采集：`template`/`fields`/`check`（追问协议）/`resolve`（recipe 选型 + 电源链推导 + 密集板细规则，选型结果缓存于 `.cache/`） |
+| `node scripts/build.js` | design.json 一键构建 + 全部门禁；**只布局**（本 skill 永不布线/铺铜，铜皮在客户端完成；构建输出含 `rats:` 交接清单）；`--plan` 只打印方案摘要并真实预演，不写盘（人工确认点） |
+| `node scripts/intake.js` | 需求采集：`template`/`fields`/`check`（追问协议）/`resolve`（recipe 选型 + 电源链推导 + 线宽注记，选型结果缓存于 `.cache/`） |
 | `node scripts/recipe.js` | 子电路模板 list/show/apply（与 intake 共用 `scripts/lib/merge.js` 合并引擎） |
 | `node scripts/eval.js` | 回归基准（`--diff` 对比历史、`--design` 度量新设计；逐案记录 ~tokens 与秒数） |
 | `node scripts/depcheck.js` | 自研合规扫描：全部 require/import 必须是 Node 内置或本仓库相对路径（`npm run depcheck`） |
@@ -113,17 +106,15 @@ node scripts/add-netlabel.js --dir ./myboard --sch Schematic1 --sheet P1 --net S
 node scripts/set-refdes.js renumber --dir ./myboard --sch Schematic1 --sheet P1 --prefix R
 ```
 
-### 6. PCB 布局（默认只管布局）
+### 6. PCB 布局（交付物就是布局）
 
-`build.js` 默认只放置封装、绑定焊盘网络、生成板框——**不布线、不铺铜**。人工脚本用于两种场景：想精确控制某个元件的落位，或明确要自己手铺铜皮/走线。
+`build.js` 只放置封装、绑定焊盘网络、生成板框——**永不布线、永不铺铜**。想精确控制某个元件的落位，用 `add-footprint.js` 显式落位或在 design 里写 `pcb.place`；走线/过孔/铺铜一律在 EasyEDA 客户端完成，`build.js` 打印的 `rats:` 行就是要手工连接的网络清单。
 
 ```bash
 # 布局（交付内容）
 node scripts/add-footprint.js --dir ./myboard --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
-# 铜皮是 opt-in：要么整体 build --route/--pour，要么下面这些脚本手工铺
-node scripts/add-track.js --dir ./myboard --pcb PCB1 --net SIG --x1 300 --y1 316.54 --x2 450 --y2 316.54
-node scripts/add-via.js --dir ./myboard --pcb PCB1 --x 700 --y 316.54 --net SIG
-node scripts/add-pour.js rect --dir ./myboard --pcb PCB1 --net GND --x 100 --y 100 --w 3800 --h 2800
+# 禁布区不是铜皮，仍由脚本维护
+node scripts/add-region.js rect --dir ./myboard --pcb PCB1 --prohibit "COMPONENT,TRACK" --x 200 --y 200 --w 300 --h 200
 ```
 
 ### 7. 验证并打开
@@ -141,8 +132,8 @@ node scripts/open.js open --dir ./myboard
 npm test        # smoke + pipeline + dfm + corpus + depcheck 全链
 ```
 
-- `node test/smoke.js`：生成临时工程做 141 项断言，确认格式符合官方示例约定。
-- `node test/pipeline.js`：声明式构建链路（design.json → build → 五门禁）40 项回归。
+- `node test/smoke.js`：生成临时工程做断言，确认格式符合官方示例约定（条数以 `npm test` 输出为准）。
+- `node test/pipeline.js`：声明式构建链路（design.json → build → 五门禁）回归（条数以 `npm test` 输出为准）。
 - `node test/dfm.js`：DFM 规则 D009–D012 的触发/不触发/边界断言（阈值 override、score 扣减、真实产物零新增）。
 - `node test/corpus.js`：**合法/非法语料**——真实构建链产出合法基线，再对副本做最小篡改（`test/corpus/*.json` 声明清单），断言 validate/erc/lint/drc 必须按 `expect` 报出对应 code；检查器抓不到的变体标 `expect:{leak:true}` 记为已知盲区（`--probe` 重新观察实际输出以维护清单）。
 - `node scripts/depcheck.js`：全仓 `.js` 的 require/import 只允许 Node 内置与本仓库相对路径；`package.json` 依赖字段必须为空；无 `node_modules/`。
@@ -181,15 +172,15 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 | 问题 | 答案 |
 | --- | --- |
 | `board` 尺寸不确定？ | 可省略——build 会按元件数自动扩板并打印一行提示 |
-| 什么时候降 `pcb.rules`？ | 0.5mm pitch（QFN/QFP/USB-C）→ `clearance 6, trackWidth 6, grid 5`；常规 0603 → 默认 |
-| 电源线多宽？ | `nets: { "<电源网>": { "width": 30 } }`（≈1A/10mil @2oz 的量级再按电流加倍） |
+| 什么时候降 `pcb.rules`？ | 0.5mm pitch（QFN/QFP/USB-C）→ `clearance 6, trackWidth 6`；常规 0603 → 默认（这些值是 DRC 判放置与导入铜的下限，不再有路由器参数） |
+| 电源线多宽？ | `nets: { "<电源网>": { "width": 30 } }`——**仅注记**（按电流推导线宽的交接信息，并在 DRC 判导入铜时作为该网下限）；本 skill 不布线 |
 | 未用引脚怎么接？ | 全部映射到 `"NC"`——ERC 会放行 |
 | IC 没去耦电容？ | `node scripts/autofix.js --design <file> --diff` 先看差异（自动补 100nF），确认后再去掉 `--diff` 写入 |
 | 封装库里没有？ | `"footprint": { "auto": "LQFP48" }`（SOP/QFN/DIP/HDR/SOT23-5/USB-C 等都支持）或手写 inline pads |
 | 电路原理怎么保证？ | `parts[].polarity` + `expect` 块（decoupling/pairs/valueRange/divider），第五道门禁查 |
 | 用户只给了一句话需求？ | 走 intake：`intake.js check --req`（缺必填→一次问完）→ `resolve`（选型+电源链+规则推导）→ `build.js --plan`（确认）→ `build.js` |
-| 交付板要布线/铺铜怎么办？ | 默认**只布局**——用户明确要求才 `build.js --route` / `--pour`，或走 `add-track`/`pour-auto` 人工路线 |
-| `--route` 后合并板 DRC 一片 D001？ | 10 mil clearance 下焊盘禁入区互相重叠，没有合法通道——合并板（≥2 模块/≥12 parts）用 `clearance 6, trackWidth 6, grid 5, edgeClearance 12`（intake 已预置） |
+| 交付板要布线/铺铜怎么办？ | 超出本 skill 范围——永不布线、永不铺铜，铜皮在 EasyEDA 客户端人工完成；`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数） |
+| 导入/客户端返存的板 DRC 一片 D001？ | 那是文件里已有的铜（本 skill 自建的板没有铜）——在客户端调整或删除相应铜线；根因若是焊盘太近，改 `pcb.place`/`pcb.rules.clearance` 后 `build.js --force` 重放布局，再做铜 |
 | LDO 该接输入轨还是上一级的 5V？ | 接"高于自身输出的最近轨"（12V→buck→5V→ldo→3V3）；intake 的 upstream 推导已处理，压差过大只告警不改 BOM |
 | 构建前想给用户过目？ | `build.js --plan`：真实预演（lint/drc 分数是真的），目标目录零写入 |
 | 怎么证明零第三方依赖？ | `node scripts/depcheck.js`（`npm run depcheck`，已串进 `npm test`） |

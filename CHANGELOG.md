@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.13.0] - 2026-10-27
+
+The scope release: **the skill no longer touches copper at all.** Since 1.11 routing and pour were opt-in; opt-ins turned out to be surface the agent could still reach for. Since 1.13 they are gone — the deliverable is schematic + netlist + PCB **placement** (+ pad-net binding + outline), and every copper decision belongs to a human in the EasyEDA client. The boundary is now enforced structurally: the flags do not exist, so nothing can lay tracks or pours even by accident.
+
+### Removed
+- `build.js --route / --pour / --no-route / --no-pour` — passing them now fails with `Unknown option` (the parser, not a warning, is the guard; smoke and pipeline assert this).
+- The capability itself: `scripts/lib/pcb-route.js` (2-layer A\* maze router) and `scripts/lib/pour.js` (pour planner + stitching fence), plus the CLIs `add-track.js`, `add-via.js`, `add-pour.js`, `add-fill.js`, `pour-auto.js` and their `package.json` entries. `add-region.js` stays — keep-outs are not copper.
+- `intake`: the `output.pour` field (FIELDS + template), the pour derivation, and the dense-board fine-rule pre-arm (rules were armed for a router that no longer exists; `pcb.rules` remains purely a DRC contract).
+- `eval`: the `copper` case flag and `--routed` plumbing; `cases.json` keys updated. `test/pipeline.js`: the opt-in copper build section. `test/smoke.js`: the tracks/via/pour/fill/pour-auto primitive sections.
+- Dead `README_en.md` links in README.md (the file was removed by the maintainer; the bilingual README carries English first).
+
+### Added
+- **The rats handoff.** `build.js` now prints `rats: K net(s) to connect by hand in the client — GND(32p) VBUS(8p) …` (nets with ≥2 pads, NC/DNC excluded) and the report carries `pcb: {parts, mode:'placed-only', rats}`; the `--plan` and summary lines state the policy (`只布局（布线/铺铜在客户端完成）`, `drc 100/100 (placed-only)`). Placement-only is now a structural fact, not a mode: the build passes `placedOnly: true` to the DRC unconditionally.
+- **corpus `copper_prep`** — since the builder makes no copper, copper-tampering variants inject their own witness copper first (tracks chained pad-center to pad-center from the CURRENT placement, or a well-formed POUR, tickets beyond the file max). D001/D004/D006 and the POUR shape rules stay under regression without the skill ever emitting copper: `pcb-net-left-unrouted`, `pcb-track-net-retagged`, `pcb-padnet-against-schematic` (prep + retag), `pour-flat-path`, `pour-undeclared-net` (prep + tamper) all caught, all non-vacuous.
+- Policy-guard tests in smoke/pipeline: `--route` and `--pour` must exit non-zero with `Unknown option`.
+- DRC fix hints for D004/D006 now point at the client (this board's copper was never promised; imported boards with tracks/pours still get the full copper judgment — unchanged and tested by the corpus witnesses).
+
+### Changed
+- The whole documentation surface rewritten for the new scope: SKILL.md (front matter, strategy, fast path, design-table — `pcb.pour/route` marked removed, widths re-labelled as handoff annotations), README.md (EN+ZH), docs/build.md (the two copper sections replaced by one "Copper policy (out of scope since 1.13)"), docs/checks.md, docs/intake.md (confirmation gate #7 = "copper is out of scope"), docs/workflow.md, docs/development.md, docs/format-reference.md (POUR/LINE/VIA/FILL are read-and-judge-only for the skill now), docs/corpus.md (witness mechanism).
+- `design.js` warns about very wide nets as handoff notes, not pour advice; intake's plan line reads 只布局（布线/铺铜在客户端完成）.
+
+### Verified
+- smoke 135/135 · pipeline 47/47 · dfm 70/70 · corpus 108/108 (44 caught, 2 recorded gaps: `schematic-wire-segment-dropped`, `ticket-regression` by design) · depcheck 60 files / 0 violations · eval 20/20 cases (avg lint 100, avg drc 100, placed-only).
+- intake e2e: `sensor-board` (33 parts) resolves, plans, builds placement-only with drc 100 and a 20-net rats list.
+- `EPRJ3_DETERMINISTIC=1` golden still byte-identical across dirs and `--force` rebuild.
+- Real client-saved V4 projects (quick-start 4.1.78, H610) keep validating at 0 errors — the removal changed nothing about read compatibility.
+
 ## [1.12.1] - 2026-10-27
 
 Ground truth arrived: `examples/blink` and `examples/easyeda-eprj3-project`

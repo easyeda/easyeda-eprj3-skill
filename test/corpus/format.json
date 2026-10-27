@@ -253,8 +253,12 @@
       "base": "blink",
       "category": "pour geometry",
       "title": "POUR path loses its nesting (a flat ring instead of an array of rings)",
-      "mutate": "replace POUR1's nested path with a flat one",
+      "mutate": "inject a well-formed witness pour (the skill builds none), then replace its nested path with a flat one",
       "mutation": [{
+        "op": "copper_prep",
+        "target": "pcb",
+        "pour": "GND"
+      }, {
         "op": "record_set",
         "target": "pcb",
         "sel": { "doc": "main", "type": "POUR", "nth": 0 },
@@ -267,8 +271,12 @@
       "base": "blink",
       "category": "pour ↔ net",
       "title": "POUR named against a net the PCB never declared",
-      "mutate": "set POUR1 netName to an undeclared net",
+      "mutate": "inject a witness pour on GND (the skill builds none), then set its netName to an undeclared net",
       "mutation": [{
+        "op": "copper_prep",
+        "target": "pcb",
+        "pour": "GND"
+      }, {
         "op": "record_set",
         "target": "pcb",
         "sel": { "doc": "main", "type": "POUR", "nth": 0 },

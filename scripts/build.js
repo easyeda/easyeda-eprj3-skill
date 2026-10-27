@@ -9,10 +9,11 @@
  *
  * It bootstraps the project, resolves every library entry (presets, inline
  * specs, or staged files), lays the schematic out in signal-flow blocks, routes
- * every net (wire / L / Z / stub+label / power flag), annotates the blocks,
- * places the footprints on the PCB and — with --route — routes and pours it.
- * Then it validates and reports, so an agent gets the same information a human
- * reviewer would.
+ * every net on the SHEET (wire / L / Z / stub+label / power flag), annotates
+ * the blocks, places the footprints on the PCB — placement only: this skill
+ * NEVER auto-routes or pours copper; the rats list tells the human what to
+ * finish in the client. Then it validates and reports, so an agent gets the
+ * same information a human reviewer would.
  *
  * Re-running over an existing project requires --force, which deletes ONLY the
  * files this skill owns (index, sch/, pcb/, panel/, .tmp/).
@@ -33,10 +34,6 @@ const SCHEMA = [
   { name: 'design', desc: 'design.json file', required: true },
   { name: 'force', desc: 'overwrite an existing project (deletes skill-owned files only)', hasValue: false },
   { name: 'schematic-only', desc: 'skip the PCB entirely', hasValue: false },
-  { name: 'route', desc: 'opt-in: run the maze router after placement (off by default — the shipped strategy is placement-only)', hasValue: false },
-  { name: 'pour', desc: 'opt-in: add the copper pour + stitching fence (off by default; needs --route to also route the non-poured nets)', hasValue: false },
-  { name: 'no-route', desc: 'legacy no-op — routing is off by default now', hasValue: false },
-  { name: 'no-pour', desc: 'legacy no-op — pouring is off by default now', hasValue: false },
   { name: 'allow-erc', desc: 'do not fail the build on ERC errors', hasValue: false },
   { name: 'allow-intent', desc: 'do not fail the build on design-intent errors', hasValue: false },
   { name: 'allow-lint', desc: 'do not fail the build on layout errors', hasValue: false },
@@ -297,7 +294,7 @@ function main() {
   const argv = process.argv.slice(2);
   if (!argv.length || argv[0] === '-h' || argv[0] === '--help') {
     printHelp('build.js [options]', SCHEMA,
-      'Build a complete .eprj3 project from a design.json (schematic + PCB, auto layout, auto routing).');
+      'Build a complete .eprj3 project from a design.json (schematic + PCB PLACEMENT; routing/pour are done in the client, not here).');
     return;
   }
   const { opts } = parseArgs(argv, SCHEMA);
@@ -313,12 +310,12 @@ function main() {
   }
   const design = D.readDesign(path.resolve(opts.design));
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
-  // Strategy: ships placement-only. Routing and copper pour are opt-in flags
-  // so the generated board is a clean starting point for a human, not finished
-  // copper a human must first delete. The DRC knows the mode and does not flag
-  // unrouted nets or a missing pour that were never promised.
-  const doRoute = !!opts.route;
-  const doPour = !!opts.pour;
+  // Strategy: the skill NEVER lays copper — no auto routing, no pours, no flags
+  // to turn them on. The deliverable is footprints placed with pad-net links
+  // bound and the board outline; copper is finished in the EasyEDA client by a
+  // human. The build reports `rats` (nets awaiting copper) so the handoff is
+  // explicit; the DRC is told the board is placement-only (D004/D006 never
+  // fire here, but stay live for imported client-authored boards).
   const log = (msg) => { if (!opts.quiet) console.log(msg); };
 
   // ------------------------------------------------------------ bootstrap
@@ -353,11 +350,8 @@ function main() {
     const rules = design.pcbSpec.rules || {};
     const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
     console.log(`方案 ${design.name} → ${requestedDir}`);
-    const copper = [];
-    if (doRoute) copper.push('布线(--route)');
-    if (doPour) copper.push(`铺铜 ${design.pcbSpec.pour && design.pcbSpec.pour.net || 'GND'}(--pour)`);
     console.log(`  板框  ${design.board.width}×${design.board.height} mil · `
-      + `${doPcb ? (copper.length ? `铜皮: ${copper.join(' + ')}` : '只布局（默认不布线/不铺铜；可选 --route / --pour）') : '仅原理图 (--schematic-only)'}`);
+      + `${doPcb ? '只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）' : '仅原理图 (--schematic-only)'}`);
     console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
     const widths = Object.entries(design.netWidths || {});
     if (widths.length) console.log(`  线宽  ${widths.map(([n, w]) => `${n}=${w}mil`).join(' ')}`);
@@ -422,8 +416,7 @@ function main() {
   // ------------------------------------------------------------ pcb
   const pcbParts = [];
   const pcbGeoPads = [];
-  let routing = null;
-  let pourPlan = null;
+  let ratNets = [];
   if (doPcb) {
     const { planPcb } = require('./lib/pcb-plan');
     let plan = planPcb(design, lib, placements);
@@ -451,85 +444,26 @@ function main() {
     }
 
     const pcbCfg = design.pcbSpec || {};
-    const rules = Object.assign({}, require('./lib/pcb-route').DEFAULT_RULES, pcbCfg.rules || {});
-    const pourNet = (pcbCfg.pour && pcbCfg.pour.net) || 'GND';
-    if (doRoute) {
-      const { routePcb } = require('./lib/pcb-route');
-      // The poured net is joined by the plane itself — routing it would only
-      // lay copper that fights the pour.
-      routing = routePcb({
-        pads: pcbGeoPads,
-        board: design.board,
-        rules,
-        netWidths: design.netWidths || {},
-        skipNets: doPour ? [pourNet] : []
-      });
-      for (const t of routing.tracks) {
-        pcbEm.addLines([E.pcbTrackLine({
-          netName: t.net,
-          layerId: t.layer + 1,
-          startX: t.x1, startY: t.y1, endX: t.x2, endY: t.y2,
-          width: t.width,
-          ticketBase: pcbEm.nextTicket()
-        })]);
-      }
-      for (const v of routing.vias) {
-        pcbEm.addLines([E.pcbViaLine({
-          netName: v.net, x: v.x, y: v.y,
-          viaDiameter: v.diameter, holeDiameter: v.drill,
-          ticketBase: pcbEm.nextTicket()
-        })]);
-      }
-    }
+    void pcbCfg; // kept for shape compatibility; copper keys are ignored by design
 
-    if (doPour) {
-      const { planPours } = require('./lib/pour');
-      pourPlan = planPours(design.board, {
-        net: (pcbCfg.pour && pcbCfg.pour.net) || 'GND',
-        clearance: rules.edgeClearance + 4,
-        layers: rules.layers >= 2 ? [1, 2] : [1],
-        stitch: pcbCfg.pour ? pcbCfg.pour.stitch !== false : true,
-        viaDiameter: rules.viaDiameter,
-        viaDrill: rules.viaDrill,
-        viaClearance: rules.clearance,
-        obstacles: {
-          pads: pcbGeoPads,
-          tracks: routing ? routing.tracks : [],
-          vias: routing ? routing.vias : []
-        }
-      });
-      let n = 0;
-      for (const p of pourPlan.pours) {
-        n += 1;
-        pcbEm.addLines([E.pcbPourLine({
-          netName: p.net,
-          layerId: p.layer,
-          name: `POUR${n}`,
-          path: p.path,
-          ticketBase: pcbEm.nextTicket()
-        })]);
-      }
-      for (const v of pourPlan.vias) {
-        pcbEm.addLines([E.pcbViaLine({
-          netName: v.net, x: v.x, y: v.y,
-          viaDiameter: v.width, holeDiameter: v.hole,
-          ticketBase: pcbEm.nextTicket()
-        })]);
-      }
+    // Strategy: the skill NEVER lays copper. No router, no pour planner — the
+    // deliverable is a placed board and a rats list the human finishes in the
+    // client. (--route/--pour no longer exist, so a copper-hungry design file
+    // cannot accidentally opt in.)
+    const rats = new Map();
+    for (const p of pcbGeoPads) {
+      if (!p.net || /^NC\d*$/i.test(p.net) || /^DNC\d*$/i.test(p.net)) continue;
+      rats.set(p.net, (rats.get(p.net) || 0) + 1);
     }
+    ratNets = [...rats.entries()].filter(([, n]) => n >= 2);
 
     const nets = new Set();
     for (const p of pcbGeoPads) if (p.net) nets.add(p.net);
-    if (pourPlan) for (const p of pourPlan.pours) nets.add(p.net);
     pcbEm.flush();
     if (nets.size) E.ensurePcbNets(pcbDoc.file, [...nets]);
     project.save();
-    log(`pcb: ${pcbParts.length} footprints`
-      + (routing ? `, ${routing.stats.tracks} tracks, ${routing.stats.vias} vias (${routing.stats.routedNets}/${routing.stats.nets} nets)` : '')
-      + (pourPlan ? `, ${pourPlan.pours.length} pours, ${pourPlan.vias.length} stitching vias` : '')
-      + (!routing && !pourPlan ? ' · placement-only (no routing/pour — add --route / --pour for copper)' : ''));
-    for (const u of (routing ? routing.unrouted : [])) log(`  ! unrouted ${u}`);
-    if (pourPlan) for (const n of pourPlan.notes) log(`  · pour: ${n}`);
+    log(`pcb: ${pcbParts.length} footprints · placement-only (this skill never routes or pours)`);
+    log(`  rats: ${ratNets.length} net(s) to connect by hand in the client — ${ratNets.map(([n, c]) => `${n}(${c}p)`).join(' ') || 'none'}`);
   }
 
   // ------------------------------------------------------------ validate
@@ -542,7 +476,7 @@ function main() {
       blocks: blocks.map((b) => b.title),
       ...routed.stats
     },
-    pcb: { parts: pcbParts.length, mode: doPcb ? (doRoute || doPour ? 'copper' : 'placed-only') : null },
+    pcb: { parts: pcbParts.length, mode: doPcb ? 'placed-only' : null, rats: ratNets.length },
     issues: routed.issues
   };
 
@@ -576,17 +510,14 @@ function main() {
   if (doPcb) {
     const { runDrc } = require('./lib/drc');
     const pcbDoc2 = project.requirePcb(design.pcb);
-    // Judge the copper against the SAME rules the router built it with — the
-    // DRC's own defaults are only a fallback, not the design's contract.
     const dr = design.pcbSpec.rules || {};
     drc = runDrc(project.pcbFile(pcbDoc2), {
       pourNet: (design.pcbSpec.pour && design.pcbSpec.pour.net) || 'GND',
       netWidths: design.netWidths || {},
-      // The mode is a fact, not a guess: this build either laid routing or it
-      // did not. D004/D006 (connectivity + pour promises) only apply to a
-      // routed board; judging a placement-only deliverable by them would flag
-      // copper that was never promised.
-      placedOnly: !doRoute,
+      // The deliverable is placement-only by policy: D004/D006 (copper
+      // promises) never judge it. The floors below still guard the placement
+      // itself, and stay live when a client-authored board is re-checked.
+      placedOnly: true,
       rules: {
         clearance: dr.clearance,
         minTrack: dr.trackWidth,
@@ -656,7 +587,7 @@ function main() {
       ? `${design.name} → ${requestedDir} (plan only, nothing written)`
       : `${design.name}.eprj3 at ${dir}`;
   console.log(`${where} — ${placements.length} components, ${routed.stats.segments} wire segments, `
-    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100${doPcb && !doRoute && !doPour ? ' (placed-only)' : ''}` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
+    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100 (placed-only)` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
 }
 
 main();

@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.12.1** · [Changelog](CHANGELOG.md) · [Standalone English page](README_en.md)
+**English** · [中文](#中文) · **v1.13.0** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -8,7 +8,7 @@
 
 > Generate `.eprj3` projects that open directly in EasyEDA Pro (嘉立创 EDA 专业版) — from a one-sentence feature request via your AI assistant, or from a few Node commands.
 
-An AI-agent skill that turns a feature request — or a single `design.json` — into a complete `.eprj3` folder project: a schematic laid out in signal-flow blocks with every net wired, a **placement-only PCB** (footprints + pad↔net links + board outline — **no tracks, no copper pours**; they are explicit opt-ins via `--route` / `--pour`), and **five automated gates** proving the result before you ever open the client.
+An AI-agent skill that turns a feature request — or a single `design.json` — into a complete `.eprj3` folder project: a schematic laid out in signal-flow blocks with every net wired, a **placement-only PCB** (footprints + pad↔net links + board outline — this skill **never routes and never pours**; tracks, vias and copper are finished by you in the EasyEDA Pro client), and **five automated gates** proving the result before you ever open the client.
 
 All code is self-authored Node CommonJS. **Zero third-party dependencies** — enforced by `node scripts/depcheck.js`, not just promised.
 
@@ -17,9 +17,9 @@ All code is self-authored Node CommonJS. **Zero third-party dependencies** — e
 - **Requirement intake, not guesswork** — a fixed input spec ([`docs/intake.md`](docs/intake.md)): required fields (function, input supply) block the build until answered; ask-tier fields come back as one batch of questions, each with its documented fallback; defaults are applied silently but shown so you can veto them.
 - **Keyword → recipe selection** — `usb`, `单片机/mcu`, `i2c`, `rs485`, `按键/button`… map onto 15 buildable sub-circuit templates (`recipe/`), merged in signal-flow order with de-duplicated ids.
 - **Derived power tree** — a regulator's input lands on the nearest rail *above* its output (12V→buck→5V→LDO→3V3 chains correctly), and a big linear drop prints a heat estimate instead of silently changing your BOM.
-- **Placement-first deliverables** — the shipped board is footprints placed by block flow with every pad's net linked; copper is explicit opt-in: `build.js --route` (2-layer maze router), `--pour` (ground plane + stitching fence), or manual `add-track` / `pour-auto` scripts.
+- **Placement-only deliverables — copper is always yours** — the shipped board is footprints placed by block flow with every pad's net linked, plus the board outline; this skill never auto-routes and never pours. `build.js` prints a `rats:` handoff list (nets to connect by hand in the client); layout to the machine, copper to the human.
 - **Human confirmation gates before anything is written** — `build.js --plan` rehearses the real build (true scores) into a throwaway dir; `autofix.js --diff` shows a line diff of every automatic edit first.
-- **Five gates** — format / ERC (E001–E007) / layout lint (L001–L010) / DRC + **DFM** (D001–D012: pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles — connectivity `D004` and pour `D006` only judged on boards that were actually routed) / design intent (I001–I006: polarity, decoupling, divider ratio, diff pairs). Every finding carries a concrete `fix:` line.
+- **Five gates** — format / ERC (E001–E007) / layout lint (L001–L010) / DRC + **DFM** (D001–D012: pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles — connectivity `D004` and pour `D006` are never judged on a board this skill built; imported or client-saved boards with copper get the full copper rules) / design intent (I001–I006: polarity, decoupling, divider ratio, diff pairs). Every finding carries a concrete `fix:` line.
 - **Measured, not hoped** — 20-case benchmark (`scripts/eval.js`) tracks seconds and token proxies in `eval/history.jsonl`; a 46-variant legal/illegal corpus (`test/corpus.js`) proves the gates actually catch corruption; `EPRJ3_DETERMINISTIC=1` rebuilds byte-identically for golden-file diffs.
 
 ### AI one-line install prompt
@@ -64,12 +64,12 @@ The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md))
 
 #### 3. What the agent runs internally
 
-1. `node scripts/intake.js check/resolve --req req.json` — maps your words to `recipe/` sub-circuits, derives the power chain (12V→buck→5V→LDO→3V3), annotates rail widths by current, pre-arms fine rules on dense merged boards, and emits `design.json`.
+1. `node scripts/intake.js check/resolve --req req.json` — maps your words to `recipe/` sub-circuits, derives the power chain (12V→buck→5V→LDO→3V3), and annotates rail widths from the declared current (handoff info for your copper work in the client), then emits `design.json`.
 2. **Confirmation gates** (mandatory before generation; every change is shown first): power scheme, MCU/part choices, interface names, board size/layers. `node scripts/build.js --plan` rehearses the real build without writing; `node scripts/autofix.js --diff` prints the diff of every automatic fix before applying it.
 3. `node scripts/build.js --design design.json --dir <project>` in one shot:
    - schematic: auto layout (signal-flow blocks), auto wiring, power symbols
-   - PCB: **placement only** — footprints auto-placed, pad↔net links bound, board outline; **no routing, no pour by default** (add `--route` / `--pour` only if you explicitly want copper, or finish it in the client)
-   - five gates: format / ERC / layout lint / DRC+DFM (pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles D009–D012; unrouted/no-pour rules are not judged on a placement deliverable) / design intent (polarity, decoupling, dividers)
+   - PCB: **placement only** — footprints auto-placed, pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
+   - five gates: format / ERC / layout lint / DRC+DFM (pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles D009–D012; `D004`/`D006` are never judged on a board this skill built — imported or client-saved copper is reviewed in full) / design intent (polarity, decoupling, dividers)
 4. On failure, the printed `fix:` lines say exactly what to change (usually: edit the design, re-run `build.js --force`); mechanical fixes go through `scripts/autofix.js`.
 5. `node scripts/render.js` writes SVG previews; `node scripts/open.js` opens the project in the EasyEDA Pro client.
 
@@ -81,7 +81,7 @@ After a build the agent reports:
 
 - project path: `<dir>/<name>.eprj3`
 - schematic: component / net / annotation counts
-- PCB: footprint + pad-net counts (placement only — no tracks/vias/pours unless you asked for them)
+- PCB: footprint + pad-net counts (placement only — no tracks, vias or pours; the build prints the `rats:` list of nets you still have to connect in the client)
 - verification: all five gates with 0 errors, e.g. `blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/100 (placed-only).`
 - whether the client was opened
 
@@ -95,7 +95,7 @@ A clean `build.js` exit *is* the quality proof. Review and fine-tune in EasyEDA 
 | --- | --- |
 | The AI entry point / workflow | [`SKILL.md`](SKILL.md) |
 | Requirement spec, questions, confirmation gates | [`docs/intake.md`](docs/intake.md) |
-| `design.json` contract, PCB rules, router limits | [`docs/build.md`](docs/build.md) |
+| `design.json` contract, PCB rules, copper policy | [`docs/build.md`](docs/build.md) |
 | Every check code and its fix | [`docs/checks.md`](docs/checks.md) |
 | Record-level eprj3 format | [`docs/format-reference.md`](docs/format-reference.md) |
 | Legal/illegal corpus maintenance | [`docs/corpus.md`](docs/corpus.md) |
@@ -114,7 +114,7 @@ MIT — see [LICENSE](LICENSE).
 
 > 用 AI 或几条 Node 命令，生成可在 EasyEDA Pro（嘉立创 EDA 专业版）直接打开的 `.eprj3` 工程。
 
-**当前版本：1.12.1** · [更新记录](CHANGELOG.md) · 独立英文页：[README_en.md](README_en.md)
+**当前版本：1.13.0** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -160,12 +160,12 @@ AI 会按固定输入规范追问（[`docs/intake.md`](docs/intake.md)：功能�
 
 AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的 Step 0 + Fast path）：
 
-1. `node scripts/intake.js check/resolve --req req.json` → 需求映射到 `recipe/` 里的子电路模板，自动推导电源链（12V→buck→5V→ldo→3V3）、按电流标注电源线宽、密集合并板预置细规则（供日后 `--route` 直接用），产出 `design.json`
+1. `node scripts/intake.js check/resolve --req req.json` → 需求映射到 `recipe/` 里的子电路模板，自动推导电源链（12V→buck→5V→ldo→3V3）、按电流把电源线宽**注记**进 design.json（交接信息，供你在客户端铺铜参考），产出 `design.json`
 2. **确认点**（生成前必经，改动都先给你看）：电源方案、主控/器件选型、接口命名、板框/层数；`node scripts/build.js --plan` 真实预演但不写盘；`node scripts/autofix.js --diff` 打印修复差异后才写入
 3. `node scripts/build.js --design design.json --dir <工程目录>` 一次完成：
    - 原理图：自动布局（信号流分块）、自动布线、电源符号
-   - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；默认不布线、不铺铜（明确需要铜皮时才加 `--route` / `--pour`，或用 `add-track` / `pour-auto` 人工路线）
-   - 五道门禁：格式 / ERC / 布局 / DRC+DFM（焊盘间距、板边、最小钻孔、环宽、丝印压盘、锐角 D009–D012；未承诺布线的板子不判 D004/D006） / 设计意图（极性、去耦、分压比等）
+   - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
+   - 五道门禁：格式 / ERC / 布局 / DRC+DFM（焊盘间距、板边、最小钻孔、环宽、丝印压盘、锐角 D009–D012；本 skill 自建的板恒为 placed-only，不判 D004/D006；导入或客户端返存的铜皮仍完整判定） / 设计意图（极性、去耦、分压比等）
 4. 失败时按错误信息里的 `fix:` 提示修改 design 后重跑（机械修复可交给 `scripts/autofix.js`）
 5. `node scripts/render.js` 预览、`node scripts/open.js` 在 EasyEDA Pro 客户端打开
 
@@ -177,7 +177,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
 
 - 工程路径：`<你的目录>/<项目名>.eprj3`
 - 原理图：多少元件、网络、标注
-- PCB：多少封装与焊盘网络（只管布局；默认不含走线/过孔/铺铜，需要时 `--route` / `--pour`）
+- PCB：多少封装与焊盘网络（只管布局；不含走线/过孔/铺铜——铜皮在客户端人工完成）
 - 验证结果：五道门禁 0 错误
 - 是否已自动打开客户端
 

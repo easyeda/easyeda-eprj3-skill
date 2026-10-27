@@ -1,6 +1,6 @@
 ---
 name: easyeda-eprj3
-description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto schematic layout + wiring, auto PCB PLACEMENT (routing and copper pour are opt-in --route/--pour), then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
+description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto schematic layout + wiring, auto PCB PLACEMENT (footprints + pad-net links + board outline; routing and copper pour are out of scope — done in the client), then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
 ---
 
 # EasyEDA Pro eprj3 Skill
@@ -9,12 +9,15 @@ Author **EasyEDA Pro** (嘉立创EDA专业版) folder-format `.eprj3` projects. 
 file in, one validated project out: schematic laid out in signal-flow blocks,
 every net wired, **PCB placed** — then four independent gates.
 
-**Strategy: placement only.** The delivered PCB carries footprints, pad↔net
-links and the board outline — no tracks, no pours. Routing and copper pour are
-opt-in (`build.js --route --pour`), because the board is meant to be a clean
-starting point a human finishes, not copper a human first has to delete. The
-DRC knows the mode: `D004` (unrouted nets) and `D006` (missing pour) are not
-judged on a placement deliverable.
+**Strategy: placement only — never copper.** The delivered PCB carries
+footprints, pad↔net links and the board outline; this skill **never** auto-routes
+and **never** pours. Layout is the machine's job, copper is the human's: machine
+routing sacrifices readability and electrical quality, while the EasyEDA client
+gives a person full interactive control — so the skill's boundary is schematic +
+netlist + placement + checks. `build.js` prints a **rats handoff list** (the nets
+to connect by hand in the client). The DRC never judges `D004` (unrouted nets) or
+`D006` (missing pour) on a board this skill built; imported or client-saved
+boards that carry tracks/pours are still reviewed against the full copper rules.
 
 Format ground truth: [`docs/format-reference.md`](docs/format-reference.md). Deep
 details are load-on-demand — see [Where to read next](#where-to-read-next) instead
@@ -52,7 +55,8 @@ If the user supplied a complete design already, skip to the fast path.
 # 1. write a design file (see below), then:
 node scripts/build.js --design design.json --dir <absolute project dir>
 #    ... builds schematic + PCB PLACEMENT, runs validate + ERC + lint + DRC
-#    add --route and/or --pour only if the user explicitly wants copper laid
+#    the PCB is placement-only; the run prints the rats list of nets to
+#    connect by hand in the EasyEDA client (this skill never routes or pours)
 node scripts/render.js --dir <project dir>      # SVG preview → <project>/preview/
 node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
@@ -67,7 +71,8 @@ blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/1
 `--force` rebuilds an existing directory (deletes only skill-owned files:
 index, `sch/`, `pcb/`, `panel/`, `.tmp/`). `--dry-run` rehearses into a throwaway
 directory and deletes it. `--schematic-only` skips the PCB.
-`--report <file>` writes the machine-readable report (validate/erc/lint/drc + stats).
+`--report <file>` writes the machine-readable report (validate/erc/lint/drc +
+stats; its `pcb` section is `{parts, mode: 'placed-only', rats}`).
 
 ## design.json — the whole contract
 
@@ -87,7 +92,7 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
     { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "330R",
       "pins": { "1": "V_LED", "2": "LED_A" } }
   ],
-  "pcb": { "place": { "R1": [400, 400, 0] }, "pour": { "net": "GND" } }
+  "pcb": { "place": { "R1": [400, 400, 0] } }
 }
 ```
 
@@ -96,8 +101,8 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `name` | project/index name (does not have to match the directory) |
 | `board.width/height` | board outline size in mil; **optional** — the board auto-grows to fit the parts |
 | `powers` | net → `"up"` (supply) or `"down"` (ground): these get **power flags** instead of wires |
-| `nets` | per-net knobs: `{ "width": 30 }` (wider track) or `{ "class": "POWER" }` (see `netClasses`) |
-| `netClasses` | `{ "POWER": { "width": 30 } }` — named width groups referenced from `nets` |
+| `nets` | per-net **annotations**: `{ "width": 30 }` records the intended track width (derived from current) — it never lays copper; the DRC uses it as a per-net floor when reviewing imported tracks. `{ "class": "POWER" }` groups via `netClasses` |
+| `netClasses` | `{ "POWER": { "width": 30 } }` — named width groups referenced from `nets` (annotation only) |
 | `blocks` | titled boxes in signal-flow order; parts left out join the last block; keep **2–8 related parts** per block |
 | `parts[].id` | reference designator **and** the part key used by `blocks` / `pcb.place` |
 | `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
@@ -107,9 +112,8 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `parts[].rotation` | 0 / 90 / 180 / 270 |
 | `expect` | optional intent block for the fifth gate — see below |
 | `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed |
-| `pcb.pour` | `{ "net": "GND", "stitch": true }` — the pour recipe, used **only when you build with `--pour`** (default: no pour; the net/stitch keys select what --pour lays) |
-| `pcb.route` | informational under the placement-first default; routing happens only with `--route` |
-| `pcb.rules` | override router/DRC numbers (`clearance`, `trackWidth`, `viaDiameter`, `viaDrill`, `layers`, `edgeClearance`, `minDrill`, `minRing`, `minAngle`). 0.5 mm-pitch parts want `clearance 6, trackWidth 6, grid 5` |
+| `pcb.rules` | DRC floors only: `clearance`, `trackWidth` (→ min track), `edgeClearance`, `minDrill`, `minRing`, `minAngle`. 0.5 mm-pitch parts want `clearance 6, trackWidth 6` |
+| `pcb.pour` / `pcb.route` | **removed (1.13)** — this skill never pours or routes; writing these keys has no effect |
 
 Inline parts (no library file needed) — use for any IC, connector or module:
 
@@ -177,7 +181,7 @@ real override rather than a find-and-replace in your head.
 | format | `node scripts/validate.js --dir <p>` | structural/reference corruption |
 | electric | `node scripts/erc.js --dir <p> [--design design.json]` | floating pins, dead-end nets, netlist≠design, PCB↔schematic mismatch |
 | layout | `node scripts/lint-layout.js --dir <p>` | overlapping symbols, wires through bodies, parts outside their block, off-grid |
-| copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). `D004` (unrouted) and `D006` (no pour) apply **only to routed boards** — a placement deliverable is judged by placement rules |
+| copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). A board this skill built is always `placed-only` — `D004` (unrouted) and `D006` (no pour) are never judged on it; imported or client-saved boards that carry tracks/pours get the full copper rules |
 | intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations — mistakes *inside* design.json |
 
 `--json` on any of them gives machine-readable output (every finding carries a
@@ -195,6 +199,11 @@ seen it. Never hand-edit project files unless you have read
 
 ## Incremental editing (when a design file is overkill)
 
+Copper primitives are out of the skill since 1.13 — `add-track.js`,
+`add-via.js`, `add-pour.js`, `add-fill.js` and `pour-auto.js` were removed;
+tracks, vias and pours are drawn in the EasyEDA client. Keep-out regions
+(`add-region.js`) stay, because a keepout is not copper.
+
 ```bash
 node scripts/pins.js --dir <p>                       # every pin + exact tip + net
 node scripts/add-wire.js --dir <p> --sch S --sheet P \
@@ -202,8 +211,7 @@ node scripts/add-wire.js --dir <p> --sch S --sheet P \
 node scripts/netlist.js --dir <p>                    # what is actually connected
 node scripts/add-symbol.js  --dir <p> --sch S --sheet P --symbol RES --footprint R0603 --x 300 --y -440 --refdes R1
 node scripts/add-footprint.js --dir <p> --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
-node scripts/add-track.js / add-via.js / add-pour.js / add-text.js / add-shape.js / add-pcb-shape.js / add-pcb-text.js / add-region.js / add-fill.js
-node scripts/pour-auto.js --dir <p> [--net GND] [--layers 1,2] [--replace]  # pour from the board outline + via fence
+node scripts/add-text.js / add-shape.js / add-pcb-shape.js / add-pcb-text.js / add-region.js
 node scripts/recipe.js list | show <name> | apply <name> --to <design.json>  # parameterised sub-circuits
 node scripts/generate-symbol.js from-pins --dir <p> --name <sym> --pins "1:A;2:B"
 node scripts/generate-footprint.js from-pads --dir <p> --name <fp> --pads "1:-16,0,31,35;2:16,0,31,35"
@@ -247,7 +255,7 @@ footprint sharing a display name cannot collide.
 
 | Need | Read |
 | --- | --- |
-| design.json edge cases, multi-sheet, PCB rules, router limits | [`docs/build.md`](docs/build.md) |
+| design.json edge cases, multi-sheet, PCB rules, copper policy | [`docs/build.md`](docs/build.md) |
 | every check code and what it means | [`docs/checks.md`](docs/checks.md) |
 | record-level format spec | [`docs/format-reference.md`](docs/format-reference.md) |
 | a full worked manual flow (no design file) | [`docs/workflow.md`](docs/workflow.md) |
@@ -276,11 +284,12 @@ footprint sharing a display name cannot collide.
   `validate.js` first, then compare with [`examples/blink`](examples/blink).
   Set `EPRJ3_DETERMINISTIC=1` to build byte-identical projects for golden-file
   diffs.
-- `add-pour` writes the pour *region*; the client recomputes filled copper on open.
-  Pour style is SOLID (the only real-client-backed mode).
-- The router (`--route`) and pour (`--pour`) are opt-in tools, not the
-  deliverable default. The router is a 2-layer maze router: no differential
-  pairs, length matching or impedance control. Hierarchical multi-sheet
+- No routing, no copper pour — by design. The skill never writes tracks, vias
+  or pours; copper is done by a human in the EasyEDA client. The handoff is the
+  `rats:` line `build.js` prints (nets still to connect, with pad counts), and
+  every `pcb.rules` number you declare is used as the DRC floor when the DRC
+  reviews imported or client-saved copper. Differential pairs, length matching
+  and impedance control are client tasks too. Hierarchical multi-sheet
   navigation and simulation documents are not authored — finish those in the
   client.
 - `DIFF_PAIR`/`SHORT` special symbols and the A4/A3 frame symbols are not yet

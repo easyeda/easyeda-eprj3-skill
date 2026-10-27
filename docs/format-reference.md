@@ -243,6 +243,13 @@ per-component blocks (COMPONENT + PAD_NETs + Designator/Footprint/… attrs) →
 
 ### PCB graphics, STRING, VIA, POUR, FILL, REGION
 
+**Scope note (since 1.13):** these record shapes stay fully supported for
+**reading and validation** — imported projects and client-re-saved boards
+contain them, and `validate`/`drc` review that copper — but this skill no
+longer **writes** POUR/LINE/VIA/FILL records: tracks, vias and pours are drawn
+in the EasyEDA client. Keep-outs (REGION) and plain PCB graphics are still
+authored by the skill's scripts.
+
 The example PCB main doc has only LINE/POLY/POUR/COMPONENT/NET/LAYER (its FILL records live in footprint docs); STRING/VIA/ARC/REGION follow the real samples in the easyeda-pro-format-skill repo (`examples/PCB`), merged with the official example's `partitionId:""` / `groupId:0` / `locked:false` / `zIndex:-1` conventions. The real POUR record quoted below is authoritative. Where the format skill's JSON Schemas disagree with these samples (numeric `groupId`, `bold/italic: 0`, omitted `propagationDelay`, array `prohibitType`, `pourType` object), the samples win — see `scripts/tools/audit-format.js` for the full list.
 
 ```jsonc
@@ -256,13 +263,13 @@ The example PCB main doc has only LINE/POLY/POUR/COMPONENT/NET/LAYER (its FILL r
 {"type":"REGION","ticket":179,"id":"..."}||{"partitionId":"","groupId":0,"layerId":1,"width":1,"prohibitType":["COPPER","TRACK"],"path":[["R",200,400,300,200,0,0]],"locked":false,"zIndex":-1,"regionType":"PROHIBIT","name":"KEEP1"}|   // regionType PROHIBIT|CONSTRAINT
 ```
 
-- FILL field order follows the real footprint-doc records (`groupId,netName,layerId,width,fillStyle,path,locked,zIndex,isBridgingCopper,networkList,refs`) with the main-doc `partitionId:""` prepended. Only `fillStyle:"SOLID"` is sample-backed — grid/inner-plane modes and POUR's line/grid `pourType` variants have no verifiable sample and are rejected by the scripts.
+- FILL field order follows the real footprint-doc records (`groupId,netName,layerId,width,fillStyle,path,locked,zIndex,isBridgingCopper,networkList,refs`) with the main-doc `partitionId:""` prepended. Only `fillStyle:"SOLID"` is sample-backed — grid/inner-plane modes and POUR's line/grid `pourType` variants have no verifiable sample.
 - REGION `prohibitType` is an array of string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE`. `name` is optional and only written when provided.
 - The legacy PROP record no longer exists in the format; per-primitive styling such as `specialColor` now lives on the ATTR record.
 
 - PCB path arrays use the docs encoding: `[x0,y0,"L",...]` polyline, `["R",x,y,w,h,rot,isCCW,round]` rect (anchor = min-x/max-y corner, covers `y ∈ [y−h, y]`), `["CIRCLE",cx,cy,r,isCCW]`, `"ARC"angle` / `"C"` bezier segments; complex pour outlines are arrays of simple polygons (first CW outer, rest CCW holes). The skill's scripts take bottom-left corner + size and emit the anchored rect form for you (`E.rectPath`).
-- POUR is the region record only — the client recomputes the filled copper (POURED records) on open. `width: 0.2` and `pourType {pourType:"SOLID",fineness:8}` are quoted from the real example.
-- The pour/via `netName` must name an existing NET record (`ensurePcbNets` inserts one before renumbering).
+- POUR is the region record only — the client recomputes the filled copper (POURED records) on open. `width: 0.2` and `pourType {pourType:"SOLID",fineness:8}` are quoted from the real example. (The skill reads and validates these records since 1.13; it does not author them.)
+- The pour/via `netName` must name an existing NET record — the readers enforce that invariant; `ensurePcbNets` is what keeps the NET list complete for pad nets during authoring.
 
 Invariants:
 

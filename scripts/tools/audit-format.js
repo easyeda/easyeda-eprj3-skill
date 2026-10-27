@@ -152,7 +152,6 @@ function main() {
   ]) run([SCRIPTS + '/add-shape.js', shape[0], '--dir', proj, '--sch', 'Schematic1', '--sheet', 'P1', ...shape.slice(1)]);
   run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1', '--symbol', 'T_RES', '--footprint', 'T_FP0402', '--x', '300', '--y', '300', '--refdes', 'R1', '--nets', '1:VCC,2:SIG']);
   run([SCRIPTS + '/add-footprint.js', '--dir', proj, '--pcb', 'PCB1', '--symbol', 'RES', '--footprint', 'R0603', '--x', '800', '--y', '300', '--refdes', 'R2']);
-  run([SCRIPTS + '/add-track.js', '--dir', proj, '--pcb', 'PCB1', '--net', 'SIG', '--x1', '300', '--y1', '316.54', '--x2', '450', '--y2', '316.54', '--layer', '1', '--width', '10']);
   run([SCRIPTS + '/add-pcb-text.js', '--dir', proj, '--pcb', 'PCB1', '--value', 'REV A', '--x', '2000', '--y', '2800', '--layer', '3']);
   for (const shape of [
     ['rect', '--x', '500', '--y', '500', '--w', '400', '--h', '300'],
@@ -160,10 +159,6 @@ function main() {
     ['circle', '--cx', '700', '--cy', '650', '--r', '100'],
     ['arc', '--x1', '500', '--y1', '500', '--x2', '900', '--y2', '500', '--angle', '90']
   ]) run([SCRIPTS + '/add-pcb-shape.js', shape[0], '--dir', proj, '--pcb', 'PCB1', ...shape.slice(1)]);
-  run([SCRIPTS + '/add-via.js', '--dir', proj, '--pcb', 'PCB1', '--x', '700', '--y', '316.54', '--net', 'SIG']);
-  run([SCRIPTS + '/add-pour.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND', '--x', '100', '--y', '100', '--w', '3800', '--h', '2800']);
-  run([SCRIPTS + '/add-fill.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND', '--x', '100', '--y', '100', '--w', '400', '--h', '300']);
-  run([SCRIPTS + '/add-fill.js', 'poly', '--dir', proj, '--pcb', 'PCB1', '--pts', '1000,1000,1400,1000,1400,1300']);
   run([SCRIPTS + '/add-region.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--prohibit', 'COPPER,TRACK', '--name', 'KEEP1', '--x', '200', '--y', '200', '--w', '300', '--h', '200']);
   run([SCRIPTS + '/validate.js', '--dir', proj]);
 

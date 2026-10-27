@@ -343,21 +343,22 @@ function runDrc(file, opts) {
     if (attached.length < count) {
       add('D004', `net "${net}" is not fully routed (${attached.length}/${count} pads have copper)`, {
         net,
-        fix: `the router could not reach every pad: enlarge the board, pin the parts apart with pcb.place, or lower pcb.rules.clearance/trackWidth for fine-pitch parts`
+        // Only fires on boards that DO have copper (imported or client-saved):
+        // this skill never routes, so its own boards run in placed-only mode.
+        fix: `finish this net's routing in the EasyEDA client (this skill does not route); if the copper was already there, a track endpoint may have moved — check pads that lost their trace`
       });
     }
   }
 
-  // D006 — ground pour. Expected on a routed board; on a placement-only board
-  // only checked when copper already exists (a stray pour on the wrong net is
-  // still a defect the deliverable should report).
+  // D006 — ground pour. Only judged on boards that HAVE copper (imported or
+  // client-saved); a placed-only board from this skill never promises a plane.
   if (geo.pours.length && !geo.pours.some((p) => p.net === pourNet)) {
     add('D006', `a pour exists but none on net "${pourNet}"`, {
-      fix: `set pcb.pour.net to "${pourNet}" (or pass --pour-net) and re-run build.js --force`
+      fix: `the board has pours but none on "${pourNet}" — fix the pour's net in the client, or judge with --pour-net <net>`
     });
   } else if (!placedOnly && !geo.pours.length) {
     add('D006', 'no copper pour on the board (expected a ground plane)', {
-      fix: `enable the pour: build with --pour, or set the design's pcb.pour and re-run build.js --force`
+      fix: `add the ground pour in the EasyEDA client (this skill never pours); or if this board is intentionally planeless, run drc with --placed-only`
     });
   }
 

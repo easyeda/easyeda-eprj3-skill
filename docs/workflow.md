@@ -11,7 +11,7 @@ Ask the user:
 1. **Storage path** (absolute, no existing `.eprj3`).
 2. **Project name** (defaults to folder basename).
 3. **Schematic requirements**: components (pin numbers/names), nets, net labels, power symbols, net ports, free text, graphic annotations, sheet count.
-4. **PCB requirements**: board outline size, placement, pad-to-net map, tracks, vias, copper pours, silkscreen text.
+4. **PCB requirements**: board outline size, placement, pad-to-net map, silkscreen text. Tracks, vias and copper pours are **not** authored by this skill (since 1.13) — note them for the client-side handoff, but do not expect the build to lay them.
 5. **Component geometry**: pin/pad specs per part (from the datasheet). There is no `.elibz2` import — the scripts generate symbols/footprints from specs.
 
 Refuse to start until the answers are concrete.
@@ -120,11 +120,16 @@ node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
 
 Both commands act on the single sheet or PCB document passed (`--sch/--sheet` or `--pcb`); with multiple sheets, renumber each one and keep prefixes globally unique yourself.
 
-## 8. PCB placement (and, by hand, copper)
+## 8. PCB placement (copper is the client's job)
 
-The declared strategy is placement-only: `add-footprint` is the deliverable.
-`add-track` / `add-via` / `add-pour` below are the manual opt-in path for when
-you want copper — the declarative equivalents are `build.js --route` / `--pour`.
+The declared strategy is placement-only **and always has been since 1.13**:
+`add-footprint` is the deliverable. The copper primitives
+(`add-track.js`, `add-via.js`, `add-pour.js`, `add-fill.js`, `pour-auto.js`)
+and the `build.js --route` / `--pour` flags were removed from the skill —
+tracks, vias and pours are drawn in the EasyEDA Pro client, which is exactly
+where a human has full control. `build.js` prints the `rats:` handoff list of
+nets still to connect. Keep-out regions (`add-region.js`) stay: a keepout is
+placement advice, not copper.
 
 ```bash
 node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0603 \
@@ -133,13 +138,7 @@ node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0
 
 `--angle` defaults to `0` (no rotation) — pass it explicitly when the footprint should sit rotated.
 
-```bash
-node scripts/add-track.js --dir <dir> --pcb PCB1 --net SIG \
-  --x1 300 --y1 316.54 --x2 450 --y2 316.54 --layer 1 --width 10
-node scripts/add-via.js --dir <dir> --pcb PCB1 --x 700 --y 316.54 [--net SIG]
-```
-
-PCB graphics and pours:
+PCB graphics and keepout regions:
 
 ```bash
 node scripts/add-pcb-shape.js rect   --dir <dir> --pcb PCB1 --x 500 --y 500 --w 400 --h 300 [--layer 1]
@@ -147,30 +146,19 @@ node scripts/add-pcb-shape.js poly   --dir <dir> --pcb PCB1 --pts "500,500,900,5
 node scripts/add-pcb-shape.js circle --dir <dir> --pcb PCB1 --cx 700 --cy 650 --r 100
 node scripts/add-pcb-shape.js arc    --dir <dir> --pcb PCB1 \
   --x1 500 --y1 500 --x2 900 --y2 500 --angle 90
-node scripts/add-pour.js rect --dir <dir> --pcb PCB1 --net GND \
-  --x 100 --y 100 --w 3800 --h 2800 [--layer 1]     # SOLID style only
-node scripts/add-pour.js poly --dir <dir> --pcb PCB1 --net GND \
-  --pts "100,100,3900,100,3900,2900,100,2900" [--name POUR1]   # --name omitted: next free POURn
 node scripts/add-pcb-text.js --dir <dir> --pcb PCB1 --value "REV A" \
   --x 2000 --y 2800 [--layer 1] [--origin 4] [--angle 0]
-```
-
-Static copper fill and keepout regions:
-
-```bash
-node scripts/add-fill.js rect --dir <dir> --pcb PCB1 [--net GND] \
-  --x 100 --y 100 --w 400 --h 300            # or: poly --pts "..."
 node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRACK" \
   --x 200 --y 200 --w 300 --h 200 [--name KEEP1] [--region-type PROHIBIT|CONSTRAINT]
 ```
 
 `--prohibit` accepts the format spec's string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE` (comma-separated, emitted as the `prohibitType` array). The legacy PROP record no longer exists in the format — per-primitive styling such as `specialColor` now lives on the ATTR record.
 
-`add-pour` writes the POUR region record; the client recomputes the filled copper when the file opens. PCB shape arcs use a signed sweep angle (CCW positive).
+POUR/LINE/VIA records remain fully readable and checkable — imported and client-saved projects contain them, and the DRC reviews that copper — but the skill no longer writes them. PCB shape arcs use a signed sweep angle (CCW positive).
 
-Rectangles (`init` board outline, `add-pcb-shape/add-pour/add-fill/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000` (resize with `init --board-w/--board-h`).
+Rectangles (`init` board outline, `add-pcb-shape/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000` (resize with `init --board-w/--board-h`).
 
-`--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when routing: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — the blink example routes R1 pad 2 (x=516.54) to C1 pad 1 (x=783.46) on the SIG net.
+`--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when the human routes in the client: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — good escape directions at placement time are what make the later copper work clean.
 
 ## 9. Validate (loop)
 
@@ -210,7 +198,8 @@ Tell the user:
 <name>.eprj3 at <dir>
   - <N> schematic components + power symbols / ports
   - <M> wires / net labels, annotations
-  - <K> PCB footprints, <T> tracks, vias, pours
+  - <K> PCB footprints + pad-net links (placement only) — rats: <R> net(s) to
+    route/pour in the EasyEDA client
   - Validated (0 errors, 0 warnings)
   - Opened in EasyEDA Pro
 ```

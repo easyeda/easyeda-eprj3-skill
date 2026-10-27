@@ -97,31 +97,35 @@ the block is too dense — raise `layout.cellW/cellH` or split the block.
 | `D012` | warn | 2 | same-net track segments meeting at an acute angle (`minAngle`) |
 
 `D001` on two pads of the *same* footprint is ignored (that is the package's land
-pattern), but everything else is enforced. `D004` skips poured nets, because the
-plane is what connects them.
+pattern), but everything else is enforced. On a board that actually carries
+copper, `D004` skips nets a pour already connects — the plane is what joins them.
 
-**Placement-only mode.** The build strategy ships boards with footprints placed
-but not routed (routing/pour are `--route`/`--pour` opt-ins). A placed-only
-board has no copper to judge, so `D004` (net not routed) and `D006` (no ground
-pour) are skipped — flagging copper that was never promised would punish every
-correct deliverable. `runDrc` reports `mode: 'placed-only' | 'routed'` and
-`skipped: ['D004','D006']`; the mode is explicit from `build.js` and, when the
-CLI runs alone, read off the file (a board with no tracks is placed-only). The
-CLI can force it with `--placed-only` / `--routed`. Everything that applies to
-placement itself — `D001` pad spacing, `D003` edge, `D005` outline, `D007`
-orphan pad, and all four DFM rules — still runs.
+**Copper policy.** Since 1.13 the skill has no router and no pour generator:
+every board it builds is **placed-only** — footprints, pad↔net links, board
+outline, and the `rats:` handoff list (`build.js` prints the nets to connect by
+hand in the client; the report says `pcb: {parts, mode: 'placed-only', rats}`).
+`D004` (net not routed) and `D006` (no ground pour) are therefore **never**
+judged on a self-built board — flagging copper that was never promised would
+punish every correct deliverable. Everything that applies to placement itself —
+`D001` pad spacing, `D003` edge, `D005` outline, `D007` orphan pad, and all four
+DFM rules — still runs. A project **imported from, or re-saved by, the client**
+that contains tracks/pours/vias is detected as a copper-carrying board and gets
+the full review, D004/D006 included. `runDrc` reports `mode` and, for placed
+only, `skipped: ['D004','D006']`; the CLI can force either reading with
+`--placed-only` / `--routed` (auto-detect: a board with no tracks is placed-only).
 
 ### DFM rules (D009–D012)
 
 - **`D009` min drill** — plated holes under `minDrill` (default 12 mil = 0.30 mm,
   the JLCPCB basic-process floor) are unbuildable, so this is an error. It checks
-  via `holeDiameter` and the footprint pad `hole` field; exactly 12 mil passes
-  (the shipped default via is 24/12). Fix: raise `pcb.rules.viaDrill`, or pick a
-  footprint whose through-hole pads drill ≥ 12 mil.
+  via `holeDiameter` and the footprint pad `hole` field; exactly 12 mil passes.
+  Fix: on a board this skill placed, choose a footprint whose through-hole pads
+  drill ≥ 12 mil (the drill comes from the design, not from copper); on imported
+  or client-added copper, fix or delete the offending via in the client.
 - **`D010` min annular ring** — ring = (outer − drill)/2, under `minRing`
   (default 4 mil ≈ 0.1 mm) the drill can break out of the copper during
   plating. A warning with a deliberately conservative floor: fabs quote
-  0.10–0.15 mm, and the 24/12 default via (ring 6 mil) must stay quiet.
+  0.10–0.15 mm, and the shipped through-hole defaults must stay quiet.
 - **`D011` silk on pad** — a `STRING` record on the top/bottom silkscreen layer
   (layerId 3/4) whose estimated text bbox crosses a copper pad *of that board
   side* (top silk vs layer 1/12 pads, bottom silk vs layer 2/12). Silk printed
@@ -133,17 +137,20 @@ orphan pad, and all four DFM rules — still runs.
   track segments that SHARE an endpoint and bend under `minAngle` (default 45°)
   form an etch wedge that traps acid and thins the insulation. Only segments
   meeting at a shared endpoint are compared, never every pair. A join folded
-  back exactly (0°) is overlapping copper — what the router emits as pad stubs —
-  and is left to the spacing rules; 45° chamfers are legal. Fix: reroute as a
-  45° chamfer/arc, more room via `pcb.place`, re-run `build.js --force`.
+  back exactly (0°) is overlapping copper and is left to the spacing rules;
+  45° chamfers are legal. Fix (the copper is always client- or import-owned):
+  reroute it as a 45° chamfer/arc in the client, or delete the segment there;
+  if the placement forced the pinch, give more room via `pcb.place` and re-run
+  `build.js --force` before the copper work.
 
-Defaults: clearance 10, min track 8, edge 12 mil, via 16–60, min drill 12, min
-ring 4, min angle 45. `build.js` judges the copper against the SAME `pcb.rules`
-the router built it with, so a design that declares fine-pitch rules is judged
-by them, not by these defaults. The three DFM thresholds are configurable the
-same way through `runDrc(file, {rules})` — and through the design contract:
-`pcb.rules.minDrill` / `minRing` / `minAngle` are forwarded by `build.js`, so a
-design that declares a fab floor is judged by its own floor, not the default.
+Defaults: clearance 10, min track 8, edge 12 mil, min drill 12, min ring 4, min
+angle 45. `build.js` judges placement — and any imported or client-saved copper
+it reviews — against the SAME `pcb.rules` the design declares, so a board that
+declares fine-pitch floors is judged by them, not by these defaults. The three
+DFM thresholds are configurable the same way through `runDrc(file, {rules})` —
+and through the design contract: `pcb.rules.minDrill` / `minRing` / `minAngle`
+are forwarded by `build.js`, so a design that declares a fab floor is judged by
+its own floor, not the default.
 
 ## Intent — `intent.js` (the fifth gate)
 
@@ -158,7 +165,7 @@ without `expect`/`polarity` skips the gate entirely.
 | `I003` | error | 8 | `expect.pairs`: a declared pair is unused or has unbalanced pin counts |
 | `I004` | error | 8 | `expect.valueRange`: a part's value is outside its declared range (unparseable values warn) |
 | `I005` | error | 10 | `expect.divider`: top/bottom resistors are mis-wired, or the actual ratio (from parsed values) is outside `ratio ± tol` |
-| `I006` | warn | 2 | a declared pair is remembered but the 2-layer router will not route it as a pair |
+| `I006` | warn | 2 | a declared pair is remembered for the handoff — routing it as a differential pair is a client task (this skill never routes) |
 
 Values parse in engineering notation: `10k` `330R` `100nF` `4.7uF` `1MΩ`.
 

@@ -1,8 +1,8 @@
 {
-  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<topdir>/<file stem>' as eval prints them: examples/designs/x → 'examples/x', recipe/x → 'recipe/x', examples/intake/x.req.json → 'intake/x'. 'copper': true builds that case with --route --pour so the router + pour path stays under regression while the shipped default is placement-only.",
+  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<topdir>/<file stem>' as eval prints them: examples/designs/x → 'examples/x', recipe/x → 'recipe/x', examples/intake/x.req.json → 'intake/x'. Since 1.13 the skill never routes or pours: every case builds the same placement-only deliverable.",
   "_defaults": { "minLint": 85, "minDrc": 80, "maxSeconds": 20 },
-  "examples/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10, "copper": true },
+  "examples/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
   "examples/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
-  "recipe/ldo-3v3": { "minDrc": 100, "maxSeconds": 10, "copper": true },
+  "recipe/ldo-3v3": { "minDrc": 100, "maxSeconds": 10 },
   "recipe/rs485": { "minLint": 95, "minDrc": 100, "maxSeconds": 10 }
 }

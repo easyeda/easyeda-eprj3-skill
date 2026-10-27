@@ -12,12 +12,14 @@ Options: `--force` (rebuild; removes index, `sch/`, `pcb/`, `panel/`, `.tmp/`),
 `--dry-run` (rehearse into a throwaway dir, then delete it),
 `--plan` (print the confirmed plan — power chain, nets, widths, rules, intent —
 then run the same rehearsal; the target dir is never touched. This is the
-human confirmation gate), `--schematic-only`,
-`--route` / `--pour` (opt-in copper: maze routing / ground plane + stitching
-fence — **off by default, the shipped board is placement-only**;
-`--no-route` / `--no-pour` remain accepted as legacy no-ops),
+human confirmation gate; its board line reads
+"只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）"), `--schematic-only`,
 `--report <file>`, `--quiet`, `--keep-tmp`,
 `--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`.
+
+`--route`, `--pour`, `--no-route` and `--no-pour` were **removed in 1.13** —
+the skill never routes and never pours, so passing any of them is an
+`Unknown option` error. See "Copper policy" below.
 
 Exit 0 means **every gate passed**. Non-zero means the described error count;
 the printed codes point at the rule that failed.
@@ -30,8 +32,8 @@ the printed codes point at the rule that failed.
 | `board` | `{width,height}` | `1600×1000` | mil; the board outline is generated and **auto-grown** to fit the parts |
 | `sheet` | `{schematic,name}` | `Schematic1` / `P1` | `name` is the sheet title (file name) |
 | `powers` | object | `{}` | net → `"up"`/`"down"`; those nets become power flags |
-| `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` gives a net a wider track |
-| `netClasses` | object | `{}` | `{ "POWER": { "width": 30 } }` — groups referenced from `nets` via `{ "class": "POWER" }` |
+| `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` **annotates** the intended track width (nothing is routed — the DRC uses it as a per-net floor when it reviews imported copper) |
+| `netClasses` | object | `{}` | `{ "POWER": { "width": 30 } }` — groups referenced from `nets` via `{ "class": "POWER" }` (annotation only) |
 | `blocks` | array | one implicit block | `[{ title, parts:[id,…] }]` in signal-flow order; keep 2–8 related parts per block |
 | `parts` | array | **required** | see below |
 | `expect` | object | — | fifth-gate declarations (`decoupling`, `pairs`, `valueRange`, `divider`) — see the end of this file |
@@ -111,64 +113,67 @@ auto footprint when one exists: fewer tokens, no invented coordinates.
 | Field | Default | Notes |
 | --- | --- | --- |
 | `place` | auto | `{ "R1": [x, y, angle] }` — explicit placement wins |
-| `route` | off | only `--route` lays tracks; this key records the intent |
-| `pour` | off | `{ net, stitch }` is the pour recipe **used by `--pour`**; nothing is poured without the flag |
-| `rules` | see below | router + DRC numbers |
+| `rules` | see below | DRC floors (see below) |
+| `route` / `pour` | — | **removed (1.13)** — writing them has no effect; this skill never routes or pours |
 
-`rules` defaults (see `DEFAULT_RULES` in `scripts/lib/pcb-route.js`): `grid 10`,
-`clearance 10`, `trackWidth 8`, `viaDiameter 24`,
-`viaDrill 12`, `edgeClearance 20`, `layers 2`, `bendCost 6`, `viaCost 120`.
-The copper gate adds DFM floors, also overridable here: `minDrill 12`
-(0.30 mm — JLC basic process), `minRing 4` (annular ring, warn), `minAngle 45`
-(acute track bend, warn). Dense merged boards (2+ recipes / 12+ parts) get
-`clearance 6, trackWidth 6, grid 5, edgeClearance 12` pre-armed by `intake.js`
-— inert until you build with `--route`, but ready: at 10 mil the pad keep-outs
-overlap and the router would have no legal channel.
-
-The router (only when you pass `--route`) skips the poured net (the plane
-connects it) and reports anything it cannot route; unrouted nets surface as
-`D004` from the DRC. A placement-only board (the default) has no tracks at all
-and is not judged by `D004`/`D006`.
+`rules` keys that mean something now, all DRC floors: `clearance 10`,
+`trackWidth 8` (also the minimum track width the copper gate accepts),
+`edgeClearance 20`, plus the DFM floors `minDrill 12` (0.30 mm — JLC basic
+process), `minRing 4` (annular ring, warn) and `minAngle 45` (acute track bend,
+warn). They are used to judge **placement** (pad-to-pad and pad-to-edge
+spacing) and, in an imported or client-saved project, the copper that is
+already in the file. Router-era keys (`grid`, `bendCost`, `viaCost`,
+`viaDiameter`, `viaDrill`, `layers`) no longer apply and are gone from the
+contract. 0.5 mm-pitch boards: lower `clearance` / `trackWidth` to 6 so the
+placement and any imported copper are judged against realistic floors.
 
 Auto placement follows the schematic block order, packs parts left→right at
 ~140 mil gaps with a 150 mil board margin. Supply `place` when a connector must
 sit on a board edge or a part needs a fixed position.
 
-## Router behaviour and limits (opt-in `--route`)
+## Copper policy (out of scope since 1.13)
 
-The PCB router is a 2-layer grid A* with a per-connection node budget and a
-15 s wall-clock budget. It only runs when you build with `--route`. It:
+This skill **never** auto-routes and **never** pours. The maze router
+(`lib/pcb-route.js`), the pour generator (`lib/pour.js`) and the
+`--route` / `--pour` build flags were removed, together with `add-track.js`,
+`add-via.js`, `add-pour.js`, `add-fill.js` and `pour-auto.js`. The reason is a
+division of labour: layout is something a machine does well, copper is not —
+auto-routed traces sacrifice readability and electrical quality, while a human
+in the EasyEDA client has full interactive control (real fan-out, differential
+pairs, plane shapes, design rules you can see). So the skill's boundary is
+schematic + netlist + placement + checks, and the delivered PCB is exactly that.
 
-- connects nets in nearest-neighbour order, skipping the poured net;
-- never crosses another net's pad copper or another net's track;
-- is allowed to squeeze through a *pad's* clearance zone when there is no clean
-  path (best effort), and keeps the track's own clearance as a hard wall;
-- reports everything it could not connect, which the DRC surfaces as `D004`.
+**Reading the handoff.** After placement the build prints:
 
-Known limits. `node scripts/eval.js` currently reports **20/20 cases clean**
-(average lint 100, average DRC 100 — `examples/blink` and `recipe/ldo-3v3` are
-flagged `copper` in `eval/cases.json` so the routed path stays under
-regression), but the router does not become omniscient —
-these are the situations it cannot solve on its own:
+```
+pcb: 4 footprints · placement-only (this skill never routes or pours)
+  rats: 3 net(s) to connect by hand in the client — GND(2p) V_LED(3p) LED_A(2p)
+```
 
-- Very dense packages (0.5 mm pitch connectors, fine-pitch QFN) need design
-  rules below the 10 mil defaults. Set `pcb.rules.clearance` /
-  `pcb.rules.trackWidth` down to 6–8 for those boards, or route them by hand
-  with `add-track.js`. Do not copy a `pcb.rules` override from one board to
-  another "just in case" — a stale `{"grid": 2}` override is what dropped several
-  of the shipped recipes from 100 to 40–88 before it was removed.
-- A net whose two pads sit on opposite sides of a large symbol, with other nets
-  already occupying both escape directions, can come back `D004`. Remedy: give
-  `pcb.place` an explicit position for the two parts, or raise the board size.
-- Block grouping matters more than board size: when a net has to fall back to
-  stub+label, a label-encoded net can merge with a neighbouring power-flag group
-  (this is how `RS485_DI` once shorted into `RS485_A`). Keep blocks to 2–8
-  related parts in declaration order and the fallback stops happening.
-- No differential pairs, length matching, impedance control or multi-layer
-  (>2) routing. Those are finished in the client.
+`rats: K` lists every net that still needs copper, with its pad count in
+parentheses — a net with 2 pads wants one trace, a 3-pad net wants a small
+tree. `--plan` shows the same policy on its board line
+("只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）"), and the report JSON's `pcb`
+section is `{parts, mode: 'placed-only', rats}`.
 
-`build.js` treats DRC errors as a build failure. When the router's best effort
-is acceptable for the moment, pass `--allow-drc` and read the reported
+**Finishing copper.** Open the project in the EasyEDA Pro client
+(`node scripts/open.js open --dir <p>`) and route by hand — or use the client's
+own autorouter and pour tools; that is exactly where copper belongs. Your edits
+live in the `.epcb2` files this skill produced. Remember `build.js --force`
+regenerates `pcb/` from the design file, so rebuild *before* the client-side
+copper work, not after.
+
+**Imported copper is still fully judged.** The DRC's copper rules (D001
+clearance, D002 track width, D004 unrouted nets, D006 missing pour, D008 via
+geometry, D012 acute angles) do run — just not against this skill's own
+boards: a board it built is reported `mode: 'placed-only'`, and D004/D006 are
+not judged there because that copper was never promised. A project imported
+from, or re-saved by, the client contains LINE/VIA/POUR records, is detected
+as routed, and gets the complete review — including every `pcb.rules` floor
+and per-net `width` annotation the design declares.
+
+`build.js` treats DRC errors as a build failure. If a finding on imported
+copper is acceptable for the moment, pass `--allow-drc` and read the reported
 `D001`/`D004` list — do not silence it by lowering the DRC thresholds.
 
 ## Multi-sheet designs
@@ -226,26 +231,6 @@ node scripts/recipe.js apply rc-lowpass --to design.json \
 colliding ids (`R1` → `R1_2`) **and their block references**, appends into an
 existing block with the same title, and leaves the target's own parts alone.
 Placeholders are plain string substitution — no templating engine, no deps.
-
-## Auto pour (opt-in `--pour`)
-
-`build.js` does **not** pour by default — the shipped board is placement-only.
-Build with `--pour` to lay a fresh ground plane at build time (the design's
-`pcb.pour` picks the net/stitch), or (re)pour an existing board by hand:
-
-```bash
-node scripts/pour-auto.js --dir <p> [--pcb PCB1] [--net GND] \
-     [--clearance 16] [--layers 1,2] [--spacing 100] [--no-stitch] \
-     [--replace] [--dry-run] [--json]
-```
-
-It reads the `BOARD_OUTLINE` poly, insets by the edge clearance, writes one POUR
-per copper layer, and adds a stitching-via fence plus a coarse interior grid.
-Fence and interior vias avoid foreign copper: a via that would land on another
-net's pad or track is nudged (±30 mil) or dropped, and the build log reports
-how many were moved/dropped.
-`--replace` drops existing pours on those layers first, so the command is
-idempotent; `--dry-run` shows the region and via count without writing.
 
 ## expect — the intent gate
 

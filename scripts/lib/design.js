@@ -225,12 +225,14 @@ function validateDesign(d, lib) {
     }
   }
   // per-net track width sanity: below 4 mil does not etch reliably, above 100
-  // is never a trace (that is a plane), non-powers with a custom width are fine.
+  // is never a trace (that is a plane). Since 1.13 widths are HANDOFF
+  // annotations — the skill never lays copper; the client honors them when a
+  // human routes, and the DRC uses them as floors for imported copper.
   for (const [net, width] of Object.entries(d.netWidths || {})) {
     if (width < 4 || width > 100) {
       errors.push(`net "${net}": track width ${width} mil is out of range (4–100)`);
     } else if (width > 40) {
-      warnings.push(`net "${net}": track width ${width} mil is very wide — consider a copper pour or region instead`);
+      warnings.push(`net "${net}": track width ${width} mil is very wide — it is an annotation for the client; a plane (poured in the client) usually beats one fat trace`);
     }
   }
   return { errors, warnings, netUsers };

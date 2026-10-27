@@ -36,7 +36,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 必填 | `function` | — | 一句话功能，含输入输出 |
 | 必填 | `power.input` | — | 电压+来源："5V USB-C" / "12V DC 端子" |
 | 建议问 | `power.rails` | 由功能推断（MCU→3V3，USB→5V） | 内部电源轨 |
-| 建议问 | `power.current_mA` | 200 | 决定线宽：≤500mA→16mil，<1A→20，<2A→30，≥2A→40 |
+| 建议问 | `power.current_mA` | 200 | **注记**：按电流推线宽（≤500mA→16mil，<1A→20，<2A→30，≥2A→40），写入 `nets.{net}.width` 作为交接信息与导入铜的 DRC 每网下限；本 skill 不布线 |
 | 建议问 | `interfaces` | [] | USB-C/UART/I2C/RS-485/按键/LED… |
 | 建议问 | `mcu` | null | 有 MCU 则自动拉 mcu-min + crystal |
 | 建议问 | `board.width/height` | null=自动扩板 | 有结构限制才填 |
@@ -47,7 +47,6 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 默认 | `constraints.differential` | [] | 写入 `expect.pairs`，意图门禁核查 |
 | 默认 | `cost.*` `environment.*` | 10pcs / −20…70℃ | 只做记录与工艺提示 |
 | 默认 | `output.schematic_only` | false | true → `pcb:false` |
-| 默认 | `output.pour` | null=不铺 | **策略默认只布局**；填 "GND" 只写入铺铜配方，真正铺铜还需 `build.js --pour` |
 | 默认 | `recipes` | [] | 显式指定 recipe 列表，绕过关键词匹配 |
 
 ## 关键词 → recipe 匹配表
@@ -71,11 +70,12 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 13 | led-indicator | led, 指示, 状态灯, blink |
 | 14 | button-debounce | button, 按键, push, 消抖 |
 
-合并时做三件保证正确性的事：
+合并时做两件保证正确性的事：
 
 1. **电源链推导**：`buck-5v`/`ldo-3v3` 的 `VIN` 自动接"低于自身输出、且高于输出的最近轨"。12V→5V→3V3 就是 `12V→buck→5V→ldo→3V3`，而不是把 LDO 直接挂在 12V 上。
 2. **LDO 压差告警**：线性稳压压差 >6V 且电流 ≥150mA 时，方案摘要会打印热耗散估算并建议加一级 buck——**但不自动加**（改 BOM 属于人工确认点）。
-3. **密集板预置细规则**：≥2 模块或 ≥12 parts 时写入 `pcb.rules = {clearance:6, trackWidth:6, grid:5, edgeClearance:12}`。默认只布局时这些规则不生效；将来 `--route` 直接可用，因为 10 mil 默认 clearance 在合并板上没有合法走线通道（焊盘禁入区互相重叠）——这是实测出来的，不是猜测。
+
+布线/铺铜相关的参数（路由器网格、密集板预置细规则）随 1.13 一起移除：本 skill 不布线也不铺铜，`nets.{net}.width` 只是给客户端施工用的注记。
 
 匹配不上任何 recipe 时，`resolve` 不编造电路，方案摘要里直接写"需要手写 parts/blocks（docs/build.md）"。
 
@@ -87,17 +87,17 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 4. **板框尺寸/层数**（结构约束只能用户给）。
 5. **自动修复将写入的内容**：`node scripts/autofix.js --design design.json --diff` 打印 before/after 行级差异 + 变更行数，**不写盘**；确认后才去掉 `--diff` 应用。
 6. **构建前预演**：`build.js --plan` 在一次性目录里真实跑完整构建（lint/drc 分数是真的），但目标目录一个字节都不写；用户确认后再正式 `build.js`。
-7. **要不要铜皮**：默认**只布局**——不布线、不铺铜。只有用户明确要求铜皮时才加 `--route` / `--pour` 构建，并在确认点里说明这会给板子落下多少走线/过孔/铜皮。
+7. **铜皮不在本 skill 范围**：永不布线、永不铺铜——布局交给机器，铜皮交给人。`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数），走线/过孔/铺铜在 EasyEDA 客户端完成。
 
 `resolve` 的输出格式就是为确认点设计的——电源/板框/模块/规模/网络/规则/待确认逐行可读：
 
 ```
 方案 sensor-board
   电源  输入 VBUS → 轨 3V3（120 mA）
-  板框  auto-grow · 2 层 · 封装 0603 · 只布局（默认不布线/不铺铜）
+  板框  auto-grow · 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
   模块  usb-c-power(4) + ldo-3v3(4) + mcu-min(8) + crystal(5) + i2c-sensor(5) + uart-bridge(7)
   规模  33 parts · 20 nets
-  规则  电源轨 16 mil · clearance 6 / track 6 / grid 5
+  规则  电源轨 16 mil（注记，DRC 判导入铜时的每网下限）· clearance/track 用默认
   待确认
     · 板框尺寸有硬性限制吗？→ 不回答则用 不填即自动
 ```
@@ -112,5 +112,5 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 |---|---|---|
 | `requirement file is not valid JSON: Unexpected token '﻿'` | 记事本/VS Code 存成了带 BOM 的 UTF-8 | 已内建 BOM 容错；若仍出现，确认文件未被二次加密 |
 | `没有匹配到任何 recipe` | function/interfaces 用词太抽象（"控制板"） | 补具体接口词，或 `--recipe ldo-3v3,mcu-min` 显式指定 |
-| drc D001 成片 | **仅 `--route` 后**：合并板没按细规则布线 | 交回 `resolve` 重新生成（会预置细规则），或 `--set`/手改 `pcb.rules` 覆盖；默认只布局不会触发 |
+| drc D001 成片 | 导入的/客户端返存的板：铜皮间距低于 `clearance`（本 skill 自建的板没有铜，不会触发） | 在客户端调整或删除相应铜线；若根因是焊盘太近，改 `pcb.rules.clearance` / `pcb.place` 后 `build.js --force` 重放布局，再回到客户端做铜 |
 | `check` exit 1 | 必填缺失 | 把输出的追问文案**一次**发给用户 |

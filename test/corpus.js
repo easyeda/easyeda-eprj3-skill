@@ -56,7 +56,7 @@ const D = require(path.join(SCRIPTS, 'lib', 'design'));
 const { runValidate } = require(path.join(SCRIPTS, 'lib', 'checks'));
 const { runErc } = require(path.join(SCRIPTS, 'lib', 'erc'));
 const { lintProject } = require(path.join(SCRIPTS, 'lib', 'lint'));
-const { runDrc } = require(path.join(SCRIPTS, 'lib', 'drc'));
+const { runDrc, pcbGeometry } = require(path.join(SCRIPTS, 'lib', 'drc'));
 
 const PROBE = process.argv.includes('--probe');
 const ONLY = argValue('--only');
@@ -205,11 +205,6 @@ function prepareBaselines(tmp, entries) {
         path.join(SCRIPTS, 'build.js'),
         '--design', designFile,
         '--dir', dir,
-        // The corpus judges the FULL board (routing + pour included): the
-        // copper variants (unrouted net, retagged track, missing pour) need a
-        // baseline that HAS copper. The shipped build default is
-        // placement-only, so opt in explicitly here.
-        '--route', '--pour',
         '--quiet'
       ], { cwd: ROOT });
       assert(r.status === 0, `baseline builds: ${d.key}`,
@@ -474,6 +469,61 @@ const OPS = {
         && h.rec.id.startsWith('["PAD_NET",') && JSON.parse(h.rec.id)[1] === compId)
     ));
     return removeLinesAt(file, doomed.map((h) => h.index));
+  },
+  // Since 1.13 the skill builds no copper at all, so copper-tampering variants
+  // inject their own witness copper first: straight tracks chaining the pads
+  // of one net (net === '*' chains every multi-pad net), or, with a `pour`
+  // key, one POUR record carrying that net. Coordinates come from the CURRENT
+  // placement (nothing is hardcoded — if the placer moves, the witness moves
+  // with it), and the copper only ever exists inside the variant's copy. A
+  // board with tracks flips the DRC into full-copper mode, so D001/D004 and
+  // the POUR shape rules stay meaningful witnesses.
+  copper_prep({ layout, step }) {
+    const file = resolveTarget(layout, step.target);
+    const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+    let ticket = 0;
+    for (const l of lines) {
+      const r = E.parseRecord(l);
+      if (r && r.head && typeof r.head.ticket === 'number') ticket = Math.max(ticket, r.head.ticket);
+    }
+    const added = [];
+    if (step.pour) {
+      ticket += 1;
+      added.push(E.pcbPourLine({
+        netName: step.pour,
+        layerId: 1,
+        name: 'POUR_PREP',
+        path: step.flat
+          ? [100, 100, 3000, 100, 3000, 2000, 100, 2000]
+          : [[100, 100, 3000, 100, 3000, 2000, 100, 2000]],
+        ticketBase: ticket
+      }));
+      E.writeLines(file, lines.concat(added));
+      return added.length;
+    }
+    const geo = pcbGeometry(file);
+    const groups = new Map();
+    for (const p of geo.pads) {
+      if (!p.net || (step.net !== '*' && p.net !== step.net)) continue;
+      if (!groups.has(p.net)) groups.set(p.net, []);
+      groups.get(p.net).push(p);
+    }
+    for (const pads of groups.values()) {
+      for (let i = 0; i + 1 < pads.length; i++) {
+        ticket += 1;
+        added.push(E.pcbTrackLine({
+          netName: pads[i].net,
+          layerId: 1,
+          startX: pads[i].x, startY: pads[i].y,
+          endX: pads[i + 1].x, endY: pads[i + 1].y,
+          width: step.width || 10,
+          ticketBase: ticket
+        }));
+      }
+    }
+    if (!added.length) return 0;
+    E.writeLines(file, lines.concat(added));
+    return added.length;
   },
   // Delete every copper of one net (tracks + vias) — the classic unrouted net.
   remove_net_copper({ layout, step }) {

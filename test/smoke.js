@@ -4,7 +4,8 @@
  * smoke.js — end-to-end regression test for the eprj3 skill scripts.
  *
  * Builds a complete project (temp library staging in <project>/.tmp/library,
- * preset-first placement on the schematic and PCB, wires, net label, tracks)
+ * preset-first placement on the schematic and PCB, wires, net label — copper
+ * is never built: since 1.13 the skill cannot route or pour)
  * with the real scripts in a throwaway temp dir, then asserts the format
  * invariants derived from the official easyeda-pro-eprj3-format example:
  *   - folder layout: index + sch/<sch>/{P1.esch2,<sch>.ecfg,<sch>.evar} + pcb + panel
@@ -500,16 +501,7 @@ function main() {
     run([SCRIPTS + '/set-refdes.js', 'set', '--dir', proj, '--pcb', 'PCB1',
       '--designator', 'R7', '--value', 'R1']);
 
-    // ---- tracks ----
-    run([SCRIPTS + '/add-track.js', '--dir', proj, '--pcb', 'PCB1', '--net', 'SIG',
-      '--layer', '1', '--width', '10', '--x1', '300', '--y1', '316.54', '--x2', '450', '--y2', '316.54']);
-    const pcb2 = mainDocs(j('pcb', 'PCB1.epcb2'));
-    const track = pcb2.main.records.find((r) => r.type === 'LINE' && r.body && r.body.netName === 'SIG');
-    assert(track && track.body.startX === 300 && track.body.layerId === 1,
-      'add-track writes a LINE with netName/layerId/coords');
-    ticketUnique(pcb2.main, 'PCB1.epcb2 main doc');
-
-    // ---- PCB text / shapes / via / pour ----
+    // ---- PCB text / shapes ----
     run([SCRIPTS + '/add-pcb-text.js', '--dir', proj, '--pcb', 'PCB1', '--value', 'REV A',
       '--x', '2000', '--y', '2800', '--layer', '3']);
     run([SCRIPTS + '/add-pcb-shape.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
@@ -520,12 +512,6 @@ function main() {
       '--cx', '700', '--cy', '650', '--r', '100']);
     run([SCRIPTS + '/add-pcb-shape.js', 'arc', '--dir', proj, '--pcb', 'PCB1',
       '--x1', '500', '--y1', '500', '--x2', '900', '--y2', '500', '--angle', '90']);
-    run([SCRIPTS + '/add-via.js', '--dir', proj, '--pcb', 'PCB1', '--x', '700', '--y', '316.54',
-      '--net', 'SIG']);
-    run([SCRIPTS + '/add-pour.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
-      '--x', '100', '--y', '100', '--w', '3800', '--h', '2800']);
-    run([SCRIPTS + '/add-pour.js', 'poly', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
-      '--layer', '2', '--pts', '100,100,3900,100,3900,2900,100,2900']);
     const pcb3 = mainDocs(j('pcb', 'PCB1.epcb2'));
     const str = pcb3.main.records.find((r) => r.type === 'STRING' && r.body.text === 'REV A');
     assert(str && str.body.layerId === 3 && str.body.fontFamily === 'default',
@@ -546,54 +532,23 @@ function main() {
     const parc = pcb3.main.records.find((r) => r.type === 'ARC');
     assert(parc && parc.body.angle === 90 && parc.body.startX === 500,
       'PCB ARC record carries start/end/angle');
-    const via = pcb3.main.records.find((r) => r.type === 'VIA');
-    assert(via && via.body.netName === 'SIG' && via.body.viaDiameter === 24.0158
-      && via.body.holeDiameter === 12.0078,
-      'VIA record carries net + example-preference diameters');
-    const pours = pcb3.main.records.filter((r) => r.type === 'POUR');
-    assert(pours.length === 2 && pours.every((p) => p.body.netName === 'GND')
-      && pours.every((p) => Array.isArray(p.body.path) && Array.isArray(p.body.path[0]))
-      && pours[0].body.pourType.pourType === 'SOLID',
-      'POUR records carry nested polygon paths + pourType object');
-    assert(pours[0].body.name === 'POUR1' && pours[1].body.name === 'POUR2',
-      'add-pour auto-assigns unique POURn names when --name is omitted',
-      JSON.stringify(pours.map((p) => p.body.name)));
-    const pcbNets = new Set(pcb3.main.records
-      .filter((r) => r.type === 'NET' && r.id !== '["NET",""]')
-      .map((r) => JSON.parse(r.id)[1]));
-    assert(['VCC', 'SIG', 'GND'].every((n) => pcbNets.has(n)),
-      'VIA/POUR nets (SIG/GND) registered as NET records');
     ticketsIncrease(pcb3.main, 'PCB1.epcb2 main doc');
 
-    // ---- fill / region ----
-    run([SCRIPTS + '/add-fill.js', 'rect', '--dir', proj, '--pcb', 'PCB1', '--net', 'GND',
-      '--x', '100', '--y', '100', '--w', '400', '--h', '300']);
-    run([SCRIPTS + '/add-fill.js', 'poly', '--dir', proj, '--pcb', 'PCB1',
-      '--pts', '1000,1000,1400,1000,1400,1300']);
+    // ---- region (keep-out: not copper, stays in scope) ----
     run([SCRIPTS + '/add-region.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
       '--prohibit', 'COMPONENT,TRACK', '--name', 'KEEP1', '--x', '200', '--y', '200', '--w', '300', '--h', '200']);
     const pcb4 = mainDocs(j('pcb', 'PCB1.epcb2'));
-    const fills = pcb4.main.records.filter((r) => r.type === 'FILL');
-    assert(fills.length === 2 && fills[0].body.netName === 'GND' && fills[1].body.netName === ''
-      && fills.every((f) => f.body.fillStyle === 'SOLID' && f.body.partitionId === ''
-        && f.body.isBridgingCopper === false && Array.isArray(f.body.path)
-        && Array.isArray(f.body.path[0])),
-      'FILL records carry nested paths + SOLID-only fillStyle');
     const region = pcb4.main.records.find((r) => r.type === 'REGION');
     assert(region && JSON.stringify(region.body.prohibitType) === '["COMPONENT","TRACK"]'
       && region.body.regionType === 'PROHIBIT'
       && region.body.name === 'KEEP1' && region.body.width === 1
       && Array.isArray(region.body.path) && Array.isArray(region.body.path[0]),
       'REGION record carries enum prohibitType + regionType + name + nested path');
-    const rFillBad = run([SCRIPTS + '/add-fill.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
-      '--style', 'GRID', '--x', '0', '--y', '0', '--w', '10', '--h', '10'], 1);
-    assert(/not sample-backed/.test(rFillBad.stderr + rFillBad.stdout),
-      'add-fill rejects non-SOLID style');
     const rRegionBad = run([SCRIPTS + '/add-region.js', 'rect', '--dir', proj, '--pcb', 'PCB1',
       '--prohibit', 'BOGUS', '--x', '0', '--y', '0', '--w', '10', '--h', '10'], 1);
     assert(/unknown prohibitType/.test(rRegionBad.stderr + rRegionBad.stdout),
       'add-region rejects unknown prohibitType');
-    ticketUnique(pcb4.main, 'PCB1.epcb2 main doc after fill/region');
+    ticketUnique(pcb4.main, 'PCB1.epcb2 main doc after region');
 
     // ---- validate: clean + detects corruption ----
     const rVal = run([SCRIPTS + '/validate.js', '--dir', proj]);
@@ -679,18 +634,18 @@ function main() {
       assert(/dry run/.test(rDry.stdout), 'build --dry-run says so', rDry.stdout.trim());
       assert(!fs.existsSync(path.join(tmp, 'dry')), 'build --dry-run leaves no directory behind');
 
-      // ---- pour-auto: idempotent re-pour from the board outline ----
-      const rPour = run([SCRIPTS + '/pour-auto.js', '--dir', built, '--replace', '--json']);
-      let pour = null;
-      try { pour = JSON.parse(rPour.stdout.slice(rPour.stdout.indexOf('{'))); } catch { /* leave null */ }
-      assert(pour && pour.pours === 2, 'pour-auto re-pours both layers from the board outline',
-        pour ? JSON.stringify(pour) : rPour.stdout.trim() + rPour.stderr.trim());
-      assert(pour && pour.stitchingVias > 10, 'pour-auto adds a stitching via fence');
-      const rDrc = run([SCRIPTS + '/drc.js', '--dir', built, '--json']);
-      let drcAfter = null;
-      try { drcAfter = JSON.parse(rDrc.stdout.slice(rDrc.stdout.indexOf('{'))); } catch { /* leave null */ }
-      assert(drcAfter && drcAfter.errors === 0, 'DRC is still clean after pour-auto --replace',
-        drcAfter ? JSON.stringify(drcAfter.findings.filter((f) => f.level === 'error')) : rDrc.stdout.trim());
+      // ---- copper policy: the skill cannot route or pour ----
+      const rRats = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'rats')]);
+      assert(/placement-only \(this skill never routes or pours\)/.test(rRats.stdout),
+        'build states the copper policy on the pcb line', rRats.stdout.trim());
+      assert(/rats: \d+ net\(s\) to connect by hand in the client/.test(rRats.stdout),
+        'build prints the rats handoff (what to wire in the client)', rRats.stdout.trim());
+      const rRoute = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'noguard'), '--route'], 1);
+      assert(/Unknown option/.test(`${rRoute.stderr}${rRoute.stdout}`),
+        'build --route is rejected — routing left the skill (1.13)', `${rRoute.stderr}${rRoute.stdout}`.trim().slice(0, 200));
+      const rPourFlag = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'noguard2'), '--pour'], 1);
+      assert(/Unknown option/.test(`${rPourFlag.stderr}${rPourFlag.stdout}`),
+        'build --pour is rejected — pouring left the skill (1.13)', `${rPourFlag.stderr}${rPourFlag.stdout}`.trim().slice(0, 200));
     }
 
     // ---- recipe library: list / show / apply ----

@@ -55,8 +55,8 @@ const FIELDS = [
     q: { zh: '板框尺寸（mil 或 mm）有硬性限制吗？（不填由元件数自动扩板）',
          en: 'Hard board size limit? (blank = auto-grow to fit parts)' } },
   { key: 'board.layers', tier: 'ask', def: 2,
-    q: { zh: '层数？（本工具链按 2 层自动布线，>2 层需客户端复核）',
-         en: 'Layer count? (this toolchain auto-routes 2 layers)' } },
+    q: { zh: '层数？（本 skill 不布线不铺铜，层数只是记录；>2 层的布线在客户端完成）',
+         en: 'Layer count? (this skill never routes or pours — the number is recorded; the copper happens in the client)' } },
   { key: 'package', tier: 'default', def: '0603',
     note: '阻容封装偏好：0402 / 0603；默认 0603（DFM 最稳）' },
   { key: 'constraints.differential', tier: 'default', def: [],
@@ -72,8 +72,6 @@ const FIELDS = [
     note: '工作温度区间，用于元件温度等级提示' },
   { key: 'output.schematic_only', tier: 'default', def: false,
     note: 'true → 只出原理图，跳过 PCB' },
-  { key: 'output.pour', tier: 'default', def: null,
-    note: '铺铜网络；策略默认只布局不铺铜——留空即不铺，设 "GND" 且构建加 --pour 才生效' },
   { key: 'recipes', tier: 'default', def: [],
     note: '显式指定 recipe 名单，绕过关键词匹配' }
 ];
@@ -285,10 +283,9 @@ function resolve(req, opts) {
     nets: {},
     pcb: {}
   };
-  // The shipped strategy is placement-only: no pour is written unless the
-  // requirement explicitly names one AND the build is run with --pour.
-  const wantPour = getPath(req, 'output.pour');
-  if (wantPour) design.pcb.pour = { net: wantPour, stitch: true };
+  // Strategy (1.13): the skill NEVER lays copper — no pour is ever written.
+  // Copper is finished by a human in the client; build.js reports the `rats`
+  // (nets awaiting copper) for that handoff.
   const bw = getPath(req, 'board.width');
   const bh = getPath(req, 'board.height');
   if (bw && bh) design.board = { width: Number(bw), height: Number(bh) };
@@ -330,26 +327,23 @@ function resolve(req, opts) {
   if (!used.length) derivedNotes.push('没有匹配到任何 recipe：需要手写 parts/blocks（docs/build.md）');
   applyPackage(design, getPath(req, 'package'));
 
-  // Rule defaults derived from the requirement, not from taste:
-  //  · track width follows current (30 mil ≈ 1 A @ 2 oz per docs/development.md);
-  //  · a merged board (2+ modules or 12+ parts) gets the fine-pitch rule set —
-  //    the same one SKILL.md prescribes by hand — because pad keep-outs then
-  //    overlap and the default 10 mil clearance has no legal channel left.
+  // Handoff annotations derived from the requirement, not from taste:
+  //  · a rail's width follows declared current (30 mil ≈ 1 A @ 2 oz per
+  //    docs/development.md) — recorded on the net as intent for the human who
+  //    routes in the client (this skill never lays copper);
+  //  · pcb.rules stays a DRC contract only — nothing is "pre-armed" for a
+  //    router that no longer exists.
   const width = railWidth(current);
   for (const rail of [busNet, ...finalRails]) {
     if (rail === 'GND') continue;
     design.powers[rail] = 'up';
     design.nets[rail] = Object.assign({ width }, design.nets[rail] || {});
   }
-  const dense = (design.pcb !== false) && (used.length >= 2 || design.parts.length >= 12);
-  if (dense) {
-    design.pcb = design.pcb || {};
-    design.pcb.rules = Object.assign(
-      { clearance: 6, trackWidth: 6, grid: 5, edgeClearance: 12 },
-      (req.pcb && req.pcb.rules) || {}
-    );
-    derivedNotes.push(`密集合并板（${design.parts.length} parts）已预置细规则 clearance 6 / trackWidth 6 / grid 5（默认只布局不生效；将来 --route 直接可布）`);
-  } else if (req.pcb && req.pcb.rules) {
+  // pcb.rules is a DRC contract only (clearance/trackWidth/edgeClearance +
+  // DFM floors). Since 1.13 there is no router, so nothing is "pre-armed" for
+  // it — dense boards no longer need fine rules, only a honest floor for the
+  // pad-spacing check and for copper a human later adds in the client.
+  if (req.pcb && req.pcb.rules) {
     design.pcb = design.pcb || {};
     design.pcb.rules = req.pcb.rules;
   }
@@ -369,7 +363,6 @@ function resolve(req, opts) {
     board: design.board || 'auto-grow',
     layers: getPath(req, 'board.layers') || 2,
     package: getPath(req, 'package') || '0603',
-    pour: design.pcb && design.pcb.pour ? design.pcb.pour.net : null,
     recipes: used.map((u) => ({ recipe: u.recipe, parts: u.parts.length, fromCache: u.fromCache })),
     parts: design.parts.length,
     railWidth: width,
@@ -454,12 +447,11 @@ function renderPlan(plan) {
   const L = [];
   L.push(`方案 ${plan.name}`);
   L.push(`  电源  输入 ${plan.input} → 轨 ${(plan.rails || []).join(' / ') || '—'}（${plan.current_mA} mA）`);
-  L.push(`  板框  ${typeof plan.board === 'string' ? plan.board : `${plan.board.width}×${plan.board.height} mil`} · ${plan.layers} 层 · 封装 ${plan.package} · `
-    + `${plan.pour ? `铺铜 ${plan.pour}（需 --pour）` : '只布局（默认不布线/不铺铜）'}`);
+  L.push(`  板框  ${typeof plan.board === 'string' ? plan.board : `${plan.board.width}×${plan.board.height} mil`} · ${plan.layers} 层 · 封装 ${plan.package} · 只布局（布线/铺铜在客户端完成）`);
   L.push(`  模块  ${plan.recipes.map((r) => `${r.recipe}(${r.parts})${r.fromCache ? '*' : ''}`).join(' + ') || '无匹配 recipe — 需手写 design'}`);
   L.push(`  规模  ${plan.parts} parts · ${plan.nets.length} nets`);
   if (plan.rules || plan.railWidth) {
-    L.push(`  规则  电源轨 ${plan.railWidth} mil${plan.rules ? ` · clearance ${plan.rules.clearance} / track ${plan.rules.trackWidth} / grid ${plan.rules.grid}` : ' · 默认 clearance'}`);
+    L.push(`  注记  电源轨 ${plan.railWidth} mil（供客户端布线参考的电流注记）${plan.rules ? ` · DRC 规则 ${Object.entries(plan.rules).map(([k, v]) => `${k}=${v}`).join(' / ')}` : ''}`);
   }
   L.push(`  网络  ${plan.nets.slice(0, 14).join(' ')}${plan.nets.length > 14 ? ' …' : ''}`);
   if (plan.defaults.length) {
@@ -512,7 +504,7 @@ function template() {
     constraints: { differential: [], crystal: null },
     cost: { target_usd: null, quantity: 10 },
     environment: { temp_c: [-20, 70] },
-    output: { schematic_only: false, pour: null },
+    output: { schematic_only: false },
     recipes: []
   };
 }

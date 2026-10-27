@@ -9,7 +9,7 @@
  *   format   validate.js  (0 errors)
  *   electric erc.js       (0 errors; warnings counted)
  *   layout   lint score   0-100
- *   copper   drc score    0-100
+ *   drc      placement score 0-100
  *
  * Results are appended to `eval/history.jsonl`, so "is this iteration better?"
  * is a diff, not an opinion. A case fails when any gate has an error, when the
@@ -61,7 +61,6 @@ function cases(cfg) {
       out.push({
         name,
         file: path.join(d, f),
-        copper: !!over.copper,
         minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
         minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
         maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds
@@ -96,7 +95,6 @@ function cases(cfg) {
         name,
         file: gen,
         requirement: path.join(reqDir, f),
-        copper: !!over.copper,
         minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
         minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
         maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds
@@ -201,7 +199,6 @@ function main() {
     list = [{
       name: `design/${path.basename(f, '.json')}`,
       file: f,
-      copper: !!over.copper,
       minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
       minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
       maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds
@@ -242,15 +239,14 @@ function main() {
     const name = path.basename(c.file, '.json');
     const target = path.join(buildDir, name);
     fs.rmSync(target, { recursive: true, force: true });
-    // The shipped default is placement-only; cases flagged `copper` exercise
-    // the router + pour path so it stays under regression.
-    const copperArgs = c.copper ? ['--route', '--pour'] : [];
+    // The skill never lays copper: every case builds the same placement-only
+    // deliverable and is scored on placement/format/electric quality.
     const build = run('scripts/build.js', ['--design', c.file, '--dir', target, '--report',
-      path.join(buildDir, `${name}.report.json`)].concat(copperArgs), timeoutSec * 1000);
+      path.join(buildDir, `${name}.report.json`)], timeoutSec * 1000);
     const validate = build.ok ? run('scripts/validate.js', ['--dir', target], 30000) : { ok: false, out: '' };
     const erc = build.ok ? run('scripts/erc.js', ['--dir', target, '--design', c.file], 60000) : { ok: false, out: '' };
     const lint = build.ok ? run('scripts/lint-layout.js', ['--dir', target, '--json'], 60000) : { ok: false, out: '' };
-    const drc = build.ok ? run('scripts/drc.js', ['--dir', target, '--design', c.file, '--json'].concat(c.copper ? ['--routed'] : []), 60000) : { ok: false, out: '' };
+    const drc = build.ok ? run('scripts/drc.js', ['--dir', target, '--design', c.file, '--json'], 60000) : { ok: false, out: '' };
 
     const parse = (r) => { try { return JSON.parse(r.out); } catch { return null; } };
     const lintJ = parse(lint);
@@ -295,7 +291,7 @@ function main() {
   const pass = results.filter((r) => r.ok).length;
   const totalSeconds = Math.round(results.reduce((n, r) => n + (r.build.seconds || 0), 0) * 10) / 10;
   const totalTokens = results.reduce((n, r) => n + (r.tokens || 0), 0);
-  // Gate averages cover the cases that actually have copper/layout scores;
+  // Gate averages cover the cases that actually build and score;
   // the intake-gate case has none and must not drag the average to 0.
   const scored = results.filter((r) => r.lint !== null && r.lint !== undefined);
   const avg = (k) => (scored.length ? Math.round(scored.reduce((n, r) => n + (r[k] || 0), 0) / scored.length) : 0);

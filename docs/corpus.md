@@ -56,6 +56,16 @@ design). Committed projects are copied before any variant touches them.
 
 `key` is what an illegal variant refers to with `"base"`.
 
+**Copper on the baselines.** Since 1.13 `build.js` never routes and never pours,
+so a generated baseline's PCB carries footprints and pad-net links only. The
+copper variants (POUR geometry in `format.json`, the erased/retagged tracks in
+`electrical.json`) would then tamper with nothing — to keep those `expect`s
+(D001/D004 and the POUR validate rules) non-vacuous, the corpus runner injects
+copper through its built-in `copper_prep` step: before the mutation is applied,
+a deterministic set of LINE/VIA/POUR records is written into the *copy*, exactly
+as a client-routed project would have them. `copper_prep` is test tooling, not a
+skill capability — the shipped product still has no routing or pouring.
+
 ## Illegal variant shape
 
 ```json

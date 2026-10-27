@@ -15,7 +15,8 @@
  * Coordinates are mil. rect/poly/circle emit POLY records (rect uses the
  * ["R",x,y,w,h,0,0] form, circle the ["CIRCLE",cx,cy,r,isCCW] form); arc emits
  * an ARC record with a signed sweep angle (CCW positive). These are graphics
- * only — use add-pour for copper pours.
+ * only — copper (tracks, vias, pours) is out of scope since 1.13 and is
+ * finished in the client.
  */
 const fs = require('fs');
 const E = require('./lib/eprj3');
