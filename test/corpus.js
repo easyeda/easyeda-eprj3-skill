@@ -268,7 +268,7 @@ function resolveTarget(layout, target) {
 // Split a container file into docs: {start, end, docType, uuid}.
 function docRanges(lines) {
   const starts = [];
-  lines.forEach((l, i) => { if (l.startsWith('{"type":"DOCHEAD"}')) starts.push(i); });
+  lines.forEach((l, i) => { if (E.isDocHeadLine(l)) starts.push(i); });
   return starts.map((start, k) => ({
     start,
     end: k + 1 < starts.length ? starts[k + 1] : lines.length,

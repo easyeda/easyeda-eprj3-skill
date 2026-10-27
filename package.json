@@ -1,7 +1,7 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "1.11.0",
-  "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — requirement intake with clarification protocol, auto schematic layout, placement-first PCB (routing/pour opt-in --route/--pour), then ERC + layout lint + placement DRC/DFM + intent gates",
+  "version": "1.12.0",
+  "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — requirement intake with clarification protocol, auto schematic layout, placement-first PCB (routing/pour opt-in --route/--pour), V4 format (reads and writes current client saves), then ERC + layout lint + placement DRC/DFM + intent gates",
   "main": "scripts/lib/eprj3.js",
   "repository": {
     "type": "git",

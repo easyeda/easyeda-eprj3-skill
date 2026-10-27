@@ -50,7 +50,7 @@ function readSheet(file) {
   const docs = [];
   let cur = null;
   for (const l of lines) {
-    if (l.startsWith('{"type":"DOCHEAD"}')) {
+    if (E.isDocHeadLine(l)) {
       const r = E.parseRecord(l);
       cur = { docType: r && r.body && r.body.docType, uuid: r && r.body && r.body.uuid, records: [] };
       docs.push(cur);

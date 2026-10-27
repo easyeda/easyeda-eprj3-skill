@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.11.0** · [Changelog](CHANGELOG.md) · [Standalone English page](README_en.md)
+**English** · [中文](#中文) · **v1.12.0** · [Changelog](CHANGELOG.md) · [Standalone English page](README_en.md)
 
 ---
 
@@ -114,7 +114,7 @@ MIT — see [LICENSE](LICENSE).
 
 > 用 AI 或几条 Node 命令，生成可在 EasyEDA Pro（嘉立创 EDA 专业版）直接打开的 `.eprj3` 工程。
 
-**当前版本：1.11.0** · [更新记录](CHANGELOG.md) · 独立英文页：[README_en.md](README_en.md)
+**当前版本：1.12.0** · [更新记录](CHANGELOG.md) · 独立英文页：[README_en.md](README_en.md)
 
 ### AI 一键安装口令
 

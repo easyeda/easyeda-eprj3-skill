@@ -43,13 +43,16 @@ function run(args, expectCode = 0) {
 }
 
 // Split a container file into docs: [{docType, uuid, records}].
+// The DOCHEAD line itself is NOT a record: in V4 its outer ticket is a
+// document-level clock that overlaps record tickets (measured on official
+// client files) — counting it would break ticket assertions on real saves.
 function docsOf(file) {
   const docs = [];
   let cur = null;
   for (const l of E.readLines(file)) {
-    if (l.startsWith('{"type":"DOCHEAD"}')) {
+    if (E.isDocHeadLine(l)) {
       const r = E.parseRecord(l);
-      cur = { docType: r.body.docType, uuid: r.body.uuid, records: [r] };
+      cur = { docType: r.body.docType, uuid: r.body.uuid, head: r, records: [] };
       docs.push(cur);
     } else if (cur) {
       const r = E.parseRecord(l);
@@ -105,8 +108,8 @@ function realClientInvariants(dir, label) {
   let noClient = 0, noId = 0;
   for (const f of containers) {
     for (const doc of docsOf(f)) {
-      if (!doc.records[0].body.client) noClient++;
-      for (const r of doc.records.slice(1)) {
+      if (!doc.head.body.client) noClient++;
+      for (const r of doc.records) {
         if (['ATTR', 'COMPONENT', 'WIRE', 'LINE'].includes(r.type) && !r.id) noId++;
       }
     }
@@ -127,7 +130,9 @@ function main() {
     run([SCRIPTS + '/init.js', '--dir', proj, '--name', 'blink']);
     assert(fs.existsSync(j('blink.eprj3')), 'init creates the .eprj3 index');
     assert(fs.existsSync(j('sch', 'Schematic1', 'P1.esch2')), 'init creates the sheet document');
-    assert(fs.existsSync(j('sch', 'Schematic1', 'Schematic1.ecfg')), 'init creates the 4-record .ecfg');
+    assert(fs.existsSync(j('sch', 'Schematic1', 'Schematic1.ecfg')), 'init creates the 2-record (V4) .ecfg');
+    assert(fs.readFileSync(j('sch', 'Schematic1', 'Schematic1.ecfg'), 'utf8').trim().split('\n').length === 2,
+      'the .ecfg is V4: DOCHEAD + META only');
     assert(fs.readFileSync(j('sch', 'Schematic1', 'Schematic1.evar'), 'utf8') === '', 'init creates an empty .evar');
     assert(fs.existsSync(j('pcb', 'PCB1.epcb2')), 'init creates the PCB document');
     assert(!fs.existsSync(j('panel')), 'init does not create a panel unless asked');
@@ -294,7 +299,7 @@ function main() {
     assert(sch.docs.some((d) => d.docType === 'FOOTPRINT' && d.uuid === presetR0603.footprintUuid),
       'paired preset FOOTPRINT doc is embedded');
     const client = E.Project.load(proj).client;
-    assert(sch.docs.find((d) => d.uuid === presetRes.symbolUuid).records[0].body.client === client,
+    assert(sch.docs.find((d) => d.uuid === presetRes.symbolUuid).head.body.client === client,
       'embedded preset docs are rewritten to the project client');
     const devMetaRec = sch.docs.filter((d) => d.docType === 'DEVICE')
       .map((d) => d.records.find((r) => r.type === 'META'))

@@ -10,7 +10,7 @@ Compact reference for the records the scripts in this skill produce — verified
 ├── sch/
 │   └── <schematicName>/
 │       ├── <sheetTitle>.esch2           ← sheet container (docs + SCH_PAGE main doc)
-│       ├── <schematicName>.ecfg         ← 4 records: DOCHEAD(SCH) + META + RULE + RULE
+│       ├── <schematicName>.ecfg         ← V4: DOCHEAD(SCH) + META (V3 saves added RULE + RULE)
 │       └── <schematicName>.evar         ← empty file (variant data)
 ├── pcb/
 │   └── <pcbTitle>.epcb2                 ← PCB container (docs + PCB main doc)
@@ -51,6 +51,10 @@ The client resolves documents through the index `profile`, following these path 
 ```
 
 The `client` field used in document DOCHEADs is `md5(owner_uuid).hexdigest().slice(0,16)`.
+Accepted shapes are NOT fixed by width: doc uuids are 16- or 32-hex depending on
+generation and origin, and `profile.owner.uuid` in local (offline) projects may
+hold a filesystem path instead of a uuid (measured in the wild). Never parse
+them assuming one form; the format skill's own `t-doc-head` says the same.
 
 ## Container file grammar
 
@@ -61,16 +65,17 @@ The `client` field used in document DOCHEADs is `md5(owner_uuid).hexdigest().sli
 {"type":"TYPE","ticket":N}|||        ← empty body
 ```
 
-- Exactly two segments separated by `||`, terminated by a final `|`. `DOCHEAD` lines carry no ticket/id.
+- Exactly two segments separated by `||`, terminated by a final `|`. `DOCHEAD` lines carry no `id`; their outer frame carries a `ticket` in V4 saves (`{"type":"DOCHEAD","ticket":N}`) and none in V3 — **both shapes are legal and can coexist in one file** (measured: 2103/2138 ticketed, 35 bare in official samples). Detect DOCHEAD by parsing the head JSON and testing `type === 'DOCHEAD'` (`E.isDocHeadLine`), never by string prefix.
 - **Never split a line on every `||`** — a `||` can appear inside a JSON string value. Parse the head as JSON up to the first `||`, then treat the remainder (minus the trailing `|`) as the body JSON.
 - A container holds several **documents** back to back, each starting with a `DOCHEAD` line:
 
 ```jsonc
-{"type":"DOCHEAD"}||{"docType":"SYMBOL","client":"<16hex>","uuid":"<16hex>","updateTime":<ms>,"version":"<ms>","editVersion":"2.3.0","user":{}}|
+{"type":"DOCHEAD","ticket":1}||{"docType":"SYMBOL","client":"<16hex>","uuid":"<16|32hex>","updateTime":<ms>,"version":"<ms>","editVersion":"<ver>","user":{...}}|
 ```
 
 - **Per-container embedding policy:** each container embeds only the library docs its placed components need. A sheet embeds `SYMBOL` + `DEVICE` per device; a PCB embeds `SYMBOL` + `FOOTPRINT` + `DEVICE` per placed footprint. The **last** DOCHEAD of a container is the main document (`SCH_PAGE` in `.esch2`, `PCB` in `.epcb2`).
-- **Tickets are unique within each document** — not globally monotonic across the file, and not increasing in file order inside a doc. Library docs restart their ticket scope per doc. Appending to a main doc uses `max(ticket in file) + 1`.
+- **Tickets are per-record clocks, not ordering**: within one document, the `(ticket, id)` pair must be unique; the same ticket may repeat across records with different ids (every FONT row in a real client file carries ticket 1). There is **no file-order invariant** — official saves hold hundreds of decreasing tickets. The DOCHEAD ticket is a document-level clock and shares no numbering with the record rows. Appending to a main doc uses `max(ticket in file) + 1`.
+- **ATTR.parentId forms**: a record id in this doc, a record id in a sibling embedded doc of the same file (cross-doc element ids — legal), or an instance-path id `eNNNN-eNN` / `eNNNN-ieNNNN` (NO_CONNECT flags a pin through its component; resolves to no record anywhere — legal). Only a plain id matching none of these is hand-edit corruption.
 
 ## Schematic container (`sch/<sch>/<sheet>.esch2`)
 

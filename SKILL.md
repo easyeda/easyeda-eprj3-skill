@@ -266,6 +266,12 @@ footprint sharing a display name cannot collide.
 
 ## Known limitations
 
+- **Format dialect: V4.** Generated files write the current client shapes
+  (ticketed `{"type":"DOCHEAD","ticket":1}` frame, `.ecfg` = DOCHEAD+META);
+  the readers accept V3 and V4 alike — calibrated against real client-saved
+  projects (official quick-start from 4.1.78 + H610): `validate.js` 0 errors
+  on both. Never detect record kinds by string prefix; `E.isDocHeadLine` and
+  `E.parseRecord` are the only sanctioned readers.
 - Fidelity is only provable in the real client. If it refuses to open, run
   `validate.js` first, then compare with [`examples/blink`](examples/blink).
   Set `EPRJ3_DETERMINISTIC=1` to build byte-identical projects for golden-file

@@ -67,14 +67,14 @@
       "name": "ecfg-fifth-record",
       "base": "blink",
       "category": "container structure",
-      "title": "Schematic1.ecfg carries a 5th record (it is fixed at DOCHEAD META RULE RULE)",
+      "title": "Schematic1.ecfg carries a 5th record (legal shapes are 2 = V4 or 4 = V3)",
       "mutate": "raw_append one RULE line to the .ecfg",
       "mutation": [{
         "op": "raw_append",
         "target": "ecfg",
         "lines": ["{\"type\":\"RULE\",\"ticket\":9,\"id\":\"e9\"}||{\"name\":\"strayRule\",\"value\":\"DEFAULT\"}|"]
       }],
-      "expect": { "validate": ["want 4 records"] }
+      "expect": { "validate": ["want 2 or 4 records"] }
     },
     {
       "name": "sheet-unparseable-line",
@@ -131,7 +131,8 @@
       "title": "tickets go backwards at the tail of the PCB main doc (unique, but out of order)",
       "mutate": "swap the ticket numbers of the last two records",
       "mutation": [{ "op": "ticket_swap_tail", "target": "pcb" }],
-      "expect": { "validateWarnings": ["out of file order"] }
+      "expect": { "leak": true },
+      "suggest": "by design: record tickets are per-atom clocks, NOT a file-order invariant — the official quick-start project (client 4.1.78) has 813 backwards tickets in one sheet main doc; nothing may reject this"
     },
     {
       "name": "dochead-client-mismatch",

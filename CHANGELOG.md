@@ -5,6 +5,72 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.12.0] - 2026-10-25
+
+Closes issue #2 — and the calibration turned into a full **V4 format
+alignment**. Two real client-saved projects on disk (the official quick-start
+written by client 4.1.78, and the H610 mainboard sample) became the ground
+truth; every format assumption was measured, not remembered. Result:
+`validate.js` reports **0 errors on both real V4 projects** (it used to crash
+or false-reject them in six different ways), generated projects write the V4
+shape, and two rules that no real file obeys were deleted rather than
+softened. Note: the client ships no headless save CLI (the bundled `pro-api`
+cli.js is an API-docs browser) — "re-save the cases" became "calibrate on the
+real client files already here + regenerate `examples/blink` with the V4
+writer".
+
+### Added
+- **V4 write shape** — `writeLines` normalises every DOCHEAD frame to
+  `{"type":"DOCHEAD","ticket":1}` (single chokepoint: init, add-*, build and
+  all embed paths go through it); `buildEcfgDoc` now writes DOCHEAD+META only
+  (2 records — the RULE pair is V3 residue), matching what 4.1.78 saves.
+- **V4 read compatibility** — DOCHEAD detected semantically via
+  `E.isDocHeadLine` (parsed head type) at every boundary site
+  (`checks.docsOf`, `netlist.readSheet`, `drc.docSplit`, `eprj3`'s
+  insert/last-head/ensure-nets scans, corpus/smoke helpers): ticketed heads,
+  bare heads, and mixed files all parse. This is the issue #2 fix; the
+  synthetic repro from the report now recognizes its documents, and real
+  4.1.71+ saves read cleanly through all five gates.
+- **Format rules calibrated to measured V4** (`scripts/lib/checks.js`):
+  doc uuids accept 16- and 32-hex (client-created SCH/PCB/page docs use 32;
+  embedded library docs 16); `.ecfg` accepts 2 (V4) or 4 (V3) records — the
+  "want 4 records" error becomes "want 2 or 4"; `index.profile`'s
+  `blockSymbols/simSchematics/simulations` are optional (H610-era indexes
+  lack them); `profile.owner.uuid` accepts the offline path form (warns);
+  `ATTR.parentId` resolves across the whole container file (H610 footprint
+  metadata references sibling-doc element ids) and the instance-path form
+  `eNNNN(-ie)NNN…` is exempt (NO_CONNECT pin flags — 794 false errors on
+  H610 before this was measured); foreign `DOCHEAD.client` collapses to one
+  aggregated warning per file (H610 has 2007 such docs).
+
+### Removed
+- **Ticket-order check (V002)** — real saves break it by the hundred (813
+  backwards tickets in the official quick-start sheet); record tickets are
+  per-atom clocks, not an ordering invariant.
+- **"Tickets unique within a document" as such** — replaced by `(ticket, id)`
+  **pair** uniqueness: every FONT row in a real file shares ticket 1 with
+  different ids; only a copied/torn line repeats the pair (the corpus
+  duplicate-ticket witness still fires).
+
+### Changed
+- `test/smoke.js`/`test/corpus.js` helpers treat DOCHEAD as document framing,
+  not a record row (its ticket clock overlaps record clocks in V4); new
+  assertions pin the V4 output shapes (ticketed head line, 2-record ecfg).
+- corpus: `ticket-regression` became a by-design `leak` entry (documents why
+  nothing may reject it); `ecfg-fifth-record` expects the new 2-or-4 message.
+- `examples/blink` regenerated through the V4 writer; `examples/easyeda-eprj3-project`
+  stays as the V3 witness — the validator reads both. The 1.10 "closed blind
+  spots" table in docs/corpus.md was re-marked for the two deleted rules.
+- Docs: format-reference grammar section rewritten for V4 (ticketed/bare heads,
+  uuid shapes, pair-uniqueness, instance-path parentIds), checks.md format
+  section, SKILL.md "V4 dialect" limitation, corpus.md gap tables.
+
+### Fixed
+- issue #2 end to end: the report's synthetic repro recognizes its document;
+  a valid client-saved project cannot be misjudged as "no DOCHEAD records"
+  anymore; embedded-library validation can no longer be silently skipped by
+  a DOCHEAD shape the reader didn't know.
+
 ## [1.11.0] - 2026-10-24
 
 The strategy release: **the skill now ships placement-only boards.** No copper

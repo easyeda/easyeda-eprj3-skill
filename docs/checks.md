@@ -20,20 +20,26 @@ automated: `node scripts/autofix.js --design design.json [--check]`.
 
 ## Format — `validate.js`
 
-No codes; it reports plain messages about index shape, doc uuids, ticket
+No codes; it reports plain messages about index shape, doc uuids, ticket-pair
 uniqueness, Device/Symbol/Footprint reference integrity, wire↔LINE linkage,
 PAD_NET↔NET↔COMPONENT references, missing panel files and stray files in a
 schematic directory. Any error means the file is corrupt — rebuild rather than
 patch, unless you know exactly which record is wrong.
 
-Since 1.10 it also catches the corruption classes the corpus found blind:
-a record body that is not valid JSON after a stray `||` (*error* — bodies used
-to vanish silently into `{}`), an `ATTR.parentId` that names nothing in the
-document (*error*), `COMPONENT`/`WIRE` heads without an id (*error*),
-ticket order regressions in MAIN docs (*warning* — client-authored embedded
-docs are unordered by design), a `DOCHEAD.client` differing from the project
-client (*warning* — merged real projects legitimately differ), and zero-byte
-containers (*error* — every reader now reports instead of throwing).
+Since 1.10 it also catches the corruption classes the corpus found blind, and
+in 1.12 every rule was re-calibrated against **real client-saved V4 projects**
+(official quick-start + H610, 2138 DOCHEAD lines) — rules no real file obeys
+were deleted rather than softened:
+- record body that is not valid JSON after a stray `||` (*error* — bodies used to vanish into `{}`);
+- `COMPONENT`/`WIRE` heads without an id (*error*);
+- zero-byte / no-DOCHEAD containers (*error* — every reader reports instead of throwing);
+- duplicate `(ticket, id)` **pair** within one document (*error*) — ticket alone repeating across different ids is what real saves do (all FONT rows share ticket 1), so the old "tickets unique" and the 1.10 "tickets increase in file order" rules were **removed** (the official quick-start sheet has 813 backwards tickets);
+- foreign `DOCHEAD.client` (*warning*, aggregated to one line per file);
+- `ATTR.parentId` that matches no record anywhere in the file (*error*) — with two legal exceptions measured on real files: cross-document element ids and the instance-path form `eNNNN(-i)eNN…` that NO_CONNECT uses to flag a pin through its component.
+DOCHEAD is detected by parsed head type, never by literal prefix — ticketed V4
+heads, bare V3 heads, 16- and 32-hex doc uuids, and the legacy path form of
+`profile.owner.uuid` all parse cleanly. `writeLines` normalises generated
+DOCHEAD frames to `{"type":"DOCHEAD","ticket":1}`.
 
 ## Electric — `erc.js`
 

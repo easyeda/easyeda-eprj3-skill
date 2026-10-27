@@ -7,7 +7,10 @@
  * value shape. Coordinates in document records are always mil.
  *
  * Record grammar:  {"type":"T","ticket":N,"id":"..."}||{body}|   (empty body:  ...}|||)
- * DOCHEAD has no ticket/id: {"type":"DOCHEAD"}||{docType,...}|
+ * DOCHEAD has no id; V4 saves carry a ticket — the outer head is either
+ * {"type":"DOCHEAD","ticket":N} (client save path; ours via ticketize on
+ * write) or bare {"type":"DOCHEAD"} (V3 / FONT docs). Never detect it by
+ * string prefix — use isDocHeadLine (parsed head type).
  *
  * File layout: a container file (.esch2/.epcb2) is a list of library docs
  * (SYMBOL/FOOTPRINT/DEVICE) followed by the MAIN doc (SCH_PAGE or PCB) whose
@@ -150,11 +153,41 @@ function formatRecord(head, body) {
   return JSON.stringify(head) + '||' + b + '|';
 }
 
+/**
+ * Is this line a document boundary (DOCHEAD)?
+ *
+ * NEVER match the literal prefix `{"type":"DOCHEAD"}`: the client's save path
+ * serialises the head as `{"type":"DOCHEAD","ticket":N}` (V4; measured on the
+ * official quick-start project: 2103 of 2138 DOCHEAD lines carry a ticket, and
+ * bare and ticketed forms coexist even inside one file). A prefix test loses
+ * those boundaries — whole documents vanish, validation crashes or silently
+ * skips them. Parse the head object; that is what the format guarantees.
+ */
+function isDocHeadLine(line) {
+  const i = line.indexOf('||');
+  if (i < 0 || line.charCodeAt(0) !== 0x7b) return false; // '{'
+  try {
+    const head = JSON.parse(line.slice(0, i));
+    return !!(head && head.type === 'DOCHEAD');
+  } catch { return false; }
+}
+
+// V4 write shape: the outer DOCHEAD frame always carries a ticket (writer's
+// clock; 1 for documents we create — the client rewrites it on the next save).
+function ticketizeDocHeadLine(line) {
+  const i = line.indexOf('||');
+  if (i < 0) return line;
+  let head;
+  try { head = JSON.parse(line.slice(0, i)); } catch { return line; }
+  if (!head || head.type !== 'DOCHEAD' || head.ticket !== undefined) return line;
+  return JSON.stringify({ type: 'DOCHEAD', ticket: 1 }) + line.slice(i);
+}
+
 // Atomic write: a crash mid-write must never leave a half-written document
 // (the client would refuse to open the project). Temp file + rename.
 function writeLines(filePath, lines) {
   const tmp = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, lines.join('\n') + '\n', 'utf8');
+  fs.writeFileSync(tmp, lines.map(ticketizeDocHeadLine).join('\n') + '\n', 'utf8');
   try {
     fs.renameSync(tmp, filePath);
   } catch (e) {
@@ -188,12 +221,12 @@ function insertDocsBeforeMain(filePath, docs) {
   const lines = readLines(filePath);
   let lastHead = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].startsWith('{"type":"DOCHEAD"}')) { lastHead = i; break; }
+    if (isDocHeadLine(lines[i])) { lastHead = i; break; }
   }
   if (lastHead < 0) throw new Error(`no DOCHEAD in ${filePath}`);
   const present = new Set();
   for (const l of lines) {
-    if (l.startsWith('{"type":"DOCHEAD"}')) {
+    if (isDocHeadLine(l)) {
       const r = parseRecord(l);
       if (r && r.body && r.body.uuid) present.add(r.body.uuid);
     }
@@ -631,19 +664,13 @@ function buildDeviceDoc(spec) {
 }
 
 // ------------------------------------------------- SCH container (.ecfg)
+// V4 saves an .ecfg with just DOCHEAD + META (measured: the official
+// quick-start project written by 4.1.78). V3-era files carried two extra
+// RULE lines; the validator accepts both shapes (2 or 4 records).
 function buildEcfgDoc(sch, client, ms) {
   const b = new DocBuilder();
   b.lines.push(docHeadLine('SCH', client, sch.uuid, ms));
   b.add('META', { title: sch.name, source: '', board: sch.board, zIndex: null }, 'META');
-  const rule = (name, state, stroMin) => b.add('RULE', {
-    ruleState: state,
-    ruleContext: {
-      unit: 'mm',
-      track: { isOpen: true, content: [{ layerId: 1, stroDef: 0.254, stroMax: 2.54, stroMin }] }
-    }
-  }, `["RULE","TRACK","${name}"]`);
-  rule('copperThickness1oz', 'DEFAULT', 0.127);
-  rule('copperThickness2oz', 'NORMAL', 0.203);
   return b.lines;
 }
 
@@ -1311,7 +1338,7 @@ function renumberMainDoc(lines, lastDocHead) {
 // Main-doc area of a container = everything after the LAST DOCHEAD line.
 function lastDocHeadIndex(lines) {
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].startsWith('{"type":"DOCHEAD"}')) return i;
+    if (isDocHeadLine(lines[i])) return i;
   }
   return -1;
 }
@@ -1351,7 +1378,7 @@ function ensurePcbNets(filePath, nets) {
   const lines = readLines(filePath);
   let lastHead = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
-    if (lines[i].startsWith('{"type":"DOCHEAD"}')) { lastHead = i; break; }
+    if (isDocHeadLine(lines[i])) { lastHead = i; break; }
   }
   if (lastHead < 0) throw new Error(`no DOCHEAD in ${filePath}`);
   const present = new Set();
@@ -1720,6 +1747,7 @@ module.exports = {
   readDocHeadUuid,
   DocBuilder,
   docHeadLine,
+  isDocHeadLine,
   buildSymbolDoc,
   buildPowerSymbolDoc,
   buildFootprintDoc,

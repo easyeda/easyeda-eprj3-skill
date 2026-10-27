@@ -164,6 +164,7 @@ The run prints these under `recorded gaps`; they are assertions-free on purpose.
 | item | gate | what is missing |
 | --- | --- | --- |
 | `schematic-wire-segment-dropped` | all four | deleting a segment of a multi-segment wire removes copper-equivalent drawing while the net still connects — connectivity-only reasoning cannot see it |
+| `ticket-regression` | none — by design | tickets running backwards within a doc is LEGAL V4 (real client sheets contain hundreds of them); the variant documents why no gate may fire |
 
 Everything else the corpus once had to record as blind is **closed** in
 `scripts/lib/checks.js` (and its manifest entry moved to a real `expect`):
@@ -171,13 +172,13 @@ Everything else the corpus once had to record as blind is **closed** in
 | was | now | level |
 | --- | --- | --- |
 | stray `||` silently losing a body | "record body is not valid JSON" | error |
-| tickets unique but unordered | "N ticket(s) out of file order" — scoped to MAIN docs (real client SYMBOL docs are unordered by design) | warning |
-| foreign `DOCHEAD.client` | "DOCHEAD client … ≠ project client" — warning because genuine merged client projects legitimately differ | warning |
-| dangling `ATTR.parentId` | "parentId … references nothing in the document" | error |
+| tickets unique but unordered | **no order rule** (1.12): record tickets are per-atom clocks — real saves repeat them across different ids (all FONT rows share ticket 1) and run backwards by the hundred (813 in the official quick-start). What remains is `(ticket, id)` **pair** uniqueness: a copied/torn line repeats both | error (pair only) |
+| foreign `DOCHEAD.client` | "DOCHEAD client mismatch on N doc(s)…" — aggregated one line per file; warning because genuine merged client projects legitimately differ | warning |
+| dangling `ATTR.parentId` | "parentId … references nothing in the document" — resolved across the whole container file (cross-doc element ids are legal) with the instance-path form `eNNNN(-ie)NNN…` exempt (NO_CONNECT pin flags) | error |
 | `COMPONENT`/`WIRE` head without `id` | "head has no id" | error |
 | zero-byte container crashing the gates | "document file has no DOCHEAD records" + `netlist/drc/pins` stubs that degrade to findings instead of throwing | error |
 
-The warning-vs-error choice is empirical, not taste: both committed real-client
-examples pass every new error-level rule, and the two rules they would have
-failed (client id, ticket order on client-authored main docs) are exactly the
-two kept at warning.
+The warning-vs-error choice is empirical, not taste: the calibration set is
+the two real client-saved projects on the maintainers' disk (quick-start,
+H610) plus `examples/easyeda-eprj3-project` — **all must validate with 0
+errors** — and every error-level rule above stays silent on all of them.

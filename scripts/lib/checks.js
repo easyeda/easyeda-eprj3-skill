@@ -17,6 +17,10 @@ const E = require('./eprj3');
 const { readJsonText, parseJsonText } = require('./utils');
 
 const hex = (s, n) => typeof s === 'string' && new RegExp(`^[0-9a-f]{${n}}$`).test(s);
+// V4 document uuids come in two measured shapes: 16-hex (V3/legacy saves and
+// embedded library docs) and 32-hex (client-created SCH/PCB/page docs).
+// Accept both — t-doc-head explicitly warns never to assume 16.
+const hexUuid = (s) => hex(s, 16) || hex(s, 32);
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
 /** Split a container file into docs: [{docType, uuid, client, lines}]. */
@@ -25,7 +29,7 @@ function docsOf(file) {
   const docs = [];
   let cur = null;
   for (const l of lines) {
-    if (l.startsWith('{"type":"DOCHEAD"}')) {
+    if (E.isDocHeadLine(l)) {
       const r = E.parseRecord(l);
       cur = {
         docType: r && r.body && r.body.docType,
@@ -47,11 +51,8 @@ function runValidate(dir) {
   const check = (cond, msg) => { if (!cond) errors.push(msg); };
   const warn = (cond, msg) => { if (!cond) warnings.push(msg); };
 
-  function checkTicketsAndRecords(doc, label, mainDoc) {
+  function checkTicketsAndRecords(doc, label) {
     const seen = new Set();
-    let lastTicket = -1;
-    let orderBad = null;
-    let orderCount = 0;
     for (let li = 1; li < doc.lines.length; li += 1) {
       const line = doc.lines[li];
       const r = E.parseRecord(line);
@@ -69,60 +70,81 @@ function runValidate(dir) {
         }
       }
       if (typeof r.ticket === 'number') {
-        check(!seen.has(r.ticket), `${label}: duplicate ticket ${r.ticket} (${r.type})`);
-        // V002 — the client writes MAIN docs (SCH_PAGE/PCB/SCH) with tickets in
-        // increasing file order; a regression there signals hand-editing or a
-        // torn append. Embedded SYMBOL/DEVICE docs really are unordered in
-        // client-authored projects (examples/blink proves it), so the rule is
-        // scoped to main documents only — where it has meaning.
-        if (mainDoc && r.ticket <= lastTicket) {
-          orderCount += 1;
-          if (!orderBad) orderBad = `${r.ticket} (after ${lastTicket}) ${r.type}`;
-        }
-        lastTicket = Math.max(lastTicket, r.ticket);
-        seen.add(r.ticket);
+        // V4 reality (measured on the official quick-start project): record
+        // tickets are per-atom clocks — the client's own saves repeat them
+        // (all FONT rows share ticket 1) and do NOT run in file order (813
+        // regressions in one real sheet). What must be unique is the
+        // (ticket, id) pair; a copied/torn line repeats both. There is no
+        // ticket-order invariant to check.
+        const tkey = `${r.ticket}|${r.id}`;
+        check(!seen.has(tkey), `${label}: duplicate ticket ${r.ticket}+id ${r.id} (${r.type})`);
+        seen.add(tkey);
       }
       // COMPONENT/WIRE heads must carry an id — everything links through it.
       if ((r.type === 'COMPONENT' || r.type === 'WIRE') && !r.id) {
         check(false, `${label}: ${r.type} head has no id`);
       }
     }
-    if (orderCount) warnings.push(`${label}: ${orderCount} ticket(s) out of file order (first: ${orderBad})`);
   }
 
   /**
-   * V004 — ATTR.parentId must name a record in the same document. A dangling
-   * parentId is how a renamed/deleted component silently keeps rendering an
-   * orphan label that no tool can find again.
+   * V004 — ATTR.parentId must name a record id somewhere in the container
+   * file. Cross-document resolution is required: element ids ("e55") repeat
+   * per document and footprint metadata legitimately references an id that
+   * lives in a sibling embedded doc (measured on H610/quick-start). The one
+   * form that resolves nowhere by construction is the instance-path id
+   * ("eNNNN-ieNNNN": component element × symbol element — NO_CONNECT flags
+   * address a pin, not a record) — it is exempt. A plain id that names no
+   * record anywhere stays an ERROR: that is hand-edit corruption, and the
+   * corpus's dangling-parentId witness depends on it.
    */
-  function checkAttrParents(doc, label) {
-    const ids = new Set();
-    const attrs = [];
-    for (const l of doc.lines.slice(1)) {
-      const r = E.parseRecord(l);
-      if (!r) continue;
-      if (r.id) ids.add(r.id);
-      if (doc.uuid) ids.add(doc.uuid);
-      if (r.type === 'ATTR' && r.body && r.body.parentId) attrs.push(r);
-    }
-    for (const a of attrs) {
-      check(ids.has(a.body.parentId),
-        `${label}: ATTR ${a.body.key || ''} parentId ${a.body.parentId} references nothing in the document`);
+  function checkAttrParents(docs, label) {
+    const docIds = docs.map((d) => {
+      const ids = new Set();
+      if (d.uuid) ids.add(d.uuid);
+      for (const l of d.lines.slice(1)) {
+        const r = E.parseRecord(l);
+        if (r && r.id) ids.add(r.id);
+      }
+      return { doc: d, ids };
+    });
+    const allIds = new Set();
+    for (const g of docIds) for (const id of g.ids) allIds.add(id);
+    for (const g of docIds) {
+      for (const l of g.doc.lines.slice(1)) {
+        const r = E.parseRecord(l);
+        if (!r || r.type !== 'ATTR' || !r.body || !r.body.parentId) continue;
+        const pid = String(r.body.parentId);
+        // Instance-path ids: COMPONENT/element id chains — "e21050-e31"
+        // (quick-start NO_CONNECT pins) or "e55-ie307" (H610 footprint meta).
+        // They address a pin/element through its owner, never a record id.
+        if (/^e\d+(?:-i?e\d+)+$/.test(pid)) continue;
+        if (g.ids.has(r.body.parentId) || allIds.has(r.body.parentId)) continue;
+        check(false,
+          `${label}: ATTR ${r.body.key || ''} parentId ${r.body.parentId} references nothing in the document`);
+      }
     }
   }
 
   const done = () => ({ errors, warnings });
 
-  // V003 — every DOCHEAD must carry the project client id (md5 of the owner
+  // V003 — every DOCHEAD should carry the project client id (md5 of the owner
   // uuid). A foreign client id is what a hand-copied embedded doc leaves
-  // behind; the client silently drops such docs when it opens the project.
-  // Warn level until every committed client sample is proven clean.
+  // behind. Warning level: real merged/local projects legitimately mix origins
+  // (the quick-start's imported SYMBOLs carry the exporter's client; H610 has
+  // 2000+ such docs), so this is a smell, not corruption. Aggregated per
+  // file — one line, not one per doc.
   function checkDocClients(docs, label, expectedClient) {
+    if (!expectedClient) return;
+    let foreign = 0;
+    let first = '';
     for (const d of docs) {
-      if (d.client && expectedClient && d.client !== expectedClient) {
-        warnings.push(`${label}: DOCHEAD client ${d.client} ≠ project client ${expectedClient} (${d.docType} ${d.uuid})`);
+      if (d.client && d.client !== expectedClient) {
+        foreign += 1;
+        if (!first) first = `${d.client} (${d.docType} ${d.uuid})`;
       }
     }
+    if (foreign) warn(false, `${label}: ${foreign} doc(s) carry a foreign DOCHEAD client, ≠ project ${expectedClient} (first: ${first})`);
   }
 
   // ---------------------------------------------------------------- index
@@ -146,10 +168,26 @@ function runValidate(dir) {
   check(isObj(index.profile), 'index.profile missing');
   if (!isObj(index.profile)) return done();
   const profile = index.profile;
-  for (const k of ['boards', 'schematics', 'sheets', 'pcbs', 'panels', 'blockSymbols', 'simSchematics', 'simulations']) {
+  // Required in every generation measured; the sim/block maps only exist from
+  // the era that introduced those domains — old client files legitimately
+  // lack them (measured: H610 index has no simSchematics/simulations keys).
+  for (const k of ['boards', 'schematics', 'sheets', 'pcbs', 'panels']) {
     check(isObj(profile[k]), `index.profile.${k} must be an object`);
   }
-  check(isObj(profile.owner) && hex(profile.owner.uuid, 32), 'profile.owner.uuid must be 32-hex');
+  for (const k of ['blockSymbols', 'simSchematics', 'simulations']) {
+    if (profile[k] !== undefined) check(isObj(profile[k]), `index.profile.${k} must be an object`);
+  }
+  // profile.owner.uuid: cloud projects use a 16/32-hex uuid; LOCAL (offline)
+  // projects measured in the wild store the editor's project-directory path
+  // here (H610: "D:\Documents\LCEDA-Pro\projects"). Accept both; flag the
+  // non-uuid form as a warning so it is visible, not fatal.
+  if (isObj(profile.owner)) {
+    if (!(hex(profile.owner.uuid, 16) || hex(profile.owner.uuid, 32))) {
+      warn(false, 'profile.owner.uuid is not a hex uuid (path/legacy form — the client accepts it)');
+    }
+  } else {
+    check(false, 'profile.owner.uuid must be a uuid or path string');
+  }
   if (!isObj(profile.boards) || !isObj(profile.schematics) || !isObj(profile.sheets)
     || !isObj(profile.pcbs)) return done();
   const projectClient = index.owner_uuid ? E.clientIdFrom(index.owner_uuid) : null;
@@ -157,7 +195,7 @@ function runValidate(dir) {
   // -------------------------------------------------------------- schematic
   const schDirOf = (sch) => path.join(dir, 'sch', sch.name);
   for (const sch of Object.values(profile.schematics)) {
-    check(hex(sch.uuid, 16) && !!sch.name, `bad schematic entry: ${JSON.stringify(sch)}`);
+    check(hexUuid(sch.uuid) && !!sch.name, `bad schematic entry: ${JSON.stringify(sch)}`);
     check(profile.boards[sch.board], `schematic ${sch.name}: board ${sch.board} not in profile.boards`);
     const d = schDirOf(sch);
     check(fs.existsSync(d), `missing schematic dir ${d}`);
@@ -166,11 +204,15 @@ function runValidate(dir) {
       const docs = docsOf(ecfg);
       check(docs.length === 1 && docs[0].docType === 'SCH' && docs[0].uuid === sch.uuid,
         `${ecfg}: want a single SCH doc with uuid ${sch.uuid}`);
-      check(fs.readFileSync(ecfg, 'utf8').trim().split('\n').length === 4,
-        `${ecfg}: want 4 records (DOCHEAD META RULE RULE)`);
+      const ecfgText = fs.readFileSync(ecfg, 'utf8').trim();
+      const ecfgCount = ecfgText ? ecfgText.split('\n').length : 0;
+      // V4 saves an .ecfg with 2 records (DOCHEAD + META); older client saves
+      // wrote 4 (two RULE lines follow). Both are on disk in the wild.
+      check(ecfgCount === 2 || ecfgCount === 4,
+        `${ecfg}: want 2 or 4 records (DOCHEAD META [RULE RULE]), got ${ecfgCount}`);
       if (docs.length === 1) {
-        checkTicketsAndRecords(docs[0], path.basename(ecfg), docs[0].docType === 'SCH');
-        checkAttrParents(docs[0], path.basename(ecfg));
+        checkTicketsAndRecords(docs[0], path.basename(ecfg));
+        checkAttrParents(docs, path.basename(ecfg));
         checkDocClients(docs, path.basename(ecfg), projectClient);
       }
     } else {
@@ -195,9 +237,9 @@ function runValidate(dir) {
     for (const d of docs) {
       check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
       uuids.add(d.uuid);
-      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`, d.docType === 'SCH_PAGE');
-      checkAttrParents(d, `${path.basename(file)}[${d.docType}]`);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
     }
+    checkAttrParents(docs, path.basename(file));
     checkDocClients(docs, path.basename(file), projectClient);
     const main = docs[docs.length - 1];
     check(main.docType === 'SCH_PAGE' && main.uuid === sheet.uuid,
@@ -241,9 +283,9 @@ function runValidate(dir) {
     for (const d of docs) {
       check(d.uuid && !uuids.has(d.uuid), `${file}: duplicate/missing doc uuid ${d.uuid}`);
       uuids.add(d.uuid);
-      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`, d.docType === 'PCB');
-      checkAttrParents(d, `${path.basename(file)}[${d.docType}]`);
+      checkTicketsAndRecords(d, `${path.basename(file)}[${d.docType}]`);
     }
+    checkAttrParents(docs, path.basename(file));
     checkDocClients(docs, path.basename(file), projectClient);
     const main = docs[docs.length - 1];
     check(main.docType === 'PCB' && main.uuid === pcb.uuid,
