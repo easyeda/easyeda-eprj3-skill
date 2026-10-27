@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.13.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.13.1** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -8,7 +8,7 @@
 
 > Generate `.eprj3` projects that open directly in EasyEDA Pro (嘉立创 EDA 专业版) — from a one-sentence feature request via your AI assistant, or from a few Node commands.
 
-An AI-agent skill that turns a feature request — or a single `design.json` — into a complete `.eprj3` folder project: a schematic laid out in signal-flow blocks with every net wired, a **placement-only PCB** (footprints + pad↔net links + board outline — this skill **never routes and never pours**; tracks, vias and copper are finished by you in the EasyEDA Pro client), and **five automated gates** proving the result before you ever open the client.
+An AI-agent skill that turns a feature request — or a single `design.json` — into a complete `.eprj3` folder project: a schematic laid out in signal-flow blocks with every net wired, a **placement-only PCB** (footprints + pad↔net links + board outline — this skill **never routes and never pours**; tracks, vias and copper are finished by you in the EasyEDA Pro client), and **five automated gates** proving the result before you ever open the client. The deliverable is the `.eprj3` project itself — **no manufacturing exports**: BOM, pick-and-place and Gerber/production archives come from the client.
 
 All code is self-authored Node CommonJS. **Zero third-party dependencies** — enforced by `node scripts/depcheck.js`, not just promised.
 
@@ -113,8 +113,10 @@ MIT — see [LICENSE](LICENSE).
 ## 中文
 
 > 用 AI 或几条 Node 命令，生成可在 EasyEDA Pro（嘉立创 EDA 专业版）直接打开的 `.eprj3` 工程。
+>
+> **边界**：交付物就是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。自动布线、铺铜、制造文件导出（BOM / 坐标 / Gerber）都不归这个 skill 管——在客户端完成。
 
-**当前版本：1.13.0** · [更新记录](CHANGELOG.md)
+**当前版本：1.13.1** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 

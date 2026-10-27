@@ -1,6 +1,6 @@
 ---
 name: easyeda-eprj3
-description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto schematic layout + wiring, auto PCB PLACEMENT (footprints + pad-net links + board outline; routing and copper pour are out of scope — done in the client), then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
+description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto schematic layout + wiring, auto PCB PLACEMENT (footprints + pad-net links + board outline; routing, copper pour and manufacturing exports are out of scope — copper and production files come from the client), then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
 ---
 
 # EasyEDA Pro eprj3 Skill
@@ -292,5 +292,9 @@ footprint sharing a display name cannot collide.
   and impedance control are client tasks too. Hierarchical multi-sheet
   navigation and simulation documents are not authored — finish those in the
   client.
+- **The deliverable is the `.eprj3` project itself — nothing else.** No
+  manufacturing artifacts: BOM, pick-and-place / coordinate files, Gerber or
+  production archives are out of scope; the EasyEDA client exports those. Do
+  not add export commands to this skill.
 - `DIFF_PAIR`/`SHORT` special symbols and the A4/A3 frame symbols are not yet
   verified against the real client.

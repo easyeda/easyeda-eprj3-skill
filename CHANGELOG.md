@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.13.1] - 2026-10-27
+
+Scope statement (docs only): **the skill generates the `.eprj3` project — and
+nothing else.** Manufacturing artifacts were ruled out of scope by the
+maintainer: BOM, pick-and-place / coordinate files and Gerber/production
+archives are exported by the EasyEDA client, not by this skill. Written into
+the places an agent reads before acting, so no future "helpful" export script
+creeps in.
+
+### Changed
+- `SKILL.md`: front-matter description now lists manufacturing exports alongside
+  routing/pour as out of scope; a new Known-limitations bullet states the
+  deliverable boundary ("Do not add export commands to this skill").
+- `README.md` (EN intro + ZH 引言): boundary sentence in both language sections.
+- Version labels `1.13.0 → 1.13.1` (package.json, README). No code or behavior
+  changed; suite status is the 1.13.0 green run (smoke 135 · pipeline 47 ·
+  dfm 70 · corpus 108 · eval 20/20 · depcheck clean).
+
 ## [1.13.0] - 2026-10-27
 
 The scope release: **the skill no longer touches copper at all.** Since 1.11 routing and pour were opt-in; opt-ins turned out to be surface the agent could still reach for. Since 1.13 they are gone — the deliverable is schematic + netlist + PCB **placement** (+ pad-net binding + outline), and every copper decision belongs to a human in the EasyEDA client. The boundary is now enforced structurally: the flags do not exist, so nothing can lay tracks or pours even by accident.
