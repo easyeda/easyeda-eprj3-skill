@@ -323,5 +323,8 @@
         "4": "GND"
       }
     }
-  ]
+  ],
+  "expect": {
+    "decoupling": true
+  }
 }

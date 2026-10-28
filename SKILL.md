@@ -108,6 +108,7 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `blocks` | titled boxes in signal-flow order; parts left out join the last block; keep **2–8 related parts** per block |
 | `parts[].id` | reference designator **and** the part key used by `blocks` / `pcb.place` |
 | `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
+| `parts[].ic` | evidence-sourced IC entry (`STM32F103C8T6`…) — replaces `symbol`+`footprint`, pins map by pin number, unused pins `"NC"` |
 | `parts[].footprint` | preset name (`R0603`, `C0603`, `SMA`, `TP0.5`…) **or** inline spec **or** `{ "auto": "LQFP48" }` |
 | `parts[].pins` | pin **number** → net name. Unconnected pins map to `"NC"` (ERC accepts the NC convention). Every other unlisted pin is an ERC error |
 | `parts[].polarity` | optional `{ "1": "+", "2": "-" }` — checked by the intent gate (I001 catches an LED/diode wired backwards); TVS/clamp parts declare `"role": "shunt"` and are exempt |
@@ -254,10 +255,12 @@ parts, keep these invariants:
 ## Library tiers
 
 Presets ship with the skill (`templates/library/{symbol,footprint}/`) and resolve
-first; generated/inline entries are staged under `<project>/.tmp/library/` during
-authoring and removed by `build.js` or `cleanup.js`. `load-library.js list|show|remove`
-inspects both tiers. Inline entries are staged as `SYM_*` / `FP_*` so a symbol and
-footprint sharing a display name cannot collide.
+first; **IC pinout entries** (`templates/library/ic/`, referenced by
+`"ic": "STM32F103C8T6"`) carry evidence-cited symbol pinouts + footprints for
+real parts; generated/inline entries are staged under `<project>/.tmp/library/`
+during authoring and removed by `build.js` or `cleanup.js`. `load-library.js
+list|show|remove` inspects both tiers. Inline entries are staged as `SYM_*` /
+`FP_*` so a symbol and footprint sharing a display name cannot collide.
 
 ## Where to read next
 

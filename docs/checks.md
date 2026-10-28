@@ -52,6 +52,7 @@ DOCHEAD frames to `{"type":"DOCHEAD","ticket":1}`.
 | `E005` | error | part in schematic but not on the PCB | add a footprint |
 | `E006` | error | PCB pad net ≠ schematic net | PCB placement lost its `--nets` map |
 | `E007` | warn | auto-named net (`N$…`) | name it, or it will not survive a refactor |
+| `E008` | error | two or more outputs drive one net | mark one side as input/high-Z in the symbol or IC spec (`"num:name:dir"`), or buffer one driver — needs the design context (`build.js` and `erc.js --design` run it) |
 | `W001` | warn | supply-looking net without a power flag | declare it in `powers` |
 | `W002` | warn | IC on a supply with no decoupling cap | add one (0.1 µF per supply pin) — or run autofix |
 | `W003` | warn | net bridges two pins of the same part | usually a typo in `pins` |

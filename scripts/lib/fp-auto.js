@@ -17,24 +17,28 @@
 const PAD_TH = 60;   // through-hole pad copper (square)
 const DRILL_STD = 32; // 0.1" header drill
 
-/** Two in-line rows (SOP/SSOP/TSSOP/SOIC). Left column top→bottom = 1..n,
- *  right column bottom→top = n+1..2n (standard CCW numbering). */
+/** Two in-line rows (SOP/SSOP/TSSOP/SOT23-6). Left column TOP→bottom = 1..n,
+ *  right column bottom→top = n+1..2n — the official-library orientation
+ *  (EasyEDA SOIC-8 C7950: pin 1 top-left). */
 function dualRow(pins, { span, pitch, padW, padH, hole }) {
   if (pins % 2) throw new Error(`dual-row footprint needs an even pin count (got ${pins})`);
   const perSide = pins / 2;
   const pads = [];
   for (let i = 0; i < perSide; i += 1) {
-    const y = Math.round(((i - (perSide - 1) / 2) * pitch) * 100) / 100;
+    const y = Math.round((((perSide - 1) / 2) - i) * pitch * 100) / 100;
     pads.push([i + 1, -span, y, padW, padH]);
   }
   for (let i = 0; i < perSide; i += 1) {
-    const y = Math.round((((perSide - 1) / 2) - i) * pitch * 100) / 100;
+    const y = Math.round(((i - (perSide - 1) / 2) * pitch) * 100) / 100;
     pads.push([perSide + i + 1, span, y, padW, padH]);
   }
   return { pads, outline: bboxOutline(pads), hole };
 }
 
-/** Four sides (QFN/QFP). CCW from pin 1 at the top of the left edge. */
+/** Four sides (QFN/QFP). Per the official QFN-24 sample (MPU-6050, LCSC
+ *  C24112): bottom row left→right = 1..n, right column bottom→top, top row
+ *  right→left, left column bottom→top. Exact real parts (IC pinout entries)
+ *  ship verbatim official pads instead — package conventions differ per part. */
 function quad(pins, { span, pitch, padW, padH }) {
   if (pins % 4) throw new Error(`quad footprint needs a pin count divisible by 4 (got ${pins})`);
   const perSide = pins / 4;
@@ -43,10 +47,10 @@ function quad(pins, { span, pitch, padW, padH }) {
   let num = 1;
   const yAt = (i) => Math.round((-half + i * pitch) * 100) / 100;
   const xAt = (i) => yAt(i);
-  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, -span, yAt(i), padH, padW]); // left
-  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, xAt(i), span, padW, padH]);  // bottom
-  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, span, yAt(perSide - 1 - i), padH, padW]); // right
-  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, xAt(perSide - 1 - i), -span, padW, padH]); // top
+  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, xAt(i), -span, padW, padH]);            // bottom l→r
+  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, span, yAt(i), padH, padW]);             // right b→t
+  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, xAt(perSide - 1 - i), span, padW, padH]); // top r→l
+  for (let i = 0; i < perSide; i += 1, num += 1) pads.push([num, -span, yAt(i), padH, padW]);            // left b→t
   return { pads, outline: bboxOutline(pads) };
 }
 
@@ -105,30 +109,50 @@ function bboxOutline(pads, shrink) {
 }
 
 // Family registry. `pins` fixed → omit from the spec; else required.
-// Land-pattern dimensions cite external evidence in docs/footprint-evidence.md
-// (JEDEC / IPC-7351B / a real LCSC part); test/dfm.js asserts the key ones so
-// they cannot drift silently.
+// Land-pattern dimensions are calibrated against the **EasyEDA 官方库**
+// (LCSC parts fetched from easyeda.com/api/products/{LCSC}/components) and
+// JEDEC/IPC-7351B where no official sample is fetched yet. The per-family
+// table with part ids lives in docs/footprint-evidence.md; test/dfm.js
+// asserts the key numbers so they cannot drift silently.
 const FAMILIES = {
-  // SOT small outline — spans per JEDEC MO-178 / IPC-7351B: SOT-23 (TO-236AB)
-  // lead span 2.1–2.5 mm → pad centres ±47 mil; TSOT-23-5/-6 lead span 2.8 mm
-  // → ±55 mil. Pad size 24×30 (0.61×0.76 mm), in-row pitch 37 mil (0.95 mm).
-  SOT23:   { pins: 3, gen: () => { const pads = [[1, -47, -18.5, 24, 30], [2, -47, 18.5, 24, 30], [3, 47, 0, 24, 30]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'Q' },
-  'SOT23-5': { pins: 5, gen: () => { const pads = [[1, -55, -37, 24, 30], [2, -55, 0, 24, 30], [3, -55, 37, 24, 30], [4, 55, -18.5, 24, 30], [5, 55, 18.5, 24, 30]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'U' },
-  'SOT23-6': { pins: 6, gen: () => dualRow(6, { span: 55, pitch: 37, padW: 24, padH: 30 }), designator: 'U' },
-  SOT223:  { pins: 4, gen: () => ({ pads: [[1, -90, -100, 28, 40], [2, 0, -100, 28, 40], [3, 90, -100, 28, 40], [4, 0, 150, 60, 100]], outline: [-135, -135, 135, 215] }), designator: 'U' },
-  // dual-row gull wing — calibrated on SOIC_8P (rs485.json): 24x55 at ±80, pitch 50
-  SOP:     { gen: (s) => dualRow(s.pins, { span: s.span || 80, pitch: s.pitch || 50, padW: 24, padH: 55 }), designator: 'U' },
-  SSOP:    { gen: (s) => dualRow(s.pins, { span: s.span || 95, pitch: s.pitch || 25.6, padW: 20, padH: 38 }), designator: 'U' },
-  TSSOP:   { gen: (s) => dualRow(s.pins, { span: s.span || 120, pitch: s.pitch || 37, padW: 24, padH: 28 }), designator: 'U' },
-  // quad no-lead / gull wing — span from body half-width: bodyHalf =
-  // perSide·pitch/2 + margin, pad centres sit inside the body edge.
-  QFN:     { gen: (s) => { const pitch = s.pitch || 20; const perSide = s.pins / 4;
-              const padW = Math.max(9, Math.round(pitch * 0.45)); const padH = Math.round(pitch * 1.35);
-              const span = s.span || Math.round((perSide * pitch) / 2 + 20 - padH / 2);
+  // SOT-23 — official MMBT5551 (C2145): pads 1.0×0.65 mm at x=±1.0 mm,
+  // pin pitch 1.9 mm (P1.90 in the official package name — the two same-side
+  // leads sit 1.9 mm apart, NOT 0.95). Pads 1/2 left, pad 3 right.
+  SOT23:   { pins: 3, gen: () => { const pads = [[1, -39.4, 37.4, 39.4, 25.6], [2, -39.4, -37.4, 39.4, 25.6], [3, 39.4, 0, 39.4, 25.6]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'Q' },
+  // TSOT-23-5 — official ME6211C33 (C82942, P0.95-LS2.8): pads 1.16×0.46 mm,
+  // in-column pitch 0.95 mm, row centres ±45.4; right column aligns with rows
+  // 1 and 3 (pad4↔pad3, pad5↔pad1).
+  'SOT23-5': { pins: 5, gen: () => { const pads = [[1, -45.4, 37.4, 45.6, 19.3], [2, -45.4, 0, 45.6, 19.3], [3, -45.4, -37.4, 45.6, 19.3], [4, 45.4, -37.4, 45.6, 19.3], [5, 45.4, 37.4, 45.6, 19.3]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'U' },
+  // TSOT-23-6 — same body class as SOT23-5 (no separate official sample yet).
+  'SOT23-6': { pins: 6, gen: () => dualRow(6, { span: 45.4, pitch: 37.4, padW: 45.6, padH: 19.3 }), designator: 'U' },
+  // SOT-223 — official AMS1117-3.3 (C6186, P2.30-LS7.0): inline row pads
+  // 1.1×2.5 mm at 2.3 mm pitch, row centre ±2.97 mm; tab 3.6×2.34 mm on the
+  // opposite side (official tab is pad "4" — an IC entry may re-number it).
+  SOT223:  { pins: 4, gen: () => { const pads = [[1, -90.5, -116.9, 43.3, 98.4], [2, 0, -116.9, 43.3, 98.4], [3, 90.5, -116.9, 43.3, 98.4], [4, 0, 116.9, 141.7, 92.1]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'U' },
+  // Dual-row gull wing — official LM358DR (C7950, SOIC-8 P1.27-LS6.0): pads
+  // 1.95 mm radial × 0.56 mm tangential, row centres ±2.7 mm, pitch 1.27 mm.
+  // (The pre-1.15 numbers had the axes swapped and pads overlapping.)
+  SOP:     { gen: (s) => dualRow(s.pins, { span: s.span || 106.5, pitch: s.pitch || 50, padW: 76.8, padH: 22.4 }), designator: 'U' },
+  // SSOP — IPC-7351B derivation, official sample not fetched yet.
+  SSOP:    { gen: (s) => dualRow(s.pins, { span: s.span || 130, pitch: s.pitch || 25.6, padW: 38, padH: 12 }), designator: 'U' },
+  // TSSOP — IPC-7351B derivation (0.65 mm pitch class), official sample not
+  // fetched yet.
+  TSSOP:   { gen: (s) => dualRow(s.pins, { span: s.span || 112.7, pitch: s.pitch || 25.6, padW: 58, padH: 16 }), designator: 'U' },
+  // QFN — official MPU-6050 (C24112, QFN-24 4×4 0.5 mm): pads 0.8 mm radial ×
+  // 0.28 mm tangential at ±2.0 mm → radial 1.6×pitch, centres = pin-span
+  // half + 0.75 mm. **Thermal pad NOT modelled** — hand-write an inline
+  // footprint (with the EP pad) for QFNs that need it.
+  QFN:     { gen: (s) => { const pitch = s.pitch || 19.7; const perSide = s.pins / 4;
+              const padW = Math.max(9, Math.round(pitch * 0.56)); const padH = Math.round(pitch * 1.6);
+              const span = s.span || Math.round((perSide * pitch) / 2 - pitch / 2 + 29.5);
               return quad(s.pins, { span, pitch, padW, padH }); }, designator: 'U' },
+  // LQFP — official STM32F103C8T6 (C8734, LQFP-48 7×7 0.5 mm): pads 0.27 mm
+  // tangential × 1.5 mm radial at ±4.23 mm, pitch 0.5 mm → radial 3×pitch,
+  // centres = pin-span half + 1.5 mm (gull-wing lead protrusion). Exact for
+  // LQFP-48; other body sizes want an explicit `span` knob.
   QFP:     { gen: (s) => { const pitch = s.pitch || 19.7; const perSide = s.pins / 4;
-              const padW = Math.max(9, Math.round(pitch * 0.55)); const padH = Math.round(pitch * 2.8);
-              const span = s.span || Math.round((perSide * pitch) / 2 + 30 - padW / 2);
+              const padW = Math.max(9, Math.round(pitch * 0.54)); const padH = Math.round(pitch * 3);
+              const span = s.span || Math.round(((perSide - 1) * pitch) / 2 + 59.1);
               return quad(s.pins, { span, pitch, padW, padH }); }, designator: 'U' },
   // through-hole
   DIP:     { gen: (s) => dip(s.pins, { rowSpan: s.rowSpan || 300, pitch: s.pitch || 100, hole: s.hole || DRILL_STD }), designator: 'U' },
@@ -138,10 +162,12 @@ const FAMILIES = {
   SW_4P:   { pins: 4, gen: () => ({ pads: [[1, -100, -70, 60, 50], [2, -100, 70, 60, 50], [3, 100, -70, 60, 50], [4, 100, 70, 60, 50]], outline: [-140, -100, 140, 100] }), designator: 'SW' },
   XTAL:    { pins: 2, gen: () => ({ pads: [[1, -60, 0, 50, 60], [2, 60, 0, 50, 60]], outline: [-110, -80, 110, 80] }), designator: 'Y' },
   OSC:     { pins: 4, gen: () => ({ pads: [[1, -60, -40, 40, 40], [2, 60, -40, 40, 40], [3, 60, 40, 40, 40], [4, -60, 40, 40, 40]], outline: [-110, -80, 110, 80] }), designator: 'Y' },
-  // POWER-ONLY USB-C: VBUS (A4/A9/B4/B9), GND (A1/A12/B1/B12) and CC1/CC2
-  // (A5/B5) only — DP/DM/SBU/shield are NOT modelled. Map those pins on a
-  // hand-written footprint instead; a pin without a pad fails ERC (E006).
-  USB_C:   { pins: 10, gen: () => ({ pads: [['A4', -60, 80, 24, 32], ['A9', -60, 40, 24, 32], ['A5', -60, 0, 24, 32], ['A1', -60, -40, 24, 32], ['A12', -60, -80, 24, 32], ['B4', 60, 80, 24, 32], ['B9', 60, 40, 24, 32], ['B5', 60, 0, 24, 32], ['B1', 60, -40, 24, 32], ['B12', 60, -80, 24, 32]], outline: [-140, -130, 140, 130] }), designator: 'J' }
+  // USB-C — official TYPE-C-31-M-12 (C165948): POWER-ONLY subset at the
+  // official merged-pad positions (A1B12/A4B9 = merged GND/VBUS across both
+  // rows; A5/B5 = CC). DP/DM/SBU/shell are NOT modelled — a pin mapped
+  // without a pad fails ERC (E006); use a hand-written inline footprint for
+  // full-featured USB-C.
+  USB_C:   { pins: 6, gen: () => ({ pads: [['A1B12', -126, -97.4, 23.6, 51.2], ['A4B9', -94.5, -97.4, 23.6, 51.2], ['A5', -49.2, -97.4, 11.8, 51.2], ['B5', 68.9, -97.4, 11.8, 51.2], ['B4A9', 94.5, -97.4, 23.6, 51.2], ['B1A12', 126, -97.4, 23.6, 51.2]], outline: [-194, -123, 194, 123] }), designator: 'J' }
 };
 
 /** Catalogue for docs/CLI: [{name, pins, knobs:[…]}]. */

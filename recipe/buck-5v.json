@@ -162,5 +162,18 @@
         "2": "GND"
       }
     }
-  ]
+  ],
+  "expect": {
+    "decoupling": true,
+    "divider": [
+      {
+        "input": "5V",
+        "output": "FB",
+        "top": "R1",
+        "bottom": "R2",
+        "ratio": 0.248,
+        "tol": 0.02
+      }
+    ]
+  }
 }

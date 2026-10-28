@@ -14,6 +14,8 @@
  *   E005 part in the schematic missing from the PCB (or vice versa)
  *   E006 PCB netlist disagrees with the schematic netlist
  *   E007 auto-named net (N$…) — an unnamed node reached the layout
+ *   E008 two outputs drive one net (design-context rule: directions come from
+ *         the symbol/IC specs, not from the built records)
  *   W001 power net with no power flag (looks like a rail but is drawn as a wire)
  *   W002 IC with no decoupling capacitor on its supply net
  *   W003 net touching only two pins of the same part (a self-loop)
@@ -140,10 +142,11 @@ function runErc(dir, opts) {
     }
 
     // W002 — decoupling heuristic: an IC (>=8 pins) should have a capacitor
-    // from its supply net to ground.
+    // from its supply net to ground. Supply-ish net names only — ground names
+    // (VSS/GND) match POWER_ISH but obviously do not "power" anything.
     const capRefs = new Set();
     for (const n of nl.nets) {
-      if (!/^(VCC|VDD|VIN|3V3|5V|\+5V|\+3V3)$/i.test(n.name)) continue;
+      if (!/^(VCC|VDD|VDDA|VBAT|VBUS|VIN|VOUT|AVDD|3V3|5V|1V8|2V5|\+5V|\+3V3)$/i.test(n.name)) continue;
       const users = n.pins.filter((p) => p.ref !== '?').map((p) => p.ref);
       const hasCap = users.some((r) => /^C\d/.test(r));
       const ics = users.filter((r) => /^(U|IC)\d/.test(r));
@@ -209,6 +212,32 @@ function runErc(dir, opts) {
           msg: `built net "${net}" is not in the design`,
           fix: `remove or rename "${net}" in parts[].pins, then re-run build.js --force`
         });
+      }
+    }
+  }
+
+  // E008 — two outputs driving one net. Pin directions live in the design's
+  // symbol/IC specs (the client only stores an unverified Pin Type enum, so we
+  // do not write directions into records) — hence this rule needs the design
+  // context, which build.js always has; standalone `erc.js` without --design
+  // skips it.
+  if (options.design) {
+    const dirByRef = new Map();
+    for (const p of options.design.parts) {
+      if (p.pinDirs && Object.keys(p.pinDirs).length) dirByRef.set(p.id, p.pinDirs);
+    }
+    for (const s of all.perSheet) {
+      for (const net of s.netlist.nets) {
+        const outs = net.pins.filter((p) => (dirByRef.get(p.ref) || {})[String(p.num)] === 'O');
+        if (outs.length >= 2) {
+          errors.push({
+            id: 'E008',
+            sheet: `${s.schematic}/${s.sheet}`,
+            net: net.name,
+            msg: `net "${net.name}" is driven by ${outs.length} outputs (${outs.map((p) => `${p.ref}.${p.num}`).join(', ')})`,
+            fix: `one driver per net — mark one side as an input/high-Z in the symbol or IC spec, or tie one driver through a gate/resistor`
+          });
+        }
       }
     }
   }

@@ -5,6 +5,75 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.15.0] - 2026-10-28
+
+Second review round: every auto footprint family was re-calibrated against the
+**EasyEDA 官方库** (fetched per part from
+`easyeda.com/api/products/{LCSC}/components`), and real ICs can now be
+referenced from an **evidence-sourced pinout library** instead of being
+hand-typed from model memory.
+
+### Fixed
+- **SOIC/SOP pads had swapped axes.** The SOP family (and rs485's hand-written
+  SOIC_8P) emitted 24-wide × 55-tall pads — radial 0.6 mm, tangential 1.4 mm at
+  a 1.27 mm pitch, i.e. adjacent pads overlapping and the long axis along the
+  row instead of pointing outward. Now 76.8×22.4 (1.95×0.56 mm) at ±106.5 per
+  the official LM358DR2G footprint (C7950).
+- **SOT-23 pin pitch was wrong by 2×.** The family spaced pads 1/2 at 0.95 mm —
+  the official package is P1.90 (two same-side leads 1.9 mm apart). Now
+  39.4×25.6 pads at ±39.4, y=±37.4 per official MMBT5551 (C2145).
+- **TSSOP defaulted to the wrong pitch standard**: 37 mil (0.95 mm) instead of
+  25.6 (0.65 mm), with swapped pad axes. Now 58×16 at ±112.7 (IPC-7351B
+  derivation; official sample still pending).
+- **LQFP span undersized**: default ±143 → ±167.3 (official STM32F103C8T6
+  footprint C8734). Larger bodies want an explicit `span` knob (documented).
+- **QFN recalibrated** on the official MPU-6050 footprint (C24112): pads
+  11×31.5 at ±78.7, bottom-row-left numbering per the official part.
+- **SOT-223 pads undersized** (28×40 at y=-100, tab 60×100): now 43.3×98.4 at
+  y=-116.9 with a 141.7×92.1 tab at +116.9 per official AMS1117-3.3 (C6186).
+- **SOT-23-5/-6 right column was interleaved** (±18.5): the official TSOT-23-5
+  (ME6211, C82942) aligns its two right-hand leads with rows 1 and 3 — now
+  ±37.4, pads 45.6×19.3 at ±45.4.
+- **SMA preset pads**: square 78.7×78.7 at ±86.6 → 98.4×70.9 at ±78.74
+  (DO-214AC derivation).
+- **dualRow/quad numbering conventions aligned with the official library**:
+  dual rows now start top-left (official SOIC-8), quads start bottom-left
+  counter-clockwise (official QFN-24); exact real parts ship verbatim official
+  pads instead.
+- **USB-C auto family now matches the official connector**: 6 merged power/CC
+  pads (A1B12/A4B9/A5/B5/B4A9/B1A12) at the official TYPE-C-31-M-12 positions
+  (C165948); usb-c-power recipe moved onto them.
+- Large centred symbols (a 48-pin IC) stuck half above the drawing frame:
+  `layoutSchematic` now anchors each part's extent top to its row top (L007
+  stays as the backstop).
+
+### Added
+- **IC pinout library** (`templates/library/ic/`, design contract
+  `"ic": "STM32F103C8T6"`): an evidence-cited symbol pin list
+  (num:name:dir:side) plus footprint per part, so a real IC is referenced by
+  name instead of the agent typing 48 pin definitions from memory — the
+  highest hallucination-risk step of AI-authored schematics. Entries are
+  curated data with mandatory `evidence` citations pointing at the
+  official-library API and the datasheet, never generated. First two:
+  STM32F103C8T6 (C8734, symbol + verbatim LQFP-48 pads) and AMS1117-3.3
+  (C6186, symbol + official SOT-223 geometry); pin counts asserted in
+  `test/dfm.js`.
+- **Pin directions and the E008 output-conflict rule.** Inline/IC pin specs
+  accept `"num:name:dir"` (+ optional `:L`/`:R` column hint; dir ∈ I O B P W T
+  C). ERC `E008` fails a net driven by ≥2 outputs. Directions live in the
+  design context only — the client's Pin Type enum is unverified beyond
+  `IN`/`Undefined`, so no new values are written into records.
+- Recipes declare `expect` (decoupling on mcu-min/ldo-3v3/usb-c-power; divider
+  + decoupling on buck-5v) — the fifth gate now actually runs in eval.
+- W002 decoupling heuristic widened (VDDA/VBAT/VBUS/VOUT/1V8/2V5/AVDD).
+
+### Verified
+- smoke 135/135 · pipeline 47/47 · dfm 95/95 (land-pattern contract re-asserted
+  against official-library numbers) · corpus 108/108 · depcheck 0 · eval 21/21.
+- New probes: STM32F103C8T6 minimum system builds placement-only via the IC
+  entry (48 pins mapped/NC'd, lint 100, drc 100); a two-drivers-on-one-net
+  design fails with E008; negative polarity/LED tests still fail correctly.
+
 ## [1.14.0] - 2026-10-27
 
 The senior-engineer review pass (see `tmp/analysis-*.md`): the gates were all
@@ -39,7 +108,7 @@ fixes the deliverable's engineering content, not just its plumbing.
   Negative test: a reversed LED still fails the build with I001.
 - **DIODE/LED preset pin conventions contradicted each other.** DIODE was
   pin 1 = K with designator `U?`; LED was pin 1 = A with `D?`. Both now follow
-  pin 1 = A / 2 = K (KiCad convention) with designator `D?`; the DIODE symbol
+  pin 1 = A / 2 = K (通用约定) with designator `D?`; the DIODE symbol
   artwork is mirrored to match, and the recipes' pins maps were flipped
   accordingly. `power-tree`'s TVS was in fact wired backwards under the old
   convention — the flip fixes it.
@@ -682,7 +751,7 @@ External review round (`c9fb48d`) — 7 of 9 reported issues confirmed and fixed
 - `scripts/tools/audit-format.js` (`d61d316`): cross-checks every generated record against the **easyeda-pro-format-skill** JSON Schemas with a divergence whitelist where real records win.
 
 ### Removed
-- `.elibz2` import and KiCad conversion from this skill (`436a2c9`) — conversion lives in the separate **kicad-to-easyeda-eprj3** project.
+- `.elibz2` import and third-party format conversion from this skill (`436a2c9`) — conversion lives in a separate project.
 
 ## [1.0.0] - 2026-09-08
 

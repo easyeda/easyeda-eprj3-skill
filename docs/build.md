@@ -50,6 +50,7 @@ cells for large inline symbols so blocks keep their gutters.
 | --- | --- | --- |
 | `id` | yes | reference designator and part key; unique |
 | `symbol` | yes | preset entry name, or `{ name, designator, pins:[…] }` |
+| `ic` | no | name of an evidence-sourced IC entry (`templates/library/ic/`) — replaces `symbol`+`footprint`; see below |
 | `footprint` | yes unless `pcb:false` | preset name, `{ auto: "LQFP48" }`, or `{ name, designator, pads, outline }` |
 | `pins` | yes | `{ "1": "NET", … }` or `["1:NET","2:NET"]`; `"NC"` marks an intentional no-connect |
 | `polarity` | no | `{ "1": "+", "2": "-" }` — the intent gate flags a "+" pin on a ground net (a reversed LED / electrolytic) |
@@ -78,6 +79,14 @@ derives from the pins. For a specific look, `pins` also accepts
 `"num:name:x:y:rotation"` — rotation must be 0 (left) or 180 (right); vertical
 pin columns have no verified real-client sample.
 
+Auto pin specs may also carry an **electrical direction** and a **column
+hint**: `"num:name:dir"` or `"num:name:dir:side"` with dir ∈ `I` `O` `B` `P`
+`W` `T` `C` (input / output / bidirectional / passive / power / tri-state /
+open-collector) and side ∈ `L` `R`. Hinted pins take their column (unhinted
+ones balance-fill); directions feed the ERC output-conflict check `E008` —
+mark at least the outputs of driver parts so two outputs on one net fail the
+build instead of the board.
+
 ### Auto footprints (`{ "auto": … }`)
 
 ```json
@@ -96,6 +105,27 @@ it), `pitch` (mil), `span` (pad row distance from the origin), `hole`
 `"auto": "SOP8"` are family+pin-count shorthand. `USB_C` is POWER-ONLY
 (VBUS/GND/CC1/CC2 — 10 pads); DP/DM/SBU need a hand-written inline footprint,
 since a design pin without a pad fails ERC (E006).
+
+### IC pinout library (`"ic": …`)
+
+Real ICs are referenced by name instead of hand-writing dozens of pin
+definitions from memory — the single highest hallucination-risk step of
+AI-authored schematics:
+
+```json
+{ "id": "U1", "ic": "STM32F103C8T6",
+  "pins": { "1": "3V3", "23": "GND", "24": "3V3", "34": "SWDIO", "37": "SWCLK" } }
+```
+
+The entry (under [`templates/library/ic/`](../templates/library/ic)) ships the
+evidence-sourced symbol pin list (`num:name:dir:side` — pin numbers, names,
+electrical directions and column layout) and the footprint spec, each with a
+citable `evidence` block (symbol source, footprint source, datasheet URL).
+Map only the pins the design actually uses; everything else becomes `"NC"`.
+An IC entry replaces `symbol` + `footprint` — give one or the other, never
+both. Entries are curated data, not generated: adding one means citing the
+sources you took the pinout from (see
+[`docs/footprint-evidence.md`](footprint-evidence.md)).
 
 ### Inline footprints
 

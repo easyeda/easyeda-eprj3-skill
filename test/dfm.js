@@ -283,30 +283,69 @@ function main() {
 
   // ---------------------------------------------- land-pattern contract
   // The auto families and the preset footprints must keep the dimensions
-  // recorded in docs/footprint-evidence.md (JEDEC / IPC-7351B / real LCSC
-  // parts). A silent drift here produced SOT-23 pads 0.35 mm inside the leads
-  // — invisible to every other gate, because D001 ignores intra-footprint
-  // spacing. If one of these asserts fails, fix the FOOTPRINT (or the evidence
-  // doc) — never the test.
+  // recorded in docs/footprint-evidence.md — calibrated against the EasyEDA
+  // 官方库 (fetched via easyeda.com/api/products/{LCSC}/components) and
+  // JEDEC/IPC-7351B where no official sample is fetched yet. A silent drift
+  // here went unnoticed for releases (D001 ignores intra-footprint spacing).
+  // If one of these asserts fails, fix the FOOTPRINT (or the evidence doc) —
+  // never the test.
   const FA = require(path.join(ROOT, 'scripts/lib/fp-auto.js'));
   const P = require(path.join(ROOT, 'scripts/lib/parts.js'));
 
-  const padX = (spec, num) => {
-    const r = FA.expandAuto(spec);
-    const p = r.pads.find((q) => String(q[0]) === String(num));
-    return p ? p[1] : NaN;
-  };
-  // SOT-23 (TO-236AB): lead span 2.10–2.50 mm → pad centres ±47 mil
-  ok(Math.abs(padX({ auto: 'SOT23' }, 1) + 47) < 0.01, 'auto SOT23 pad row at ±47 mil', padX({ auto: 'SOT23' }, 1));
-  // TSOT-23-5/-6 (SC-74A): lead span 2.8 mm → ±55 mil
-  ok(Math.abs(padX({ auto: 'SOT23-5' }, 1) + 55) < 0.01, 'auto SOT23-5 pad row at ±55 mil', padX({ auto: 'SOT23-5' }, 1));
-  ok(Math.abs(padX({ auto: 'SOT23-6' }, 1) + 55) < 0.01, 'auto SOT23-6 pad row at ±55 mil', padX({ auto: 'SOT23-6' }, 1));
-  ok(Math.abs(padX({ auto: 'SOT23' }, 3) - 47) < 0.01, 'auto SOT23 pad rows are symmetric (pin 3 at +47)', padX({ auto: 'SOT23' }, 3));
-
-  // USB-C auto family is POWER-ONLY: 10 pads (VBUS/GND/CC), pins knob fixed.
-  const usbc = FA.expandAuto({ auto: 'USB_C' });
-  ok(usbc.pads.length === 10, 'auto USB_C carries exactly its 10 power/CC pads', usbc.pads.length);
-
+  const famPads = (spec) => FA.expandAuto(spec).pads;
+  // SOT-23 — official MMBT5551 (C2145): pads 1.0×0.65 mm at ±1.0 mm, pin
+  // pitch 1.9 mm between pads 1/2
+  {
+    const s = famPads({ auto: 'SOT23' });
+    ok(Math.abs(s[0][1] + 39.4) < 0.01 && Math.abs(s[0][2] - 37.4) < 0.01 && Math.abs(s[0][3] - 39.4) < 0.01,
+      'auto SOT23 pads 39.4×25.6 at ±39.4, pitch 74.8 (P1.90)', JSON.stringify(s[0]));
+  }
+  // TSOT-23-5 — official ME6211 (C82942): pads 45.6×19.3 at ±45.4, in-column
+  // pitch 37.4; right column aligns with rows 3 and 1
+  {
+    const p5 = famPads({ auto: 'SOT23-5' });
+    ok(Math.abs(p5[0][1] + 45.4) < 0.01 && Math.abs(p5[0][3] - 45.6) < 0.01,
+      'auto SOT23-5 pads 45.6×19.3 at ±45.4', JSON.stringify(p5[0]));
+    ok(String(p5[3][2]) === '-37.4' && String(p5[4][2]) === '37.4',
+      'SOT23-5 right column aligns with rows 3 and 1', JSON.stringify(p5.slice(3)));
+  }
+  // SOT-223 — official AMS1117 (C6186): row at y=-116.9, pitch 90.5, pads
+  // 43.3×98.4; tab 141.7×92.1 at +116.9
+  {
+    const s223 = famPads({ auto: 'SOT223' });
+    ok(Math.abs(s223[0][2] + 116.9) < 0.5 && Math.abs(s223[0][3] - 43.3) < 0.5 && Math.abs(s223[3][3] - 141.7) < 0.5,
+      'auto SOT223 row y=-116.9 pads 43.3×98.4, tab 141.7×92.1', JSON.stringify(s223[0]));
+  }
+  // SOIC-8 — official LM358DR (C7950): pads 76.8 radial × 22.4 at ±106.5
+  {
+    const s8 = famPads({ auto: 'SOP8' });
+    ok(Math.abs(s8[0][1] + 106.5) < 0.01 && Math.abs(s8[0][3] - 76.8) < 0.01 && Math.abs(s8[0][4] - 22.4) < 0.01,
+      'auto SOP8 pads 76.8×22.4 at ±106.5 (radial long axis)', JSON.stringify(s8[0]));
+  }
+  // QFN — official MPU-6050 (C24112, QFN-24 4×4): pads 31.5×11 at ±78.7
+  {
+    const q24 = famPads({ auto: 'QFN24' });
+    ok(Math.abs(q24[0][1] + 49.2) < 0.3 && Math.abs(q24[0][2] + 78.7) < 0.6 && Math.abs(q24[0][4] - 31.5) < 0.6,
+      'auto QFN24 bottom row starts bottom-left at ±78.7 rows, pads 11×31.5', JSON.stringify(q24[0]));
+  }
+  // LQFP-48 — official STM32F103C8T6 (C8734): pads ≈10.6×59.1 at ±167.3
+  {
+    const q48 = famPads({ auto: 'LQFP48' });
+    ok(Math.abs(q48[0][2] + 167.3) < 0.6 && Math.abs(q48[0][4] - 59.1) < 0.6,
+      'auto LQFP48 pads ≈10.6×59.1 at ±167.3', JSON.stringify(q48[0]));
+  }
+  // TSSOP — IPC-7351B derivation (0.65 mm pitch class), official sample pending
+  {
+    const t20 = famPads({ auto: 'TSSOP20' });
+    ok(Math.abs(t20[0][1] + 112.7) < 0.01 && Math.abs(Math.abs(t20[1][2] - t20[0][2]) - 25.6) < 0.01,
+      'auto TSSOP20 pads 58×16 at ±112.7, pitch 25.6 (IPC-derived)', JSON.stringify(t20.slice(0, 2)));
+  }
+  // USB-C — official TYPE-C-31-M-12 (C165948): 6 merged power/CC pads
+  {
+    const usbc = famPads({ auto: 'USB_C' });
+    ok(usbc.length === 6 && String(usbc[0][0]) === 'A1B12' && Math.abs(usbc[0][1] + 126) < 0.1,
+      'auto USB_C = 6 official merged power/CC pads (A1B12…)', JSON.stringify(usbc[0]));
+  }
   // 0402 presets: IPC-7351N-scale pads (0.58×0.63 mm at ±0.48 mm)
   for (const name of ['R0402', 'C0402', 'L0402']) {
     const entry = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/footprint', `${name}.json`), 'utf8'));
@@ -332,13 +371,32 @@ function main() {
     ok(sym.graphics && sym.graphics.length > 0, `${name} preset carries diode artwork`);
   }
 
-  // The inline SOT-23 footprints in the recipes match the corrected spans too.
+  // The inline footprints in the recipes match the official-library numbers.
   const ldo = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipe', 'ldo-3v3.json'), 'utf8'));
   const ldoPad = ldo.parts.find((p) => p.id === 'U1').footprint.pads[0];
-  ok(Math.abs(ldoPad[1] + 55) < 0.01, 'ldo-3v3 SOT23_5 pad row at ±55 mil', ldoPad[1]);
+  ok(Math.abs(ldoPad[1] + 45.4) < 0.01 && Math.abs(ldoPad[3] - 45.6) < 0.01,
+    'ldo-3v3 SOT23_5 pads 45.6×19.3 at ±45.4 (official ME6211 geometry)', JSON.stringify(ldoPad));
   const mos = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipe', 'mosfet-switch.json'), 'utf8'));
   const mosPad = mos.parts.find((p) => p.id === 'Q1').footprint.pads[0];
-  ok(Math.abs(mosPad[1] + 47) < 0.01, 'mosfet-switch SOT23_3 pad row at ±47 mil', mosPad[1]);
+  ok(Math.abs(mosPad[1] + 39.4) < 0.01 && Math.abs(mosPad[3] - 39.4) < 0.01,
+    'mosfet-switch SOT23_3 pads 39.4×25.6 at ±39.4 (official MMBT5551 geometry)', JSON.stringify(mosPad));
+  const rs = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipe', 'rs485.json'), 'utf8'));
+  const rsPad = rs.parts.find((p) => p.id === 'U1').footprint.pads[0];
+  ok(Math.abs(rsPad[1] + 106.5) < 0.01 && Math.abs(rsPad[3] - 76.8) < 0.01,
+    'rs485 SOIC_8P pads 76.8×22.4 at ±106.5 (official LM358 geometry)', JSON.stringify(rsPad));
+
+  // IC pinout entries: verbatim official data + mandatory evidence URLs
+  {
+    const stm = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/ic', 'STM32F103C8T6.json'), 'utf8'));
+    ok(stm.symbol && stm.symbol.pins.length === 48, 'STM32F103C8T6 IC entry carries 48 official pins', stm.symbol && stm.symbol.pins.length);
+    ok(stm.footprint && Array.isArray(stm.footprint.pads) && stm.footprint.pads.length === 48,
+      'STM32F103C8T6 ships 48 verbatim official pads', stm.footprint && stm.footprint.pads && stm.footprint.pads.length);
+    ok(stm.evidence && /easyeda\.com\/api\/products\/C8734/.test(stm.evidence.symbol) && !!stm.evidence.datasheet,
+      'STM32 IC entry cites the EasyEDA official-library API + datasheet', JSON.stringify(stm.evidence));
+    const ams = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/ic', 'AMS1117-3.3.json'), 'utf8'));
+    ok(ams.symbol && ams.symbol.pins.length === 4 && /easyeda\.com\/api\/products\/C6186/.test(ams.evidence.symbol),
+      'AMS1117-3.3 IC entry: 4 official pins with EasyEDA evidence', ams.symbol && ams.symbol.pins.length);
+  }
 
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log(`dfm: ${checks - failures}/${checks} assertions passed`);

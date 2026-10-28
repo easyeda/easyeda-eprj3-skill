@@ -215,10 +215,32 @@ function placedPads(fp, x, y, angle) {
 // ------------------------------------------------------------ inline specs
 // Two-column auto layout, same convention as generate-symbol.js: left column
 // rot 0 at x=-20, right column rot 180 at x=+20, pin length 10.
+// Pins may carry a side hint ('L'/'R') and an electrical direction letter
+// (I/O/B/P/W/T/C): hinted pins take their column, unhinted ones balance-fill
+// (which for a hint-free list is exactly the old alternating order).
+
+/** "num:name:dir:side" / "num:name:dir" / "num:name" → {num,name,dir,side}.
+ *  Explicit geometry ("num:name:x:y:rot") is NOT handled here. */
+function parseAutoPinSpec(spec) {
+  return spec.map((s, i) => {
+    if (typeof s === 'string') {
+      const t = s.split(':').map((x) => x.trim());
+      if (!t[0]) throw new Error(`bad pin spec "${s}"`);
+      return { num: t[0], name: t[1] || t[0], dir: t[2] || null, side: t[3] || null };
+    }
+    if (!s || !s.num) throw new Error(`bad pin object at index ${i}`);
+    return { num: String(s.num), name: String(s.name || s.num), dir: s.dir || null, side: s.side || null };
+  });
+}
+
 function autoPinLayout(pins, pitch) {
   const left = [];
   const right = [];
-  pins.forEach((p, i) => (i % 2 === 0 ? left : right).push(p));
+  for (const p of pins) {
+    if (p.side === 'L') left.push(p);
+    else if (p.side === 'R') right.push(p);
+    else (left.length <= right.length ? left : right).push(p);
+  }
   for (const [list, x, rot] of [[left, -20, 0], [right, 20, 180]]) {
     list.forEach((p, i) => {
       p.x = x;
@@ -245,15 +267,7 @@ function symbolBodyBox(pins, pitch) {
 /** Pin spec: "1:VCC;2:GND" or [{num,name}] → full pin objects. */
 function normalizePinSpec(spec, pitch) {
   if (!Array.isArray(spec) || !spec.length) throw new Error('inline symbol needs a non-empty "pins" array');
-  const pins = spec.map((s, i) => {
-    if (typeof s === 'string') {
-      const p = s.split(':');
-      if (!p[0]) throw new Error(`bad pin spec "${s}"`);
-      return { num: String(p[0]).trim(), name: (p[1] || p[0]).trim() };
-    }
-    if (!s || !s.num) throw new Error(`bad pin object at index ${i}`);
-    return { num: String(s.num), name: String(s.name || s.num) };
-  });
+  const pins = parseAutoPinSpec(spec);
   return symbolBodyBox(autoPinLayout(pins, pitch || 10), pitch || 10);
 }
 
@@ -266,14 +280,15 @@ function normalizePinSpec(spec, pitch) {
  * of each other); 1–2 pin symbols keep the tight 10 mil default.
  */
 function buildInlineSymbolEntry(spec, ctx) {
-  const pitch = spec.pitch || (((spec.pins || []).length) >= 3 ? 30 : 10);
-  const pins = (spec.pins || []).map((s) => (typeof s === 'string'
-    ? { num: s.split(':')[0].trim(), name: (s.split(':')[1] || s.split(':')[0]).trim() }
-    : { num: String(s.num), name: String(s.name || s.num) }));
-  const box = normalizePinSpec(spec.pins, pitch);
+  const nPins = (spec.pins || []).length;
+  const pitch = spec.pitch || (nPins >= 3 ? 30 : 10);
+  // parse once, lay out once — the doc's pin records and the body box must
+  // come from the same layout pass (side hints make column assignment
+  // non-trivial, so two independent passes could desync)
+  const pins = parseAutoPinSpec(spec.pins || []);
+  const box = symbolBodyBox(autoPinLayout(pins, pitch), pitch);
   const uuid = E.uuid16();
   // buildSymbolDoc needs explicit geometry, so lay the pins out first.
-  const laidOut = autoPinLayout(pins, pitch);
   const doc = E.buildSymbolDoc({
     uuid,
     title: spec.name,
@@ -290,7 +305,7 @@ function buildInlineSymbolEntry(spec, ctx) {
       radiusX: 0, radiusY: 0, rotation: 0, strokeColor: null, strokeStyle: null,
       fillColor: null, strokeWidth: null, fillStyle: null
     } }],
-    pins: laidOut
+    pins
   });
   return {
     name: spec.name,
@@ -371,6 +386,7 @@ module.exports = {
   placedPins,
   placedPads,
   pathToPoints,
+  parseAutoPinSpec,
   normalizePinSpec,
   buildInlineSymbolEntry,
   buildInlineFootprintEntry,

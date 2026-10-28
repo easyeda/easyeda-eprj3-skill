@@ -35,6 +35,7 @@ const G = require('./geom');
 // U+FEFF (Notepad / "UTF-8 with BOM"). `utils` requires nothing from lib/, so
 // this dependency direction cannot form a cycle.
 const { readJsonText, parseJsonText } = require('./utils');
+const P = require('./parts');
 
 const DEFAULTS = {
   schematic: 'Schematic1',
@@ -61,9 +62,56 @@ function readDesign(file) {
   return normalize(raw, file);
 }
 
+// ------------------------------------------------------------ IC pinout library
+// templates/library/ic/<name>.json carries an evidence-sourced symbol pin list
+// (num:name:dir:side) and a footprint spec, so a real IC is referenced by name
+// instead of the agent hand-writing 48 pin definitions from memory:
+//
+//   { "id": "U1", "ic": "STM32F103C8T6", "pins": { "1": "3V3", ... } }
+//
+// resolveIcPart injects the entry's symbol/footprint into the part BEFORE the
+// normal inline paths run — everything downstream (validation, layout, ERC)
+// sees an ordinary inline part, and `part.ic` only records the provenance.
+const IC_DIR = path.join(__dirname, '..', '..', 'templates', 'library', 'ic');
+const icCache = new Map();
+
+function loadIcEntry(name) {
+  if (icCache.has(name)) return icCache.get(name);
+  const file = path.join(IC_DIR, `${name}.json`);
+  if (!fs.existsSync(file)) fail(`part references unknown ic "${name}" — no templates/library/ic/${name}.json (see load-library.js list or docs/footprint-evidence.md)`);
+  let entry;
+  try {
+    entry = parseJsonText(readJsonText(file));
+  } catch (e) {
+    fail(`ic entry "${name}" is not valid JSON: ${e.message}`);
+  }
+  if (!entry || entry.name !== name || !Array.isArray(entry.symbol && entry.symbol.pins)) {
+    fail(`ic entry "${name}" is malformed (needs name + symbol.pins[])`);
+  }
+  icCache.set(name, entry);
+  return entry;
+}
+
+function resolveIcPart(p) {
+  if (!p || typeof p !== 'object' || !p.ic) return p;
+  const entry = loadIcEntry(String(p.ic));
+  if (p.symbol) fail(`part "${p.id}": give "ic" OR "symbol", not both`);
+  if (p.footprint) fail(`part "${p.id}": give "ic" OR "footprint", not both (the IC entry ships one)`);
+  return Object.assign({}, p, {
+    symbol: {
+      name: entry.name,
+      designator: entry.designator || 'U',
+      pitch: entry.pitch || 30,
+      pins: entry.symbol.pins
+    },
+    footprint: entry.footprint
+  });
+}
+
 /** Apply defaults and resolve the shorthand forms into one canonical shape. */
 function normalize(raw, file) {
   if (!raw || typeof raw !== 'object') fail('design must be a JSON object');
+  const rawParts = Array.isArray(raw.parts) ? raw.parts.map((p) => resolveIcPart(p)) : [];
   const d = {
     file: file || null,
     name: raw.name || (file ? path.basename(file).replace(/\.json$/i, '') : 'project'),
@@ -101,7 +149,7 @@ function normalize(raw, file) {
   }
   d.netWidths = netWidths;
 
-  const partsIn = Array.isArray(raw.parts) ? raw.parts : [];
+  const partsIn = rawParts;
   if (!partsIn.length) fail('design has no "parts" — nothing to build');
   const seen = new Set();
   d.parts = partsIn.map((p, i) => {
@@ -126,6 +174,14 @@ function normalize(raw, file) {
     }
     const rot = Number(p.rotation || p.rot || 0);
     if (![0, 90, 180, 270].includes(rot)) fail(`part "${id}": rotation must be 0/90/180/270`);
+    // electrical directions (I/O/B/P/W/T/C) declared on the symbol spec or the
+    // IC entry — consumed by the ERC output-conflict check (E008)
+    const pinDirs = {};
+    if (p.symbol && typeof p.symbol === 'object' && Array.isArray(p.symbol.pins)) {
+      for (const t of P.parseAutoPinSpec(p.symbol.pins)) {
+        if (t.dir) pinDirs[String(t.num)] = t.dir;
+      }
+    }
     return {
       id,
       symbol: p.symbol,
@@ -133,6 +189,7 @@ function normalize(raw, file) {
       value: p.value === undefined ? null : String(p.value),
       name: p.name || null,
       pins,
+      pinDirs,
       polarity: p.polarity && typeof p.polarity === 'object' ? p.polarity : null,
       // "shunt" = TVS / flyback / clamp diode: its cathode legitimately sits on
       // a supply rail and its anode on ground, so the polarity gate must not
@@ -392,7 +449,10 @@ function layoutSchematic(d, lib) {
       const colLeft = colPitch.slice(0, col).reduce((a, b) => a + b, 0);
       const rowTop = -(L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0));
       const px = grid(cursorX + L.margin + colLeft);
-      const py = grid(rowBaseY + rowTop);
+      // anchor the part's extent TOP to the row top — a large IC symbol is
+      // centred on its origin, so placing by the origin alone pushed half of
+      // it above the drawing frame (L007)
+      const py = grid(rowBaseY + rowTop - r.rel.y2);
       const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block };
       pl.extent = partExtent(r.sym, px, py, r.rot);
       placements.push(pl);
