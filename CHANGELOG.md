@@ -5,6 +5,105 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.14.0] - 2026-10-27
+
+The senior-engineer review pass (see `tmp/analysis-*.md`): the gates were all
+green, yet the deliverable hid real engineering errors the gates cannot see —
+a physically unmountable SOT-23 land pattern, a polarity gate that never ran,
+and recipes that avoided polarity marks because the original I001 rule
+false-positived on the TVS/flyback diodes they correctly contain. This release
+fixes the deliverable's engineering content, not just its plumbing.
+
+### Fixed
+- **SOT-23 family land patterns were unmountable.** `auto SOT23/SOT23-5/SOT23-6`
+  put pad rows at ±30 mil (1.52 mm span) — SOT-23 leads span 2.1–2.5 mm and
+  TSOT-23-5/-6 span 2.8 mm. Pads now sit at ±47 (SOT23) / ±55 (SOT23-5/-6),
+  per JEDEC MO-178 / IPC-7351B; the hand-written inline footprints in
+  `ldo-3v3` and `mosfet-switch` moved with them. Nothing in the pipeline could
+  see this (D001 ignores intra-footprint spacing), so
+  [docs/footprint-evidence.md](docs/footprint-evidence.md) now records every
+  family's dimensions with their external source, and `test/dfm.js` asserts the
+  key numbers (land-pattern contract section).
+- **The polarity gate (I001) never ran.** `build.js` skipped the intent gate
+  unless an `expect` block existed, contradicting docs ("polarity marks are
+  checked even without an `expect` block") — and no shipped recipe or example
+  carried a single polarity mark, so the flagship check had zero coverage.
+  `build.js` now runs intent when any part declares `polarity`, and every
+  LED/diode in the recipes is marked.
+- **I001's rule was wrong for shunt diodes** — which is *why* the recipes never
+  marked polarity: a TVS's anode on ground / a flyback's cathode on its rail
+  are correct, but the old rule flagged both as reversals. New semantics: only
+  `+` on a ground net is a reversal, exempt when the part declares the new
+  `role: "shunt"` field (all three TVS recipes do). Cathode-on-ground and
+  rails-to-rails orientations are not judged (undecidable from nets alone).
+  Negative test: a reversed LED still fails the build with I001.
+- **DIODE/LED preset pin conventions contradicted each other.** DIODE was
+  pin 1 = K with designator `U?`; LED was pin 1 = A with `D?`. Both now follow
+  pin 1 = A / 2 = K (KiCad convention) with designator `D?`; the DIODE symbol
+  artwork is mirrored to match, and the recipes' pins maps were flipped
+  accordingly. `power-tree`'s TVS was in fact wired backwards under the old
+  convention — the flip fixes it.
+- **The LED symbol was a bare rectangle** (indistinguishable from a resistor,
+  polarity unreadable). It now carries the diode triangle + cathode bar +
+  emission arrows, same record shapes as the captured DIODE preset.
+- **0402 preset pads were 0603-sized** (31.5×35.4 mil). Now 23×25 mil at ±19 —
+  IPC-7351B nominal for 1005M. `R0603` was already correct.
+- **Inline footprints lost their pad dimensions.** `buildInlineFootprintEntry`
+  passed pads as `{w,h}` while `buildFootprintDoc` read `width/height` — every
+  inline/auto footprint's PAD record omitted dimensions, so the DRC and any
+  consumer silently fell back to 20 mil pads. `buildFootprintDoc` now accepts
+  both spellings.
+- **`pcb.place` parts could stick past the board outline**: `required` was
+  computed with a flat `x + EDGE` heuristic that ignored part extents. The
+  required size now comes from every placed part's real extent box.
+- DRC `edgeClearance` default documented as 20 mil in build.md, 12 in checks.md
+  and in code — build.md corrected to 12.
+- SKILL.md's "real land-pattern numbers" example cited 0402 spans as "0603".
+- `sch-route.js`: several pins sharing the `NC` net are no longer MST-wired
+  together (that shorted every no-connected pin); each gets stub + NC label.
+
+### Changed
+- **PCB placement has three engineering refinements** (`pcb-plan.js`): `J…`
+  connectors line the bottom board edge (single-line pad footprints rotated
+  parallel to the edge, two-column ones keep the plug axis across it);
+  decoupling caps are pulled next to their IC; gaps scale with part size
+  (140–260 mil) instead of one fixed 260 stride. An undeclared board now
+  **auto-fits** the parts instead of defaulting to 1600×1000 mil (declared
+  boards stay a floor). The fit loop iterates to a fixed point, and the wrap
+  test no longer mixes part origins with extent boxes (it wrapped one part too
+  many).
+- **Schematic blocks wrap onto new rows** instead of marching off the A4 frame
+  on larger designs (`layoutSchematic`; L007 stays as the backstop).
+- **Inline symbol pitch is automatic**: 30 mil for 3+ pins (10 for 1–2) in both
+  `buildInlineSymbolEntry` and `generate-symbol.js` — the old 10 mil default
+  stacked stubs, and the workaround lived in prompts instead of code.
+- `USB_C` auto family renamed honest: 10 pads (`pins: 10`), documented as
+  power-only; DP/DM/SBU need a hand-written inline footprint.
+- `lib/route.js` renamed **`lib/sch-route.js`** — it wires the schematic; the
+  name kept colliding with the PCB routing the skill deliberately does not do.
+- **Previews show real symbol artwork** (diode triangle, LED arrows, cap
+  plates) instead of anonymous boxes, and `render.js` now also renders each
+  PCB: board outline, pads (with drills), refdes and the rats — the
+  placement-only deliverable can be sanity-checked without the client.
+- New recipe `mounting-holes` (4× M3, auto-fit board demo); eval grows to 21
+  cases.
+- Docs: build.md (pitch automatic, USB_C power-only, placement refinements,
+  `role` field, board auto-fit), checks.md (I001 semantics), workflow.md,
+  SKILL.md (evidence links, pitch, recipe count), new
+  [docs/footprint-evidence.md](docs/footprint-evidence.md).
+- Housekeeping: `.gitignore` excludes `/tmp/`; comment mojibake (`-?` → em
+  dash) normalised in `lib/netlist.js`; `eval/history.jsonl` carries the
+  1.14.0 run records.
+
+### Verified
+- smoke 135/135 · pipeline 47/47 · dfm 86/86 (16 new land-pattern/symbol
+  contract assertions) · corpus 108/108 · depcheck 0 violations ·
+  eval 21/21 (avg lint 100, avg drc 100, placed-only).
+- Negative probes: reversed LED fails I001; reversed TVS (cathode on ground)
+  fails I001 even as `role: "shunt"`; mounting-holes auto-fits a 1420×460 mil
+  board with drc 100; mcu-min places J-connectors on the bottom edge and C1
+  next to U1.
+
 ## [1.13.1] - 2026-10-27
 
 Scope statement (docs only): **the skill generates the `.eprj3` project — and

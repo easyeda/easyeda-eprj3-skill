@@ -592,14 +592,19 @@ function buildFootprintDoc(spec) {
   for (const p of spec.pads || []) {
     // Through-hole pads follow the official example: MULTI layer (12), round
     // drill hole, ellipse pad. SMD pads stay on TOP_COPPER with a RECT pad.
+    // Pads arrive as {width,height} from the CLI or {w,h} from inline specs —
+    // accept both, otherwise the PAD record silently loses its dimensions and
+    // every downstream consumer (DRC, previews) falls back to a 20 mil pad.
+    const width = p.width === undefined ? p.w : p.width;
+    const height = p.height === undefined ? p.h : p.height;
     const hole = p.hole ? { holeType: 'ROUND', width: p.hole, height: p.hole } : null;
     const elemId = b.addElem('PAD', {
       groupId: 0, netName: '', layerId: hole ? 12 : 1,
       num: p.num, centerX: p.x, centerY: p.y, padAngle: 0,
       hole,
       defaultPad: hole
-        ? { padType: 'ELLIPSE', width: p.width, height: p.height }
-        : { padType: 'RECT', width: p.width, height: p.height, radius: 0 },
+        ? { padType: 'ELLIPSE', width, height }
+        : { padType: 'RECT', width, height, radius: 0 },
       specialPad: [],
       padOffsetX: p.offsetX || 0, padOffsetY: p.offsetY || 0,
       relativeAngle: 90, plated: true, padType: 'NORMAL',

@@ -89,6 +89,17 @@ function parseSymbolEntry(entry) {
     const pts = pins.map((p) => p.tip).concat(pins.map((p) => ({ x: p.x, y: p.y })));
     bbox = G.bboxOfPoints(pts);
   }
+  // Symbol artwork (what the client draws): open POLY strokes, closed POLY
+  // fills and RECTs. The SVG preview renders these instead of a plain body
+  // box, so a diode looks like a diode and an LED like an LED.
+  const graphics = [];
+  for (const r of recs) {
+    if (r.type === 'POLY' && r.body && Array.isArray(r.body.points) && r.body.points.length >= 2) {
+      graphics.push({ kind: 'poly', points: r.body.points, closed: !!r.body.closed });
+    } else if (r.type === 'RECT' && r.body) {
+      graphics.push({ kind: 'rect', x1: r.body.dotX1, y1: r.body.dotY1, x2: r.body.dotX2, y2: r.body.dotY2 });
+    }
+  }
   let designator;
   for (const r of recs) {
     if (r.type === 'ATTR' && r.body && r.body.key === 'Designator' && r.body.parentId === '') {
@@ -104,6 +115,7 @@ function parseSymbolEntry(entry) {
     designator: entry.designator || designator || 'U?',
     bbox,
     pins,
+    graphics,
     pinByNum: new Map(pins.map((p) => [String(p.num), p]))
   };
 }
@@ -248,9 +260,13 @@ function normalizePinSpec(spec, pitch) {
 /**
  * Compose a library entry from an inline design spec.
  * spec: {name, pins: ["1:A", ...], designator, pitch}
+ *
+ * pitch defaults to 30 mil whenever the pin list has 3+ entries (any auto
+ * column then holds ≥2 pins, and the old 10 mil default stacked stubs on top
+ * of each other); 1–2 pin symbols keep the tight 10 mil default.
  */
 function buildInlineSymbolEntry(spec, ctx) {
-  const pitch = spec.pitch || 10;
+  const pitch = spec.pitch || (((spec.pins || []).length) >= 3 ? 30 : 10);
   const pins = (spec.pins || []).map((s) => (typeof s === 'string'
     ? { num: s.split(':')[0].trim(), name: (s.split(':')[1] || s.split(':')[0]).trim() }
     : { num: String(s.num), name: String(s.name || s.num) }));

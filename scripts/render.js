@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * render.js — write an SVG preview of every schematic sheet.
+ * render.js — write SVG previews of every schematic sheet and PCB document.
  *
  *   node scripts/render.js --dir <project> [--out <dir>] [--json]
  *
- * Default output: <project>/preview/<Schematic>_<sheet>.svg
+ * Default output: <project>/preview/<Schematic>_<sheet>.svg + <PCB>.svg
  *
- * The SVG is a schematic sketch (body boxes + pin stubs + wires + block
- * frames), not a plotter export. Its job is review: layout, spacing, routing
- * and block structure are judged in one look, which is exactly what the
- * geometry lint cannot tell you.
+ * The SVGs are sketches, not plotter exports. Schematic: real symbol artwork
+ * (diode triangle, LED arrows, cap plates), pin stubs, wires, block frames —
+ * layout, spacing, routing and block structure judged in one look. PCB: board
+ * outline, pads, refdes and the rats — how a human sanity-checks a
+ * placement-only deliverable without opening the client.
  */
 const fs = require('fs');
 const path = require('path');

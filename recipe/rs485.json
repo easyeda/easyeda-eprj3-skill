@@ -239,9 +239,11 @@
       "footprint": "SMA",
       "name": "TVS_A",
       "value": "SMBJ6.5A",
+      "role": "shunt",
+      "polarity": { "1": "+", "2": "-" },
       "pins": {
-        "1": "RS485_A",
-        "2": "GND"
+        "1": "GND",
+        "2": "RS485_A"
       }
     },
     {
@@ -250,9 +252,11 @@
       "footprint": "SMA",
       "name": "TVS_B",
       "value": "SMBJ6.5A",
+      "role": "shunt",
+      "polarity": { "1": "+", "2": "-" },
       "pins": {
-        "1": "RS485_B",
-        "2": "GND"
+        "1": "GND",
+        "2": "RS485_B"
       }
     },
     {

@@ -1,6 +1,6 @@
 'use strict';
 /**
- * route.js -?schematic auto-wiring.
+ * route.js — schematic auto-wiring.
  *
  * The whole point of this module is that an agent should never hand-compute a
  * pin coordinate again. Given absolute placements, it derives every connection
@@ -8,11 +8,11 @@
  * exactly on pin tips.
  *
  * Encoding ladder (weakest-to-strongest, mirrors SKILL.md's rules):
- *   1. straight wire        -?pins share an axis, nothing between them
- *   2. L / Z wire           -?stubs out of both pins, then orthogonal
- *   3. trunk wire           -?a bus above/below the blocks, one drop per pin
- *   4. stub + net label     -?same sheet, too far or unavoidably blocked
- *   5. stub + power flag    -?nets declared with a power style
+ *   1. straight wire        — pins share an axis, nothing between them
+ *   2. L / Z wire           — stubs out of both pins, then orthogonal
+ *   3. trunk wire           — a bus above/below the blocks, one drop per pin
+ *   4. stub + net label     — same sheet, too far or unavoidably blocked
+ *   5. stub + power flag    — nets declared with a power style
  *
  * Every path leaves its pin through a stub first: that is what keeps a route
  * from cutting across its own symbol, which is the failure mode that silently
@@ -94,7 +94,7 @@ function countBlocked(segs, obstacles, ignore) {
 
 /**
  * Points a segment occupies: both ends plus the midpoint. Different nets must
- * never share one of these -?the client treats a point on two wires as a
+ * never share one of these — the client treats a point on two wires as a
  * connection, which would silently merge two nets.
  */
 function segPointKeys(seg) {
@@ -321,7 +321,16 @@ function routeNet(net, nodes, ctx) {
     // NC/DNC nets are the deliberate no-connect convention — encode silently.
     const isNC = /^(NC|DNC\d*)$/i.test(net);
     const enc = labelEncoding(nodes, net, issues, isNC ? null :
-      `net "${net}" has a single pin (${nodes[0].part}.${nodes[0].pin}) -?labelled as a dead end`);
+      `net "${net}" has a single pin (${nodes[0].part}.${nodes[0].pin}) — labelled as a dead end`);
+    enc.wires.forEach((w) => commitSegs(w, used));
+    return { wires: enc.wires, flags, labels: enc.labels, issues };
+  }
+
+  if (/^(NC|DNC\d*)$/i.test(net)) {
+    // Several pins may share the NC name; they are NOT connected to each
+    // other — wiring them (MST) would short every no-connected pin together.
+    // Each pin gets its own stub + NC label instead.
+    const enc = labelEncoding(nodes, net, issues, null);
     enc.wires.forEach((w) => commitSegs(w, used));
     return { wires: enc.wires, flags, labels: enc.labels, issues };
   }
@@ -340,7 +349,7 @@ function routeNet(net, nodes, ctx) {
     const best = bestRoute(a, b, obstacles, used);
     if (!best || best.blocked > 0 || best.shared > 0) {
       const enc = labelEncoding([a, b], net, issues,
-        `net "${net}": ${a.part}.${a.pin} -?${b.part}.${b.pin} has no clear route -?encoded as stub+label`);
+        `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`);
       enc.wires.forEach((w) => commitSegs(w, used));
       wires.push(...enc.wires);
       labels.push(...enc.labels);

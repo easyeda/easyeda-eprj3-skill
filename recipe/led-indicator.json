@@ -85,6 +85,7 @@
       "footprint": "LED0603",
       "name": "PWR_LED",
       "value": "RED",
+      "polarity": { "1": "+", "2": "-" },
       "pins": {
         "1": "LED_A",
         "2": "GND"

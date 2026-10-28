@@ -281,6 +281,65 @@ function main() {
     ok(table.includes(code), `--rules prints ${code}`, table.trim().split('\n').slice(-6).join(' / '));
   }
 
+  // ---------------------------------------------- land-pattern contract
+  // The auto families and the preset footprints must keep the dimensions
+  // recorded in docs/footprint-evidence.md (JEDEC / IPC-7351B / real LCSC
+  // parts). A silent drift here produced SOT-23 pads 0.35 mm inside the leads
+  // — invisible to every other gate, because D001 ignores intra-footprint
+  // spacing. If one of these asserts fails, fix the FOOTPRINT (or the evidence
+  // doc) — never the test.
+  const FA = require(path.join(ROOT, 'scripts/lib/fp-auto.js'));
+  const P = require(path.join(ROOT, 'scripts/lib/parts.js'));
+
+  const padX = (spec, num) => {
+    const r = FA.expandAuto(spec);
+    const p = r.pads.find((q) => String(q[0]) === String(num));
+    return p ? p[1] : NaN;
+  };
+  // SOT-23 (TO-236AB): lead span 2.10–2.50 mm → pad centres ±47 mil
+  ok(Math.abs(padX({ auto: 'SOT23' }, 1) + 47) < 0.01, 'auto SOT23 pad row at ±47 mil', padX({ auto: 'SOT23' }, 1));
+  // TSOT-23-5/-6 (SC-74A): lead span 2.8 mm → ±55 mil
+  ok(Math.abs(padX({ auto: 'SOT23-5' }, 1) + 55) < 0.01, 'auto SOT23-5 pad row at ±55 mil', padX({ auto: 'SOT23-5' }, 1));
+  ok(Math.abs(padX({ auto: 'SOT23-6' }, 1) + 55) < 0.01, 'auto SOT23-6 pad row at ±55 mil', padX({ auto: 'SOT23-6' }, 1));
+  ok(Math.abs(padX({ auto: 'SOT23' }, 3) - 47) < 0.01, 'auto SOT23 pad rows are symmetric (pin 3 at +47)', padX({ auto: 'SOT23' }, 3));
+
+  // USB-C auto family is POWER-ONLY: 10 pads (VBUS/GND/CC), pins knob fixed.
+  const usbc = FA.expandAuto({ auto: 'USB_C' });
+  ok(usbc.pads.length === 10, 'auto USB_C carries exactly its 10 power/CC pads', usbc.pads.length);
+
+  // 0402 presets: IPC-7351N-scale pads (0.58×0.63 mm at ±0.48 mm)
+  for (const name of ['R0402', 'C0402', 'L0402']) {
+    const entry = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/footprint', `${name}.json`), 'utf8'));
+    const fp = P.parseFootprintEntry(entry);
+    ok(fp.pads.length === 2
+      && Math.abs(Math.abs(fp.pads[0].x) - 19) < 0.01
+      && Math.abs(fp.pads[0].w - 23) < 0.01
+      && Math.abs(fp.pads[0].h - 25) < 0.01,
+      `${name} preset pads 23×25 mil at ±19 mil`,
+      JSON.stringify(fp.pads.map((p) => [p.x, p.w, p.h])));
+  }
+
+  // The shipped 2-pin polarized SYMBOLS share one convention: pin 1 = anode,
+  // designator D — a trap the corpus cannot see (DIODE used to be 1=K + U?).
+  for (const name of ['DIODE', 'LED']) {
+    const entry = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/symbol', `${name}.json`), 'utf8'));
+    const sym = P.parseSymbolEntry(entry);
+    ok(sym.designator === 'D?', `${name} preset designator is D?`, sym.designator);
+    const p1 = sym.pinByNum.get('1');
+    const p2 = sym.pinByNum.get('2');
+    ok(p1 && p1.name === 'A' && p2 && p2.name === 'K', `${name} preset pins are 1=A / 2=K`,
+      `${p1 && p1.name}/${p2 && p2.name}`);
+    ok(sym.graphics && sym.graphics.length > 0, `${name} preset carries diode artwork`);
+  }
+
+  // The inline SOT-23 footprints in the recipes match the corrected spans too.
+  const ldo = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipe', 'ldo-3v3.json'), 'utf8'));
+  const ldoPad = ldo.parts.find((p) => p.id === 'U1').footprint.pads[0];
+  ok(Math.abs(ldoPad[1] + 55) < 0.01, 'ldo-3v3 SOT23_5 pad row at ±55 mil', ldoPad[1]);
+  const mos = JSON.parse(fs.readFileSync(path.join(ROOT, 'recipe', 'mosfet-switch.json'), 'utf8'));
+  const mosPad = mos.parts.find((p) => p.id === 'Q1').footprint.pads[0];
+  ok(Math.abs(mosPad[1] + 47) < 0.01, 'mosfet-switch SOT23_3 pad row at ±47 mil', mosPad[1]);
+
   fs.rmSync(TMP, { recursive: true, force: true });
   console.log(`dfm: ${checks - failures}/${checks} assertions passed`);
   if (failures) process.exit(1);

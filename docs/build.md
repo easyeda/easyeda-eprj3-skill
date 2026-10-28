@@ -29,7 +29,7 @@ the printed codes point at the rule that failed.
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `name` | string | design file stem | project + index name; need not match the directory |
-| `board` | `{width,height}` | `1600×1000` | mil; the board outline is generated and **auto-grown** to fit the parts |
+| `board` | `{width,height}` | `1600×1000` | mil; an explicitly declared board is a **floor** (grown to fit) — omit it and the outline auto-fits the parts |
 | `sheet` | `{schematic,name}` | `Schematic1` / `P1` | `name` is the sheet title (file name) |
 | `powers` | object | `{}` | net → `"up"`/`"down"`; those nets become power flags |
 | `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` **annotates** the intended track width (nothing is routed — the DRC uses it as a per-net floor when it reviews imported copper) |
@@ -52,7 +52,8 @@ cells for large inline symbols so blocks keep their gutters.
 | `symbol` | yes | preset entry name, or `{ name, designator, pins:[…] }` |
 | `footprint` | yes unless `pcb:false` | preset name, `{ auto: "LQFP48" }`, or `{ name, designator, pads, outline }` |
 | `pins` | yes | `{ "1": "NET", … }` or `["1:NET","2:NET"]`; `"NC"` marks an intentional no-connect |
-| `polarity` | no | `{ "1": "+", "2": "-" }` — the intent gate flags a "+" pin on ground / "-" on a supply |
+| `polarity` | no | `{ "1": "+", "2": "-" }` — the intent gate flags a "+" pin on a ground net (a reversed LED / electrolytic) |
+| `role` | no | `"shunt"` for TVS / flyback / clamp diodes: their anode legitimately sits on ground, so the polarity gate skips the "+ on ground" reversal check |
 | `value` | no | stored as the device value; engineering notation (`10k`, `100nF`) is parseable by the intent gate |
 | `name` | no | device title override |
 | `rotation` | no | `0/90/180/270` for the schematic symbol |
@@ -69,9 +70,10 @@ most common way an AI-authored circuit is wrong.
 ```
 
 Two-column auto layout: even pins down the left (`rotation 0`, x=-20), odd pins
-down the right (`rotation 180`, x=+20), 10 mil pitch by default, pin length 10.
-**Set `"pitch": 30` for 4+ pin parts** — the 10 mil default stacks stubs so
-tightly that wires collide. Tips therefore land at x = ±30. The body rectangle
+down the right (`rotation 180`, x=+20), pin length 10. The pitch DEFAULTS to
+30 mil for 3+ pins (any auto column then holds ≥2 pins — a 10 mil default would
+stack stubs so tightly that wires collide) and to 10 mil for 1–2 pins;
+override with `"pitch"`. Tips therefore land at x = ±30. The body rectangle
 derives from the pins. For a specific look, `pins` also accepts
 `"num:name:x:y:rotation"` — rotation must be 0 (left) or 180 (right); vertical
 pin columns have no verified real-client sample.
@@ -83,13 +85,17 @@ pin columns have no verified real-client sample.
 "footprint": { "auto": "QFN", "pins": 24, "pitch": 20 }
 ```
 
-Families (pad geometry generated from formulas calibrated on the shipped
-recipes): `SOT23` `SOT23-5` `SOT23-6` `SOT223` · `SOP<n>` `SSOP<n>` `TSSOP<n>`
-· `QFN<n>` `QFP<n>`/`LQFP<n>` · `DIP<n>` · `HDR<n>` `HDR2R<n>` ·
+Families (pad geometry generated from formulas with **external evidence** —
+JEDEC / IPC-7351B / real LCSC parts; the per-family table with sources lives in
+[`docs/footprint-evidence.md`](footprint-evidence.md) and `test/dfm.js` asserts
+the key dimensions): `SOT23` `SOT23-5` `SOT23-6` `SOT223` · `SOP<n>` `SSOP<n>`
+`TSSOP<n>` · `QFN<n>` `QFP<n>`/`LQFP<n>` · `DIP<n>` · `HDR<n>` `HDR2R<n>` ·
 `SW_4P` `XTAL` `OSC` `USB_C`. Knobs: `pins` (required unless the family fixes
 it), `pitch` (mil), `span` (pad row distance from the origin), `hole`
 (through-hole drill), `rowSpan`/`rowGap` (DIP/headers). Compound names like
-`"auto": "SOP8"` are family+pin-count shorthand.
+`"auto": "SOP8"` are family+pin-count shorthand. `USB_C` is POWER-ONLY
+(VBUS/GND/CC1/CC2 — 10 pads); DP/DM/SBU need a hand-written inline footprint,
+since a design pin without a pad fails ERC (E006).
 
 ### Inline footprints
 
@@ -118,7 +124,7 @@ auto footprint when one exists: fewer tokens, no invented coordinates.
 
 `rules` keys that mean something now, all DRC floors: `clearance 10`,
 `trackWidth 8` (also the minimum track width the copper gate accepts),
-`edgeClearance 20`, plus the DFM floors `minDrill 12` (0.30 mm — JLC basic
+`edgeClearance 12`, plus the DFM floors `minDrill 12` (0.30 mm — JLC basic
 process), `minRing 4` (annular ring, warn) and `minAngle 45` (acute track bend,
 warn). They are used to judge **placement** (pad-to-pad and pad-to-edge
 spacing) and, in an imported or client-saved project, the copper that is
@@ -127,9 +133,20 @@ already in the file. Router-era keys (`grid`, `bendCost`, `viaCost`,
 contract. 0.5 mm-pitch boards: lower `clearance` / `trackWidth` to 6 so the
 placement and any imported copper are judged against realistic floors.
 
-Auto placement follows the schematic block order, packs parts left→right at
-~140 mil gaps with a 150 mil board margin. Supply `place` when a connector must
-sit on a board edge or a part needs a fixed position.
+Auto placement follows the schematic block order, so the board reads like the
+schematic, with three deterministic refinements:
+
+- **connectors** (`J…`) line up along the **bottom board edge**; a footprint
+  whose pads form a single line (headers) is rotated so that line runs parallel
+  to the edge, two-column footprints (USB-C) keep their plug axis across it;
+- **decoupling caps** (`C…` with one pin on a ground net, same schematic block
+  as a `U…` IC) are pulled next to their IC's power side;
+- **gaps scale with the parts** (140–260 mil) instead of one fixed stride.
+
+The board outline settles after placement: a declared `board` is a floor
+(grown when the placer needs more), an **undeclared** board auto-fits the
+parts (a 3-part board no longer ships on a 1600×1000 mil blank). Supply
+`place` when a part needs an exact spot — it always wins.
 
 ## Copper policy (out of scope since 1.13)
 

@@ -5,10 +5,10 @@
  * design.json accepts a footprint as
  *   "footprint": { "auto": "SOP8" }                          — family + pin count
  *   "footprint": { "auto": "LQFP", "pins": 48, "pitch": 19.7 } — explicit knobs
- * instead of hand-writing every pad. The generators below are calibrated
- * against the real numbers already used by the shipped recipes (SOIC_8P in
- * recipe/rs485.json, SOT23_5 in recipe/ldo-3v3.json, SW_4P, OSC_MCU_4P, …) so
- * an auto footprint stays consistent with a hand-written one.
+ * instead of hand-writing every pad. Land-pattern numbers carry external
+ * evidence (JEDEC / IPC-7351B / real LCSC parts) — see
+ * docs/footprint-evidence.md for the per-family table; test/dfm.js asserts the
+ * key dimensions so they cannot drift silently.
  *
  * All units are mil. `pitch` = adjacent pad centre spacing. `span` = distance
  * from the part origin to the pad centre row/column.
@@ -105,11 +105,16 @@ function bboxOutline(pads, shrink) {
 }
 
 // Family registry. `pins` fixed → omit from the spec; else required.
+// Land-pattern dimensions cite external evidence in docs/footprint-evidence.md
+// (JEDEC / IPC-7351B / a real LCSC part); test/dfm.js asserts the key ones so
+// they cannot drift silently.
 const FAMILIES = {
-  // SOT small outline — numbers from recipe/mosfet-switch.json + ldo-3v3.json
-  SOT23:   { pins: 3, gen: () => ({ pads: [[1, -30, -18.5, 24, 30], [2, -30, 18.5, 24, 30], [3, 30, 0, 24, 30]], outline: [-55, -45, 55, 45] }), designator: 'Q' },
-  'SOT23-5': { pins: 5, gen: () => ({ pads: [[1, -30, -37, 24, 30], [2, -30, 0, 24, 30], [3, -30, 37, 24, 30], [4, 30, -18.5, 24, 30], [5, 30, 18.5, 24, 30]], outline: [-55, -55, 55, 55] }), designator: 'U' },
-  'SOT23-6': { pins: 6, gen: () => dualRow(6, { span: 30, pitch: 37, padW: 24, padH: 30 }), designator: 'U' },
+  // SOT small outline — spans per JEDEC MO-178 / IPC-7351B: SOT-23 (TO-236AB)
+  // lead span 2.1–2.5 mm → pad centres ±47 mil; TSOT-23-5/-6 lead span 2.8 mm
+  // → ±55 mil. Pad size 24×30 (0.61×0.76 mm), in-row pitch 37 mil (0.95 mm).
+  SOT23:   { pins: 3, gen: () => { const pads = [[1, -47, -18.5, 24, 30], [2, -47, 18.5, 24, 30], [3, 47, 0, 24, 30]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'Q' },
+  'SOT23-5': { pins: 5, gen: () => { const pads = [[1, -55, -37, 24, 30], [2, -55, 0, 24, 30], [3, -55, 37, 24, 30], [4, 55, -18.5, 24, 30], [5, 55, 18.5, 24, 30]]; return { pads, outline: bboxOutline(pads) }; }, designator: 'U' },
+  'SOT23-6': { pins: 6, gen: () => dualRow(6, { span: 55, pitch: 37, padW: 24, padH: 30 }), designator: 'U' },
   SOT223:  { pins: 4, gen: () => ({ pads: [[1, -90, -100, 28, 40], [2, 0, -100, 28, 40], [3, 90, -100, 28, 40], [4, 0, 150, 60, 100]], outline: [-135, -135, 135, 215] }), designator: 'U' },
   // dual-row gull wing — calibrated on SOIC_8P (rs485.json): 24x55 at ±80, pitch 50
   SOP:     { gen: (s) => dualRow(s.pins, { span: s.span || 80, pitch: s.pitch || 50, padW: 24, padH: 55 }), designator: 'U' },
@@ -133,7 +138,10 @@ const FAMILIES = {
   SW_4P:   { pins: 4, gen: () => ({ pads: [[1, -100, -70, 60, 50], [2, -100, 70, 60, 50], [3, 100, -70, 60, 50], [4, 100, 70, 60, 50]], outline: [-140, -100, 140, 100] }), designator: 'SW' },
   XTAL:    { pins: 2, gen: () => ({ pads: [[1, -60, 0, 50, 60], [2, 60, 0, 50, 60]], outline: [-110, -80, 110, 80] }), designator: 'Y' },
   OSC:     { pins: 4, gen: () => ({ pads: [[1, -60, -40, 40, 40], [2, 60, -40, 40, 40], [3, 60, 40, 40, 40], [4, -60, 40, 40, 40]], outline: [-110, -80, 110, 80] }), designator: 'Y' },
-  USB_C:   { pins: 16, gen: () => ({ pads: [['A4', -60, 80, 24, 32], ['A9', -60, 40, 24, 32], ['A5', -60, 0, 24, 32], ['A1', -60, -40, 24, 32], ['A12', -60, -80, 24, 32], ['B4', 60, 80, 24, 32], ['B9', 60, 40, 24, 32], ['B5', 60, 0, 24, 32], ['B1', 60, -40, 24, 32], ['B12', 60, -80, 24, 32]], outline: [-140, -130, 140, 130] }), designator: 'J' }
+  // POWER-ONLY USB-C: VBUS (A4/A9/B4/B9), GND (A1/A12/B1/B12) and CC1/CC2
+  // (A5/B5) only — DP/DM/SBU/shield are NOT modelled. Map those pins on a
+  // hand-written footprint instead; a pin without a pad fails ERC (E006).
+  USB_C:   { pins: 10, gen: () => ({ pads: [['A4', -60, 80, 24, 32], ['A9', -60, 40, 24, 32], ['A5', -60, 0, 24, 32], ['A1', -60, -40, 24, 32], ['A12', -60, -80, 24, 32], ['B4', 60, 80, 24, 32], ['B9', 60, 40, 24, 32], ['B5', 60, 0, 24, 32], ['B1', 60, -40, 24, 32], ['B12', 60, -80, 24, 32]], outline: [-140, -130, 140, 130] }), designator: 'J' }
 };
 
 /** Catalogue for docs/CLI: [{name, pins, knobs:[…]}]. */

@@ -101,9 +101,10 @@
       "footprint": "SMA",
       "name": "REVERSE_PROT",
       "value": "SS34",
+      "polarity": { "1": "+", "2": "-" },
       "pins": {
-        "1": "5V",
-        "2": "VIN_5V"
+        "1": "VIN_5V",
+        "2": "5V"
       }
     },
     {
@@ -112,6 +113,8 @@
       "footprint": "SMA",
       "name": "TVS_5V",
       "value": "SMBJ5.0A",
+      "role": "shunt",
+      "polarity": { "1": "+", "2": "-" },
       "pins": {
         "1": "GND",
         "2": "5V"

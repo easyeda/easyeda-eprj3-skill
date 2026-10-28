@@ -57,7 +57,9 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    ... builds schematic + PCB PLACEMENT, runs validate + ERC + lint + DRC
 #    the PCB is placement-only; the run prints the rats list of nets to
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
-node scripts/render.js --dir <project dir>      # SVG preview → <project>/preview/
+#    placement: connectors (J…) line the bottom edge, decoupling caps sit next
+#    to their IC, an undeclared board auto-fits the parts
+node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/
 node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
 
@@ -108,7 +110,7 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
 | `parts[].footprint` | preset name (`R0603`, `C0603`, `SMA`, `TP0.5`…) **or** inline spec **or** `{ "auto": "LQFP48" }` |
 | `parts[].pins` | pin **number** → net name. Unconnected pins map to `"NC"` (ERC accepts the NC convention). Every other unlisted pin is an ERC error |
-| `parts[].polarity` | optional `{ "1": "+", "2": "-" }` — checked by the intent gate (I001 catches an LED/diode wired backwards) |
+| `parts[].polarity` | optional `{ "1": "+", "2": "-" }` — checked by the intent gate (I001 catches an LED/diode wired backwards); TVS/clamp parts declare `"role": "shunt"` and are exempt |
 | `parts[].rotation` | 0 / 90 / 180 / 270 |
 | `expect` | optional intent block for the fifth gate — see below |
 | `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed |
@@ -124,18 +126,22 @@ Inline parts (no library file needed) — use for any IC, connector or module:
   "pins": { "1": "GND", "2": "3V3", "3": "VIN" } }
 ```
 
-`"auto"` footprints are generated from real land-pattern formulas — no
-hand-written pad coordinates: `SOT23`/`SOT23-5`/`SOT23-6`/`SOT223`,
+`"auto"` footprints are generated from real land-pattern formulas with
+**external evidence** (JEDEC / IPC-7351B / real LCSC parts — table:
+[`docs/footprint-evidence.md`](docs/footprint-evidence.md); dimensions are
+asserted by `test/dfm.js`): `SOT23`/`SOT23-5`/`SOT23-6`/`SOT223`,
 `SOP8`/`SOP16`…, `SSOP`, `TSSOP`, `QFN32`, `LQFP48`/`LQFP64`…, `QFP`, `DIP8`…,
-`HDR6`, `HDR2R8`, `SW_4P`, `XTAL`, `OSC`, `USB_C`. Knobs: `pins`, `pitch`,
-`span`, `hole` (`"auto": "LQFP", "pins": 48, "pitch": 19.7`). Use them instead
-of hand-writing pads — fewer tokens, no invented coordinates.
+`HDR6`, `HDR2R8`, `SW_4P`, `XTAL`, `OSC`, `USB_C` (power-only: VBUS/GND/CC —
+map DP/DM on a hand-written footprint). Knobs: `pins`, `pitch`, `span`, `hole`
+(`"auto": "LQFP", "pins": 48, "pitch": 19.7`). Use them instead of hand-writing
+pads — fewer tokens, no invented coordinates.
 
 Hand-written inline pads are still accepted (`[num, x, y, width, height,
 drillDiameter?]` in mil; a drill makes the pad through-hole). Stick to real
-land-pattern numbers (0603 pads ≈ 31×35 at ±16.5, SOT-23 pads ≈ 24×30 at 37
-pitch, 0.1" header ≈ 60×60 at 100 pitch). Inline symbols need `"pitch": 30`
-for ≥4-pin parts — the 10 mil default stacks stubs on top of each other.
+land-pattern numbers (0603 pads ≈ 32×34 at ±29.7, 0402 ≈ 23×25 at ±19, SOT-23
+pads ≈ 24×30, rows at ±47, 0.1" header ≈ 60×60 at 100 pitch — evidence table
+above). Inline symbols raise their pin pitch automatically (30 mil for 3+ pins;
+override with `"pitch"`).
 
 ### expect — declare the circuit's intent (fifth gate)
 
@@ -159,13 +165,15 @@ mis-wired divider):
 Rule table: `node scripts/intent.js --rules`; codes I001–I006 in
 [docs/checks.md](docs/checks.md). Mark `polarity` on every LED, diode and
 electrolytic capacitor — it is the one check that catches reverse polarity.
+A diode whose anode belongs on ground (TVS, flyback clamp) declares
+`"role": "shunt"` instead of being exempted by hand.
 
 Reusable complete examples live in [`recipe/`](recipe) and
 [`examples/designs/`](examples/designs). Copy the closest one and edit it —
 that is faster and safer than writing a design from a blank page.
 
 ```bash
-node scripts/recipe.js list                       # 15 sub-circuits
+node scripts/recipe.js list                       # 16 sub-circuits
 node scripts/recipe.js show rc-lowpass             # parts, nets, params
 node scripts/recipe.js apply ldo-3v3 --to design.json \
      --set cout=22uF --net VOUT=3V3_RAIL           # merge, rename, de-duplicate ids
@@ -257,6 +265,7 @@ footprint sharing a display name cannot collide.
 | --- | --- |
 | design.json edge cases, multi-sheet, PCB rules, copper policy | [`docs/build.md`](docs/build.md) |
 | every check code and what it means | [`docs/checks.md`](docs/checks.md) |
+| land-pattern / symbol dimensions and their external sources | [`docs/footprint-evidence.md`](docs/footprint-evidence.md) |
 | record-level format spec | [`docs/format-reference.md`](docs/format-reference.md) |
 | a full worked manual flow (no design file) | [`docs/workflow.md`](docs/workflow.md) |
 | extending the skill, iteration protocol | [`docs/development.md`](docs/development.md) |

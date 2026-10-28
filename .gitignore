@@ -12,3 +12,4 @@ node_modules/
 
 # Selection cache (intake resolve accelerator; deleting it changes speed, never output)
 .cache/
+/tmp/

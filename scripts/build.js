@@ -25,7 +25,7 @@ const E = require('./lib/eprj3');
 const G = require('./lib/geom');
 const P = require('./lib/parts');
 const D = require('./lib/design');
-const R = require('./lib/route');
+const R = require('./lib/sch-route');
 const FA = require('./lib/fp-auto');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
@@ -350,7 +350,7 @@ function main() {
     const rules = design.pcbSpec.rules || {};
     const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
     console.log(`方案 ${design.name} → ${requestedDir}`);
-    console.log(`  板框  ${design.board.width}×${design.board.height} mil · `
+    console.log(`  板框  ${design.boardDeclared ? `${design.board.width}×${design.board.height} mil` : '自动适配（按器件收敛）'} · `
       + `${doPcb ? '只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）' : '仅原理图 (--schematic-only)'}`);
     console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
     const widths = Object.entries(design.netWidths || {});
@@ -419,18 +419,26 @@ function main() {
   let ratNets = [];
   if (doPcb) {
     const { planPcb } = require('./lib/pcb-plan');
+    // Board size settles here: an explicit `board` is honoured as a floor and
+    // grown if the placer needs more; an UNDECLARED board shrinks/grows to
+    // exactly fit the parts (required already carries the edge margin), so a
+    // 3-part board no longer ships on a 1600×1000 mil blank. Iterates because
+    // resizing the board can re-trigger row wrapping, which changes `required`
+    // again; it stabilises after at most a couple of rounds.
+    const MIN_W = 400;
+    const MIN_H = 300;
     let plan = planPcb(design, lib, placements);
-    // The board must fit what the placer needs; grow it instead of dropping
-    // parts on top of each other.
-    if (plan.required.width > design.board.width || plan.required.height > design.board.height) {
-      const newW = Math.max(design.board.width, plan.required.width);
-      const newH = Math.max(design.board.height, plan.required.height);
-      log(`board grown to ${newW}×${newH} mil to fit ${design.parts.length} parts`);
-      design.board.width = newW;
-      design.board.height = newH;
+    for (let round = 0; round < 4; round += 1) {
+      const targetW = Math.max(design.boardDeclared ? design.board.width : 0, plan.required.width, MIN_W);
+      const targetH = Math.max(design.boardDeclared ? design.board.height : 0, plan.required.height, MIN_H);
+      if (targetW === design.board.width && targetH === design.board.height) break;
+      log(`board set to ${targetW}×${targetH} mil to fit ${design.parts.length} parts`
+        + (design.boardDeclared ? ' (declared size kept as a floor)' : ' (auto-fit)'));
+      design.board.width = targetW;
+      design.board.height = targetH;
       E.updateRecord(pcbDoc.file,
         (r) => r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE',
-        (r) => { r.body.path = E.rectPath(0, 0, newW, newH); });
+        (r) => { r.body.path = E.rectPath(0, 0, targetW, targetH); });
       plan = planPcb(design, lib, placements);
     }
     const placementPlan = plan.placements;
@@ -494,9 +502,11 @@ function main() {
   report.erc = erc;
 
   // Fifth gate: design intent (polarity, decoupling, declared pairs, ranges).
-  // It fails the build like the others; --allow-intent skips it.
+  // It fails the build like the others; --allow-intent skips it. Polarity
+  // marks are checked even without an `expect` block — that is the promise in
+  // docs/build.md, and the one gate that catches a reversed LED/diode.
   let intent = null;
-  if (design.expect) {
+  if (design.expect || design.parts.some((p) => p.polarity)) {
     const { runIntent } = require('./lib/intent');
     intent = runIntent(design);
     report.intent = intent;

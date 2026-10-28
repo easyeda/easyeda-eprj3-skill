@@ -1,0 +1,80 @@
+{
+  "name": "mounting-holes",
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
+  },
+  "blocks": [
+    {
+      "title": "MOUNTING HOLES M3",
+      "parts": [
+        "MH1",
+        "MH2",
+        "MH3",
+        "MH4"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "MH1",
+      "symbol": "TEST_POINT",
+      "footprint": {
+        "name": "MH_M3",
+        "designator": "H",
+        "pads": [
+          [1, 0, 0, 160, 160, 126]
+        ],
+        "outline": [-80, -80, 80, 80]
+      },
+      "name": "MOUNTING HOLE",
+      "value": "M3",
+      "pins": { "1": "NC" }
+    },
+    {
+      "id": "MH2",
+      "symbol": "TEST_POINT",
+      "footprint": {
+        "name": "MH_M3",
+        "designator": "H",
+        "pads": [
+          [1, 0, 0, 160, 160, 126]
+        ],
+        "outline": [-80, -80, 80, 80]
+      },
+      "name": "MOUNTING HOLE",
+      "value": "M3",
+      "pins": { "1": "NC" }
+    },
+    {
+      "id": "MH3",
+      "symbol": "TEST_POINT",
+      "footprint": {
+        "name": "MH_M3",
+        "designator": "H",
+        "pads": [
+          [1, 0, 0, 160, 160, 126]
+        ],
+        "outline": [-80, -80, 80, 80]
+      },
+      "name": "MOUNTING HOLE",
+      "value": "M3",
+      "pins": { "1": "NC" }
+    },
+    {
+      "id": "MH4",
+      "symbol": "TEST_POINT",
+      "footprint": {
+        "name": "MH_M3",
+        "designator": "H",
+        "pads": [
+          [1, 0, 0, 160, 160, 126]
+        ],
+        "outline": [-80, -80, 80, 80]
+      },
+      "name": "MOUNTING HOLE",
+      "value": "M3",
+      "pins": { "1": "NC" }
+    }
+  ]
+}

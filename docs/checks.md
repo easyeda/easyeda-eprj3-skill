@@ -160,7 +160,7 @@ without `expect`/`polarity` skips the gate entirely.
 
 | Code | Level | Weight | Meaning |
 | --- | --- | --- | --- |
-| `I001` | error | 15 | a `polarity`-marked pin sits on the wrong power domain ("+" on ground / "-" on a supply) — the LED/diode/electrolytic reverse-polarity killer |
+| `I001` | error | 15 | a `polarity`-marked pin sits on a ground net with mark "+" — the reversed-LED / reversed-electrolytic killer. A TVS/flyback clamp declares `"role": "shunt"` and is exempt (its anode belongs on ground). A cathode on ground or a rail-to-rails orientation is never judged (undecidable from nets alone) |
 | `I002` | error | 10 | `expect.decoupling`: a supply net has no capacitor to ground |
 | `I003` | error | 8 | `expect.pairs`: a declared pair is unused or has unbalanced pin counts |
 | `I004` | error | 8 | `expect.valueRange`: a part's value is outside its declared range (unparseable values warn) |

@@ -20,10 +20,12 @@
  *                         the body
  *
  * Auto-layout mirrors the official example's geometry: pin hotspots at x=±20,
- * length 10, vertical pitch --pitch (default 10). The body rect and BBOX are
- * always derived from the pin geometry: each pin's inner end (hotspot +
- * length toward the body) defines that side's edge, plus pitch/2 margin on
- * top/bottom.
+ * length 10, vertical pitch --pitch. The pitch DEFAULTS TO 30 mil when the
+ * pin list has 3+ entries (any auto column then holds ≥2 pins — the old 10 mil
+ * default stacked stubs on top of each other) and to 10 mil for 1–2 pins.
+ * The body rect and BBOX are always derived from the pin geometry: each pin's
+ * inner end (hotspot + length toward the body) defines that side's edge, plus
+ * pitch/2 margin on top/bottom.
  */
 const E = require('./lib/eprj3');
 const { parseArgs, printHelp, die } = require('./lib/utils');
@@ -35,7 +37,7 @@ const SCHEMA = [
   { name: 'description', desc: 'symbol description' },
   { name: 'tags', desc: 'comma-separated tags' },
   { name: 'pins', desc: 'pin spec: all "num:name" or all "num:name:x:y:rot"', required: true },
-  { name: 'pitch', desc: 'vertical pin pitch in mil (default 10)' }
+  { name: 'pitch', desc: 'vertical pin pitch in mil (default: 30 for 3+ pins, else 10)' }
 ];
 
 function parsePins(spec) {
@@ -117,14 +119,16 @@ function main() {
   }
   if (cmd !== 'from-pins') die(`unknown subcommand "${cmd}" (want: from-pins)`);
   const { opts } = parseArgs(argv.slice(1), SCHEMA);
-  const pitch = opts.pitch !== undefined ? Number(opts.pitch) : 10;
+  const pins = parsePins(opts.pins);
+  // Auto pitch: 3+ pins means some auto column holds ≥2 pins — 10 mil would
+  // stack their stubs; 30 mil keeps the stubs (and later the wires) apart.
+  const pitch = opts.pitch !== undefined ? Number(opts.pitch) : (pins.length >= 3 ? 30 : 10);
   if (!Number.isFinite(pitch) || pitch <= 0) die(`bad --pitch "${opts.pitch}" (want a positive number, mil)`);
   const project = E.Project.load(opts.dir);
   if (project.presetHas(opts.name)) {
     die(`entry name "${opts.name}" shadows a preset template; pick another name (placement resolves presets first)`);
   }
 
-  const pins = parsePins(opts.pins);
   const body = layout(pins, pitch);
   const title = opts.name;
   const designator = opts.designator ? `${opts.designator}?` : 'U?';

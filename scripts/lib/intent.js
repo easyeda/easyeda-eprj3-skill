@@ -68,24 +68,26 @@ function runIntent(d) {
   const downNets = new Set([...d.powerNets.entries()].filter(([, v]) => v === 'down').map(([n]) => n));
   const upNets = new Set([...d.powerNets.entries()].filter(([, v]) => v === 'up').map(([n]) => n));
 
-  // ---- polarity: a polarized part whose "+" lands on ground (or "-" on a
-  // supply) is wired backwards. This is the LED / diode / electrolytic killer
-  // that no connectivity check can see.
+  // ---- polarity: what a polarity mark can prove about a 2-pin part.
+  //   "+" (anode) on a ground net → reversed, UNLESS the part declares role
+  //     "shunt" (a TVS/clamp legitimately puts its anode on ground). With the
+  //     anode at ground the part never conducts from any positive net — this
+  //     is the reversed-LED / reversed-electrolytic killer.
+  //   A cathode on ground is NOT an error: that is the standard low-side LED,
+  //   the electrolytic's "-" and a signal clamp. "- on a supply" is fine too
+  //   (flyback diode clamping a rail, series diode into the downstream rail).
+  //   Rails-to-rails orientation is undecidable from nets alone → not judged.
   let polChecked = 0;
   for (const p of d.parts) {
     if (!p.polarity) continue;
     polChecked += 1;
+    const shunt = p.role === 'shunt';
     for (const [pin, mark] of Object.entries(p.polarity)) {
       const net = p.pins[pin];
       if (!net) continue;
-      if (mark === '+' && downNets.has(net)) {
-        add('I001', `part ${p.id}: pin ${pin} is marked "+" but sits on ground net "${net}" — reverse it`, {
-          ref: p.id, pin, fix: `swap the two pins in parts[].pins of ${p.id} (or the pins mapping of its symbol), then re-run build.js --force`
-        });
-      }
-      if (mark === '-' && upNets.has(net)) {
-        add('I001', `part ${p.id}: pin ${pin} is marked "-" but sits on supply net "${net}" — reverse it`, {
-          ref: p.id, pin, fix: `swap the two pins in parts[].pins of ${p.id}, then re-run build.js --force`
+      if (mark === '+' && downNets.has(net) && !shunt) {
+        add('I001', `part ${p.id}: pin ${pin} is marked "+" but sits on ground net "${net}" — reverse it (if this is a TVS/clamp, declare "role": "shunt" instead)`, {
+          ref: p.id, pin, fix: `swap the two pins in parts[].pins of ${p.id}, or add "role": "shunt" if the anode belongs on ground, then re-run build.js --force`
         });
       }
     }

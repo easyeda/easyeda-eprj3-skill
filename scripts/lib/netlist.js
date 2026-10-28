@@ -1,6 +1,6 @@
 'use strict';
 /**
- * netlist.js -?recover the ELECTRICAL truth from an authored project.
+ * netlist.js — recover the ELECTRICAL truth from an authored project.
  *
  * The format validator proves the files are well formed. This module answers a
  * different question: which pin is actually connected to which, after the
@@ -10,7 +10,7 @@
  *
  * Connectivity rules mirror the client's:
  *   - a wire's segments join their two endpoints
- *   - a pin connects where its TIP lands (exact coordinate equality -?that is
+ *   - a pin connects where its TIP lands (exact coordinate equality — that is
  *     what the client snaps to)
  *   - a pin landing anywhere on a wire segment also connects (T junction)
  *   - every wire carrying the same NET name is the same net (label semantics)
@@ -220,7 +220,7 @@ function sheetNetlist(file) {
       name = `N$${autoIdx}`;
     }
     if (!name) {
-      // single unconnected pin -?no net at all
+      // single unconnected pin — no net at all
       continue;
     }
     if (named.has(name)) {

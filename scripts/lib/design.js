@@ -71,6 +71,9 @@ function normalize(raw, file) {
     sheet: (raw.sheet && (raw.sheet.name || raw.sheet.title)) || raw.sheetName || DEFAULTS.sheet,
     pcb: raw.pcbName || DEFAULTS.pcb,
     board: Object.assign({}, DEFAULTS.board, raw.board || {}),
+    // an explicitly declared board is a floor (grown if needed); an undeclared
+    // one auto-fits the parts (build.js shrinks the 1600×1000 default to fit)
+    boardDeclared: !!(raw.board && Number(raw.board.width) > 0 && Number(raw.board.height) > 0),
     layout: Object.assign({}, DEFAULTS.layout, raw.layout || {}),
     powers: Object.assign({}, raw.powers || {}),
     nets: Object.assign({}, raw.nets || {}),
@@ -131,6 +134,10 @@ function normalize(raw, file) {
       name: p.name || null,
       pins,
       polarity: p.polarity && typeof p.polarity === 'object' ? p.polarity : null,
+      // "shunt" = TVS / flyback / clamp diode: its cathode legitimately sits on
+      // a supply rail and its anode on ground, so the polarity gate must not
+      // read "+" on a ground net as a reversal (intent.js I001)
+      role: p.role === undefined ? null : String(p.role),
       rotation: rot,
       block: p.block === undefined ? null : (typeof p.block === 'number' ? p.block : String(p.block))
     };
@@ -322,12 +329,20 @@ function unionRect(a, b) {
 /**
  * Lay blocks out left→right along the signal flow, each block as a grid of
  * parts, and return absolute placements plus the annotation boxes.
+ *
+ * Blocks wrap onto a new row when the next one would run past the A4 drawing
+ * frame (lint.js FRAME width 11700 mil) — a one-row layout silently pushed
+ * parts off-sheet on larger designs, and L007 only warned about it.
  */
 function layoutSchematic(d, lib) {
   const L = d.layout;
+  const A4_W = 11700;           // mirrors lint.js FRAME.x2
+  const WRAP_LIMIT = A4_W - 300;
   const placements = [];
   const blocks = [];
   let cursorX = 0;
+  let rowBaseY = 0;             // top edge of the current block row (≤ 0)
+  let rowMaxH = 0;              // tallest block frame in the current row
 
   for (const block of d.blocks) {
     const members = block.parts
@@ -356,6 +371,15 @@ function layoutSchematic(d, lib) {
     });
     const colPitch = colW.map((w) => grid(Math.max(L.cellW, w + 60)));
     const rowPitch = rowH.map((h) => grid(Math.max(L.cellH, h + 60)));
+    const blockW = L.margin * 2 + colPitch.reduce((a, b) => a + b, 0);
+
+    // wrap before placing: a block wider than the whole frame goes on its own
+    // row either way
+    if (cursorX > 0 && cursorX + blockW > WRAP_LIMIT) {
+      rowBaseY -= rowMaxH + L.blockGapY;
+      cursorX = 0;
+      rowMaxH = 0;
+    }
 
     let box = null;
     rels.forEach((r, i) => {
@@ -368,7 +392,7 @@ function layoutSchematic(d, lib) {
       const colLeft = colPitch.slice(0, col).reduce((a, b) => a + b, 0);
       const rowTop = -(L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0));
       const px = grid(cursorX + L.margin + colLeft);
-      const py = grid(rowTop);
+      const py = grid(rowBaseY + rowTop);
       const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block };
       pl.extent = partExtent(r.sym, px, py, r.rot);
       placements.push(pl);
@@ -384,6 +408,7 @@ function layoutSchematic(d, lib) {
     };
     blocks.push({ title: block.title, rect, members: ordered.map((p) => p.id) });
     cursorX = rect.x2 + L.blockGapX;
+    rowMaxH = Math.max(rowMaxH, rect.y2 - rect.y1);
   }
   return { placements, blocks };
 }

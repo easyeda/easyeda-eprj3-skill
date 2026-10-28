@@ -134,7 +134,32 @@ function renderSheet(file, opts) {
       const r = G.rotate(x, y, c.rotation);
       return [c.x + r.x, -(c.y + r.y)];
     });
-    out.push(`<polygon points="${corners.map((p) => p.join(',')).join(' ')}" fill="${THEME.bodyFill}" stroke="${THEME.body}" stroke-width="${stroke * 1.5}"/>`);
+    if (c.sym && c.sym.graphics && c.sym.graphics.length) {
+      // draw the symbol's real artwork (diode triangle, LED arrows, cap
+      // plates…) instead of an anonymous box — the preview must be able to
+      // tell a diode from a resistor
+      for (const g of c.sym.graphics) {
+        if (g.kind === 'poly') {
+          const pts = g.points.map((p) => {
+            const r = G.rotate(p.x, p.y, c.rotation);
+            return `${(c.x + r.x).toFixed(2)},${(-(c.y + r.y)).toFixed(2)}`;
+          }).join(' ');
+          if (g.closed) {
+            out.push(`<polygon points="${pts}" fill="${THEME.bodyFill}" stroke="${THEME.body}" stroke-width="${stroke * 1.5}"/>`);
+          } else {
+            out.push(`<polyline points="${pts}" fill="none" stroke="${THEME.body}" stroke-width="${stroke * 1.5}"/>`);
+          }
+        } else if (g.kind === 'rect') {
+          const rc = [[g.x1, g.y1], [g.x2, g.y1], [g.x2, g.y2], [g.x1, g.y2]].map(([x, y]) => {
+            const r = G.rotate(x, y, c.rotation);
+            return `${(c.x + r.x).toFixed(2)},${(-(c.y + r.y)).toFixed(2)}`;
+          }).join(' ');
+          out.push(`<polygon points="${rc}" fill="${THEME.bodyFill}" stroke="${THEME.body}" stroke-width="${stroke * 1.5}"/>`);
+        }
+      }
+    } else {
+      out.push(`<polygon points="${corners.map((p) => p.join(',')).join(' ')}" fill="${THEME.bodyFill}" stroke="${THEME.body}" stroke-width="${stroke * 1.5}"/>`);
+    }
     if (c.sym) {
       for (const pin of c.sym.pins) {
         const t = G.pinTip(pin, c.x, c.y, c.rotation);
@@ -171,7 +196,107 @@ function renderProject(dir, outDir) {
     fs.writeFileSync(out, svg, 'utf8');
     written.push(out);
   }
+  // the deliverable PCB is placement-only — a picture of the placement (board
+  // outline, pads, refdes, rats) is how a human checks it without the client
+  for (const pcb of Object.values(project.profile.pcbs || {})) {
+    const file = project.pcbFile(pcb);
+    if (!fs.existsSync(file)) continue;
+    const svg = renderPcbFile(file);
+    const out = path.join(target, `${pcb.title}.svg`);
+    fs.writeFileSync(out, svg, 'utf8');
+    written.push(out);
+  }
   return written;
 }
 
-module.exports = { renderSheet, renderProject, collect, THEME };
+// ------------------------------------------------------------ PCB preview
+const PCB_THEME = {
+  bg: '#ffffff',
+  outline: '#334155',
+  pad: '#b45309',
+  padBottom: '#7c3aed',
+  hole: '#ffffff',
+  rats: '#dc2626',
+  text: '#111827'
+};
+
+/** Render one PCB document to an SVG string: outline + pads + refdes + rats. */
+function renderPcbFile(file) {
+  const DRC = require('./drc');   // local require: drc → eprj3/geom only, no cycle with render
+  const P = require('./parts');
+  const lines = E.readLines(file);
+  const docs = DRC.docSplit(lines);
+  const main = docs.find((d) => d.docType === 'PCB') || docs[0] || { records: [] };
+  const geo = DRC.pcbGeometry(file);
+
+  let outline = null;
+  const refPos = [];
+  const attrs = main.records.filter((r) => r.type === 'ATTR' && r.body);
+  for (const r of main.records) {
+    if (r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE' && !outline) {
+      outline = P.pathToPoints(r.body.path);
+    }
+    if (r.type === 'COMPONENT') {
+      const des = attrs.find((a) => a.body.key === 'Designator' && a.body.parentId === r.id);
+      if (des) refPos.push({ ref: des.body.value, x: r.body.x, y: r.body.y, angle: r.body.angle || 0 });
+    }
+  }
+
+  const pts = [];
+  for (const p of outline || []) pts.push(p);
+  for (const p of geo.pads) pts.push({ x: p.x - p.w / 2, y: p.y - p.h / 2 }, { x: p.x + p.w / 2, y: p.y + p.h / 2 });
+  const bb = G.bboxOfPoints(pts) || { x1: 0, y1: 0, x2: 1000, y2: 1000 };
+  const margin = 120;
+  const x0 = bb.x1 - margin;
+  const yTop = -bb.y2 - margin;
+  const w = (bb.x2 - bb.x1) + margin * 2;
+  const h = (bb.y2 - bb.y1) + margin * 2;
+
+  const out = [];
+  out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(w / 4)}" height="${Math.round(h / 4)}" viewBox="${x0} ${yTop} ${w} ${h}">`);
+  out.push(`<rect x="${x0}" y="${yTop}" width="${w}" height="${h}" fill="${PCB_THEME.bg}"/>`);
+
+  if (outline && outline.length >= 3) {
+    const pts2 = outline.map((p) => `${p.x},${-p.y}`).join(' ');
+    out.push(`<polygon points="${pts2}" fill="none" stroke="${PCB_THEME.outline}" stroke-width="4"/>`);
+  }
+
+  // rats first (under the pads): chain each net's pads nearest-neighbour
+  const byNet = new Map();
+  for (const p of geo.pads) {
+    if (!p.net || /^(NC|DNC\d*)$/i.test(p.net)) continue;
+    if (!byNet.has(p.net)) byNet.set(p.net, []);
+    byNet.get(p.net).push(p);
+  }
+  for (const pads of byNet.values()) {
+    if (pads.length < 2) continue;
+    const rest = pads.slice(1);
+    let cur = pads[0];
+    while (rest.length) {
+      let best = 0;
+      for (let i = 1; i < rest.length; i += 1) {
+        if (Math.hypot(rest[i].x - cur.x, rest[i].y - cur.y) < Math.hypot(rest[best].x - cur.x, rest[best].y - cur.y)) best = i;
+      }
+      const nx = rest.splice(best, 1)[0];
+      out.push(`<line x1="${cur.x}" y1="${-cur.y}" x2="${nx.x}" y2="${-nx.y}" stroke="${PCB_THEME.rats}" stroke-width="2" stroke-dasharray="10 8" opacity="0.8"/>`);
+      cur = nx;
+    }
+  }
+
+  for (const p of geo.pads) {
+    const fill = p.layer === 2 ? PCB_THEME.padBottom : PCB_THEME.pad;
+    out.push(`<rect x="${p.x - p.w / 2}" y="${-(p.y + p.h / 2)}" width="${p.w}" height="${p.h}" fill="${fill}" stroke="${PCB_THEME.outline}" stroke-width="1"/>`);
+    if (p.hole) {
+      out.push(`<circle cx="${p.x}" cy="${-p.y}" r="${p.hole / 2}" fill="${PCB_THEME.hole}" stroke="${PCB_THEME.outline}" stroke-width="1.5"/>`);
+    }
+  }
+  for (const c of refPos) {
+    out.push(`<text x="${c.x - 10}" y="${-c.y + 6}" font-family="monospace" font-size="26" fill="${PCB_THEME.text}">${esc(c.ref)}</text>`);
+  }
+  const netCount = [...byNet.values()].filter((v) => v.length >= 2).length;
+  out.push(`<text x="${x0 + 12}" y="${yTop + 30}" font-family="sans-serif" font-size="30" fill="${PCB_THEME.text}">placement-only · ${geo.pads.length} pads · rats: ${netCount} net(s) to route in the client</text>`);
+  out.push('</svg>');
+  return out.join('\n');
+}
+
+module.exports = { renderSheet, renderProject, renderPcbFile, collect, THEME };

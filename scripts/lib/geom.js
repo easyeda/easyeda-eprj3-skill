@@ -175,6 +175,11 @@ function bends(segs) {
   return n;
 }
 
+/** Translate a box by (dx, dy). */
+function translateBox(b, dx, dy) {
+  return { x1: b.x1 + dx, y1: b.y1 + dy, x2: b.x2 + dx, y2: b.y2 + dy };
+}
+
 module.exports = {
   EPS,
   round,
@@ -192,5 +197,6 @@ module.exports = {
   segsIntersect,
   pointSegDist,
   orthoPath,
-  bends
+  bends,
+  translateBox
 };

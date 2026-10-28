@@ -42,7 +42,8 @@ node scripts/generate-symbol.js from-pins --dir <dir> --name <sym> \
   --designator R --pins "1;2" [--pitch 10]
 # pin spec, ';'-separated items — ALL auto ("num" | "num:name") or ALL
 # explicit ("num:name:x:y:rotation", rotation 0 = left / 180 = right column):
-# auto-layout gives two columns at x=±20, pin length 10, pitch --pitch;
+# auto-layout gives two columns at x=±20, pin length 10; pitch defaults to
+# 30 mil for 3+ pins (10 for 1–2), override with --pitch;
 # the body rect always derives from the resulting pin geometry
 
 node scripts/generate-footprint.js from-pads --dir <dir> --name <fp> \

@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.13.1** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.14.0** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -68,7 +68,7 @@ The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md))
 2. **Confirmation gates** (mandatory before generation; every change is shown first): power scheme, MCU/part choices, interface names, board size/layers. `node scripts/build.js --plan` rehearses the real build without writing; `node scripts/autofix.js --diff` prints the diff of every automatic fix before applying it.
 3. `node scripts/build.js --design design.json --dir <project>` in one shot:
    - schematic: auto layout (signal-flow blocks), auto wiring, power symbols
-   - PCB: **placement only** — footprints auto-placed, pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
+   - PCB: **placement only** — footprints auto-placed with engineering sense (connectors on the board edge, decoupling caps next to their IC, undeclared boards auto-fit), pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
    - five gates: format / ERC / layout lint / DRC+DFM (pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles D009–D012; `D004`/`D006` are never judged on a board this skill built — imported or client-saved copper is reviewed in full) / design intent (polarity, decoupling, dividers)
 4. On failure, the printed `fix:` lines say exactly what to change (usually: edit the design, re-run `build.js --force`); mechanical fixes go through `scripts/autofix.js`.
 5. `node scripts/render.js` writes SVG previews; `node scripts/open.js` opens the project in the EasyEDA Pro client.
@@ -116,7 +116,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **边界**：交付物就是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。自动布线、铺铜、制造文件导出（BOM / 坐标 / Gerber）都不归这个 skill 管——在客户端完成。
 
-**当前版本：1.13.1** · [更新记录](CHANGELOG.md)
+**当前版本：1.14.0** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 

@@ -3,6 +3,7 @@
   "_defaults": { "minLint": 85, "minDrc": 80, "maxSeconds": 20 },
   "examples/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
   "examples/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "recipe/mounting-holes": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
   "recipe/ldo-3v3": { "minDrc": 100, "maxSeconds": 10 },
   "recipe/rs485": { "minLint": 95, "minDrc": 100, "maxSeconds": 10 }
 }
