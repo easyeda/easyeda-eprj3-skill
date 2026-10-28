@@ -260,7 +260,10 @@ first; **IC pinout entries** (`templates/library/ic/`, referenced by
 real parts; generated/inline entries are staged under `<project>/.tmp/library/`
 during authoring and removed by `build.js` or `cleanup.js`. `load-library.js
 list|show|remove` inspects both tiers. Inline entries are staged as `SYM_*` /
-`FP_*` so a symbol and footprint sharing a display name cannot collide.
+`FP_*` so a symbol and footprint sharing a display name cannot collide. The
+library is **committed data — the skill never queries the network at runtime**
+(no live library lookup; curating new entries is a maintainer task, see
+[`docs/development.md`](docs/development.md)).
 
 ## Where to read next
 

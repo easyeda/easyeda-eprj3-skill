@@ -78,7 +78,7 @@ const icCache = new Map();
 function loadIcEntry(name) {
   if (icCache.has(name)) return icCache.get(name);
   const file = path.join(IC_DIR, `${name}.json`);
-  if (!fs.existsSync(file)) fail(`part references unknown ic "${name}" — no templates/library/ic/${name}.json (see load-library.js list or docs/footprint-evidence.md)`);
+  if (!fs.existsSync(file)) fail(`part references unknown ic "${name}" — no templates/library/ic/${name}.json (runtime is offline: pick a listed entry via load-library.js, hand-write an inline symbol, or curate a new entry per docs/development.md)`);
   let entry;
   try {
     entry = parseJsonText(readJsonText(file));

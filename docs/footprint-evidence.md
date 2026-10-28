@@ -1,12 +1,19 @@
 # 封装 / 符号证据表（land-pattern & symbol evidence）
 
+> **运行时边界：本 skill 使用时完全离线。** 本表是"已提交数据的出处证明
+> （citation）"，不是运行时指令——生成/校验/渲染过程中，AI 与脚本都**不应
+> 发起任何网络请求**；所有尺寸与引脚数据读取的是随仓库提交的固化文件
+> （[fp-auto.js](../scripts/lib/fp-auto.js)、[templates/library/ic/](../templates/library/ic/)）。
+> 联网抓取官方库属于**维护会话的策展动作**，流程见
+> [docs/development.md](development.md) 的"库数据维护"章节。
+
 要求：库数据必须**可溯源到外部来源**——不能是"照抄自家 recipe"（那种自证
 闭环确实引入过错误：SOT-23 焊盘内缩 0.35 mm、SOIC 焊盘长轴装反、TSSOP 用错
-pitch 标准）。本 skill 的封装尺寸按以下优先级校准：
+pitch 标准）。已提交数据的来源按以下优先级记录：
 
-1. **EasyEDA 官方库**（最高优先）：`https://easyeda.com/api/products/{LCSC}/components`
-   按 LCSC 编号抓取官方器件/封装数据（`packageDetail.dataStr.shape` 的 `PAD~`
-   记录，单位 10 mil，y 向下；换算到本 skill 的 mil/Y-up）。
+1. **EasyEDA 官方库**（最高优先，维护期抓取后固化）：官方器件/封装数据
+   （`packageDetail.dataStr.shape` 的 `PAD~` 记录，单位 10 mil，y 向下；换算
+   到本 skill 的 mil/Y-up）。各表行中的 LCSC 编号即出处引用。
 2. **JEDEC / IPC-7351B 标准推导**：无官方样例时按标准公式计算，并在表中标注
    "推导、官方样例待补"。
 3. **随仓库提交的客户端实测工程**（`examples/easyeda-eprj3-project`，官方
@@ -69,10 +76,9 @@ Pin Type 属性取值：客户端实测样例中只出现过 `IN` 与 `Undefined
 | `STM32F103C8T6` | 48（24 L / 24 R，符号 pitch 100 mil；封装为官方 LQFP-48 焊盘逐字坐标） | 符号+封装：EasyEDA 官方库 C8734（`https://easyeda.com/api/products/C8734/components`，pin 号/名称/列位与焊盘坐标逐字；电源类引脚名按确定性命名规则标 W 方向）；datasheet：[ST STM32F103C8](https://www.st.com/resource/en/datasheet/stm32f103c8.pdf) |
 | `AMS1117-3.3` | 4（1=GND 2=VOUT 3=VIN 4=VOUT/tab，官方符号逐字；封装 `{auto:SOT223}` 按官方 SOT-223 坐标生成） | EasyEDA 官方库 C6186（`https://easyeda.com/api/products/C6186/components`）；datasheet：[AMS1117](https://www.advanced-monolithic.com/Pdf/ds1117.pdf) |
 
-新增条目流程：从官方库 API 抓取器件数据 → 引脚列表转 `num:name:dir:side`
-（dir ∈ I/O/B/P/W/T/C，side ∈ L/R，每列按自下而上排序）→ 封装用官方焊盘逐字
-坐标（或匹配的 auto 家族）→ 三项来源（符号/封装/datasheet）写进 `evidence`
-块 → 在 `test/dfm.js` 加引脚数断言。
+新增条目属**维护会话的策展动作**（需要联网抓取官方库）——流程与抓取细节见
+[docs/development.md](development.md) 的"库数据维护"章节；本 skill 运行时
+不联网，也不会为"库里没有的器件"现场取数。
 
 ## 未经真机客户端验证
 

@@ -185,6 +185,35 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 | 构建前想给用户过目？ | `build.js --plan`：真实预演（lint/drc 分数是真的），目标目录零写入 |
 | 怎么证明零第三方依赖？ | `node scripts/depcheck.js`（`npm run depcheck`，已串进 `npm test`） |
 
+## 库数据维护（需联网，仅限维护会话）
+
+> **运行时（build/validate/render 等一切使用场景）零联网**——skill 只读随仓
+> 库提交的固化数据。本章节是**维护者新增/校准库数据**的流程，由维护会话执行，
+> 不属于 skill 的日常使用。
+
+新增 IC 条目（`templates/library/ic/`）或校准封装家族（`fp-auto.js`）时，从
+EasyEDA 官方库抓取样例器件数据：
+
+```
+https://easyeda.com/api/products/{LCSC}/components
+```
+
+- 返回 `result.packageDetail.dataStr`（封装）与 `result.dataStr`（符号），
+  `shape` 数组内是 `PAD~…` / `P~…` 记录（单位 10 mil，y 向下；换算到本 skill
+  的 mil/Y-up）。
+- 符号引脚记录 `P~show~<electric>~<num>~<dotX>~<dotY>~<rot>~…`：官方库
+  electric 字段恒为 Unspecified，**方向由确定性命名规则标注**（VDD/VSS/GND/
+  VIN/VOUT/VBAT/VDDA/VSSA → W；其余不标）。
+- 封装焊盘逐字转换（IC 条目），或回填 `fp-auto.js` 家族公式常数；引用块
+  （evidence）必须同时给出：官方库 part id + API URL、封装出处、datasheet
+  URL，三项缺一不可。
+- 同一提交内：更新 [footprint-evidence.md](footprint-evidence.md) 出处表 +
+  `test/dfm.js` 断言（引脚数/关键尺寸）。
+
+已按此流程固化的样例：C2145（SOT-23）、C82942（SOT-23-5）、C7950（SOIC-8）、
+C6186（SOT-223 + AMS1117 条目）、C8734（LQFP-48 + STM32 条目）、C24112
+（QFN-24）、C165948（USB-C）、C21190（R0603）。
+
 ## 进阶文档
 
 - `docs/format-reference.md`：`.eprj3` 内部格式参考。

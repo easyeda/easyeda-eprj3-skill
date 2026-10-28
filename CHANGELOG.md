@@ -5,6 +5,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.15.1] - 2026-10-28
+
+Docs contract fix: the official-library API URL read like a runtime instruction
+("最高优先" in the evidence table), which could lead the agent to query the
+network during normal skill use. The skill is **offline at runtime** — fetching
+is a maintainer-curation action only.
+
+### Changed
+- `docs/footprint-evidence.md`: opens with a runtime-boundary statement (the
+  table cites where committed numbers came from; it is not a fetch instruction);
+  the curation workflow moved out of this doc.
+- `docs/development.md`: new "库数据维护（需联网，仅限维护会话）" section — the
+  fetch workflow, record format, direction naming rule and the list of already
+  curated LCSC samples live there, behind an explicit runtime-offline banner.
+- `SKILL.md` (Library tiers) and `docs/build.md` (IC entries) state that the
+  library is committed data with **no live library lookup**; if no entry fits,
+  the agent hand-writes an inline symbol instead of fetching.
+- `design.js` unknown-IC error now says the runtime is offline and points
+  maintainers at the curation process.
+- Version labels `1.15.0 → 1.15.1`.
+
 ## [1.15.0] - 2026-10-28
 
 Second review round: every auto footprint family was re-calibrated against the

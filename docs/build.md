@@ -123,9 +123,11 @@ electrical directions and column layout) and the footprint spec, each with a
 citable `evidence` block (symbol source, footprint source, datasheet URL).
 Map only the pins the design actually uses; everything else becomes `"NC"`.
 An IC entry replaces `symbol` + `footprint` — give one or the other, never
-both. Entries are curated data, not generated: adding one means citing the
-sources you took the pinout from (see
-[`docs/footprint-evidence.md`](footprint-evidence.md)).
+both. Entries are curated, committed data — the skill reads them from disk and
+**never queries the network at runtime**; there is no live library lookup. If
+no entry fits a real part, do NOT fetch anything: hand-write the inline symbol
+per [docs/build.md](build.md) rules, or (maintainers only, see
+[`docs/development.md`](development.md)) curate a new entry.
 
 ### Inline footprints
 

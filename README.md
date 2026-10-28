@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.15.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.15.1** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -15,12 +15,12 @@ All code is self-authored Node CommonJS. **Zero third-party dependencies** — e
 ### What makes it different
 
 - **Requirement intake, not guesswork** — a fixed input spec ([`docs/intake.md`](docs/intake.md)): required fields (function, input supply) block the build until answered; ask-tier fields come back as one batch of questions, each with its documented fallback; defaults are applied silently but shown so you can veto them.
-- **Keyword → recipe selection** — `usb`, `单片机/mcu`, `i2c`, `rs485`, `按键/button`… map onto 15 buildable sub-circuit templates (`recipe/`), merged in signal-flow order with de-duplicated ids.
+- **Keyword → recipe selection** — `usb`, `单片机/mcu`, `i2c`, `rs485`, `按键/button`… map onto 16 buildable sub-circuit templates (`recipe/`), merged in signal-flow order with de-duplicated ids.
 - **Derived power tree** — a regulator's input lands on the nearest rail *above* its output (12V→buck→5V→LDO→3V3 chains correctly), and a big linear drop prints a heat estimate instead of silently changing your BOM.
 - **Placement-only deliverables — copper is always yours** — the shipped board is footprints placed by block flow with every pad's net linked, plus the board outline; this skill never auto-routes and never pours. `build.js` prints a `rats:` handoff list (nets to connect by hand in the client); layout to the machine, copper to the human.
 - **Human confirmation gates before anything is written** — `build.js --plan` rehearses the real build (true scores) into a throwaway dir; `autofix.js --diff` shows a line diff of every automatic edit first.
 - **Five gates** — format / ERC (E001–E007) / layout lint (L001–L010) / DRC + **DFM** (D001–D012: pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles — connectivity `D004` and pour `D006` are never judged on a board this skill built; imported or client-saved boards with copper get the full copper rules) / design intent (I001–I006: polarity, decoupling, divider ratio, diff pairs). Every finding carries a concrete `fix:` line.
-- **Measured, not hoped** — 20-case benchmark (`scripts/eval.js`) tracks seconds and token proxies in `eval/history.jsonl`; a 46-variant legal/illegal corpus (`test/corpus.js`) proves the gates actually catch corruption; `EPRJ3_DETERMINISTIC=1` rebuilds byte-identically for golden-file diffs.
+- **Measured, not hoped** — 21-case benchmark (`scripts/eval.js`) tracks seconds and token proxies in `eval/history.jsonl`; a 44-variant legal/illegal corpus (`test/corpus.js`) proves the gates actually catch corruption; `EPRJ3_DETERMINISTIC=1` rebuilds byte-identically for golden-file diffs.
 
 ### AI one-line install prompt
 
@@ -116,7 +116,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **边界**：交付物就是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。自动布线、铺铜、制造文件导出（BOM / 坐标 / Gerber）都不归这个 skill 管——在客户端完成。
 
-**当前版本：1.15.0** · [更新记录](CHANGELOG.md)
+**当前版本：1.15.1** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
