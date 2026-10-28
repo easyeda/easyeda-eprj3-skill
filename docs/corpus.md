@@ -50,9 +50,13 @@ the build exits 0 with a clean format and electrical report — or committed:
 ```
 
 `formatOnly` marks a project this skill did not author. The **format** gate must
-still accept it; its circuit is out of scope, so ERC/lint/DRC findings are
-printed but not asserted (the committed client sample has unconnected pins by
-design). Committed projects are copied before any variant touches them.
+still accept it; its circuit is out of scope, so lint/DRC findings are printed
+but not asserted. ERC is asserted in one direction only: the client-authored
+sample doubles as the **pin-attachment anchor** — its human-drawn wires land
+exactly on the pin record points, so the netlist must read every pin connected
+(before 1.16.0 a wrong tip formula misread 12 of 16 pins as unconnected, which
+was mis-reported as "unconnected by design"). Committed projects are copied
+before any variant touches them.
 
 `key` is what an illegal variant refers to with `"base"`.
 

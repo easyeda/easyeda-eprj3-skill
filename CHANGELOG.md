@@ -5,6 +5,42 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.16.0] - 2026-10-28
+
+**Pin-attachment semantics fixed — the report that started it: "生成的原理图导
+线没有连在引脚上".** The generator, the netlist and the lint all shared one
+wrong assumption about what a PIN record's `(x, y)` means, so their internal
+consistency (ERC E003 green) proved nothing about the client.
+
+### Fixed
+- **`geom.pinTip` treated `(x, y)` as the pin's INNER end and placed the
+  connection point one pin-length outward** (`(x,y) − len·dir`). Ground truth
+  from the committed client-authored sample: **every human-drawn wire endpoint
+  lands exactly on the record point** — `(x, y)` IS the connection point (the
+  client's hotspot); the drawn pin line runs inward from it along `+rotation`.
+  Generated wires therefore floated 10 mil beside every pin in the client,
+  while ERC/L010 — sharing the same wrong math — stayed green. All consumers
+  (netlist, lint, route, parts, pins) go through `pinTip`, so one fix corrects
+  the chain; `render.js` now draws the pin line hotspot→inward.
+- **The corpus mis-diagnosis is resolved.** "the committed client sample has
+  unconnected pins by design" was this bug's symptom: our reader saw 12 of its
+  16 pins as unconnected. After the fix it reads fully connected, and
+  `test/corpus.js` now asserts it (2 new checks, 110 total) — hotspot
+  semantics can never drift silently again.
+- **L004 (wire crosses body) now judges the symbol BODY rectangle** (PART
+  BBOX), not the whole part extent: with wires attaching at the hotspot —
+  inside the extent by definition — extent-based sampling flagged every
+  legitimate stub.
+- Docs: workflow.md/build.md connection-point claims corrected
+  (`±30` → the record point `±20`; `IND ±17` was the same bug's artifact).
+
+### Verified
+- smoke 135/135 · pipeline 47/47 · dfm 95/95 · corpus 110/110 (new attachment
+  anchor) · depcheck 0 · eval 21/21 (lint/drc 100 across cases).
+- Probes: client sample reads 0 unconnected pins on both sheets; a fresh blink
+  build places every wire endpoint on a pin hotspot or a wire/label junction;
+  EPRJ3_DETERMINISTIC rebuild of the committed example updated.
+
 ## [1.15.1] - 2026-10-28
 
 Docs contract fix: the official-library API URL read like a runtime instruction

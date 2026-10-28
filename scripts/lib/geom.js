@@ -32,10 +32,16 @@ function rotate(x, y, deg) {
  */
 function pinTip(pin, originX, originY, originRot) {
   const len = pin.length === undefined ? 0 : pin.length;
-  // pin stub starts at (x,y) and ran along `rotation`; the tip is at its end.
-  const stubX = pin.x - len * Math.cos(rad(pin.rotation || 0));
-  const stubY = pin.y - len * Math.sin(rad(pin.rotation || 0));
-  const r = rotate(stubX, stubY, originRot || 0);
+  // The PIN record's (x,y) IS the connection point (the client's hotspot) —
+  // proven against the committed client-authored sample, where every
+  // human-drawn wire endpoint lands exactly on it. The pin's drawn line
+  // extends FROM the hotspot INWARD along +rotation for `length` toward the
+  // body; wires attach at the hotspot with exact coordinate equality.
+  // (Before 1.16.0 this returned a point one pin-length outward — generated
+  // wires floated beside every pin while ERC, sharing the same wrong math,
+  // stayed green.)
+  void len;
+  const r = rotate(pin.x, pin.y, originRot || 0);
   return { x: round(originX + r.x), y: round(originY + r.y) };
 }
 

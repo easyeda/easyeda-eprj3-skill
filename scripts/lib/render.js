@@ -162,9 +162,14 @@ function renderSheet(file, opts) {
     }
     if (c.sym) {
       for (const pin of c.sym.pins) {
+        // the hotspot is the connection point; the drawn pin line runs inward
+        // along +rotation toward the body
         const t = G.pinTip(pin, c.x, c.y, c.rotation);
-        const base = G.rotate(pin.x, pin.y, c.rotation);
-        out.push(`<line x1="${c.x + base.x}" y1="${-(c.y + base.y)}" x2="${t.x}" y2="${-t.y}" stroke="${THEME.pin}" stroke-width="${stroke * 1.5}"/>`);
+        const inward = G.rotate(
+          pin.x + pin.length * Math.cos(pin.rotation * Math.PI / 180),
+          pin.y + pin.length * Math.sin(pin.rotation * Math.PI / 180),
+          c.rotation);
+        out.push(`<line x1="${t.x}" y1="${-t.y}" x2="${c.x + inward.x}" y2="${-(c.y + inward.y)}" stroke="${THEME.pin}" stroke-width="${stroke * 1.5}"/>`);
         out.push(`<circle cx="${t.x}" cy="${-t.y}" r="${stroke * 2.2}" fill="${THEME.pin}"/>`);
       }
     }

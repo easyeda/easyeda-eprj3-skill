@@ -127,6 +127,18 @@ function lintSheet(file, sheetLabel) {
   }
 
   // L003 / L004 / L010 — wires
+  // The wire-crossing rule judges the SYMBOL BODY (PART BBOX), not the whole
+  // part extent: since 1.16.0 wires attach at the pin hotspot, which lies
+  // inside the extent by definition — testing the extent would flag every
+  // legitimate stub.
+  const bodyRectOf = (p) => {
+    if (!p.sym || !p.sym.bbox) return p.extent;
+    const b = p.sym.bbox;
+    const corners = [[b.x1, b.y1], [b.x2, b.y1], [b.x2, b.y2], [b.x1, b.y2]]
+      .map(([x, y]) => G.rotate(x, y, p.rotation))
+      .map((r) => ({ x: p.x + r.x, y: p.y + r.y }));
+    return G.bboxOfPoints(corners);
+  };
   const endpoints = new Map();
   for (const s of segs) {
     if (!G.isOrthogonal(s)) {
@@ -135,9 +147,10 @@ function lintSheet(file, sheetLabel) {
     for (const p of real) {
       // sample the middle of the segment: a route legitimately leaves its own
       // pin inside that symbol's extent, so the ends cannot be probed.
+      const body = G.expand(bodyRectOf(p), -4);
       for (const t of [0.3, 0.5, 0.7]) {
         const pt = { x: s.x1 + (s.x2 - s.x1) * t, y: s.y1 + (s.y2 - s.y1) * t };
-        if (G.rectContains(G.expand(p.extent, -4), pt)) {
+        if (G.rectContains(body, pt)) {
           add('L004', `a wire crosses ${p.ref}`, { ref: p.ref, seg: s });
           break;
         }

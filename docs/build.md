@@ -74,8 +74,10 @@ Two-column auto layout: even pins down the left (`rotation 0`, x=-20), odd pins
 down the right (`rotation 180`, x=+20), pin length 10. The pitch DEFAULTS to
 30 mil for 3+ pins (any auto column then holds ≥2 pins — a 10 mil default would
 stack stubs so tightly that wires collide) and to 10 mil for 1–2 pins;
-override with `"pitch"`. Tips therefore land at x = ±30. The body rectangle
-derives from the pins. For a specific look, `pins` also accepts
+override with `"pitch"`. **The pin record point (x=±20) is the connection
+point** — wires attach there with exact equality, and the pin's drawn line
+runs inward toward the body. The body rectangle derives from the pins. For a
+specific look, `pins` also accepts
 `"num:name:x:y:rotation"` — rotation must be 0 (left) or 180 (right); vertical
 pin columns have no verified real-client sample.
 

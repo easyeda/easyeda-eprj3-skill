@@ -77,7 +77,7 @@ node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
 
 `--footprint` pairs the symbol with a footprint entry (preset or temp) and the DEVICE doc is composed on the fly — there is no device staging. Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
 
-Coordinates: Y-up mil, everything on the 10 mil grid (component origins on 100 multiples). A wire touches a pin only at **exact coordinate equality** — read the tip from the entry (`load-library show`): RES/CAP/DIODE/LED presets connect at origin `(±30, 0)` rotated by the placement rotation; IND at `±17`; power flags/ports at their origin. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
+Coordinates: Y-up mil, everything on the 10 mil grid (component origins on 100 multiples). A wire touches a pin only at **exact coordinate equality** — the pin record's `(x, y)` IS the connection point (the client's hotspot; proven against the client-authored sample): RES/CAP/DIODE/LED presets connect at `(±20, 0)` rotated by the placement rotation; power flags/ports at their origin. The pin's drawn line runs from the hotspot inward toward the body. Read exact tips with `pins.js` or `load-library show`. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
 
 ## 5. Annotate (text & graphics)
 

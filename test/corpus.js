@@ -744,10 +744,20 @@ function main() {
       const formatClean = !gates.validate.crashed && gates.validate.errors.length === 0;
       const electricClean = !gates.erc.crashed && gates.erc.errors.length === 0;
       // formatOnly: a project this skill did not author. The format gate must
-      // still accept it; its circuit is out of scope for this corpus.
+      // still accept it; its circuit is out of scope for this corpus. But the
+      // client-authored sample doubles as the PIN-ATTACHMENT anchor: its
+      // human-drawn wires land exactly on the pin record points, so our
+      // netlist must see EVERY pin connected — before 1.16.0 the wrong tip
+      // formula misread 12 of its 16 pins as unconnected.
       const clean = item.formatOnly ? formatClean : (formatClean && electricClean);
       assert(clean, `legal ${item.name} accepted by ${item.formatOnly ? 'validate' : 'validate+erc'}`,
         `${item.note ? `${item.note}\n      ` : ''}${detail}`);
+      if (item.formatOnly) {
+        const unconnected = (gates.erc.stats && gates.erc.stats.sheets || [])
+          .reduce((n, s) => n + s.unconnected, 0);
+        assert(unconnected === 0, `legal ${item.name}: every client-drawn wire reads as attached`,
+          `${unconnected} pin(s) misread as unconnected — pin hotspot semantics drifted`);
+      }
       if (item.mustPassDrc) {
         const dOk = !gates.drc.crashed && !gates.drc.findings.some((f) => f.level === 'error');
         assert(dOk, `legal ${item.name} accepted by drc`, detail);
