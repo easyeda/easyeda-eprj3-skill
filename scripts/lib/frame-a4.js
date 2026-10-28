@@ -54,7 +54,7 @@ const LINES = [
   "{\"type\":\"ATTR\",\"ticket\":93,\"id\":\"a93ad93dd740a188\"}||{\"x\":null,\"y\":null,\"rotation\":null,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":null,\"value\":null,\"keyVisible\":null,\"valueVisible\":null,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":93,\"partId\":\"pid8a0e77bacb214e\"}|",
   "{\"type\":\"ATTR\",\"ticket\":94,\"id\":\"affead30076d6d9b\"}||{\"x\":null,\"y\":null,\"rotation\":null,\"color\":null,\"fontFamily\":null,\"fontSize\":null,\"fontWeight\":null,\"italic\":null,\"underline\":null,\"align\":null,\"value\":null,\"keyVisible\":null,\"valueVisible\":null,\"key\":\"Description\",\"fillColor\":null,\"parentId\":\"pid8a0e77bacb214e\",\"zIndex\":94,\"partId\":\"pid8a0e77bacb214e\"}|",
   "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"__CLIENT__\",\"uuid\":\"__DEVICE_UUID__\",\"updateTime\":__MS__,\"version\":\"__VERSION__\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
-  "{\"type\":\"META\",\"ticket\":59,\"id\":\"META\"}||{\"title\":\"Drawing-Symbol_A4\",\"tags\":[\"特殊器件\"],\"source\":\"__SOURCE__\",\"images\":[\"\"],\"attributes\":{\"@Board Name\":\"\",\"@Page Name\":\"\",\"@Create Date\":\"\",\"@Create Time\":\"\",\"@Page Count\":\"\",\"@Page No\":\"\",\"@Project Name\":\"\",\"@Schematic Name\":\"\",\"@Update Date\":\"\",\"@Update Time\":\"\",\"@Assembly Variant\":\"\",\"Company\":\"嘉立创EDA\",\"Drawed\":\"\",\"Page Size\":\"A4\",\"Reviewed\":\"\",\"Symbol\":\"__SYMBOL_UUID__\",\"Version\":\"V1.0\",\"Border\":\"1\",\"Title Block Position\":\"3\",\"Size\":\"A4\",\"Width\":\"1170\",\"Height\":\"825\",\"Region Start\":\"1\",\"X Region Count\":\"6\",\"Y Region Count\":\"4\",\"Blade Width\":\"10\",\"Color\":\"\",\"Title Block\":\"1\",\"Part Number\":\"\",\"Name\":\"\",\"Description\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"Drawing-Symbol_A4\\\",\\\"uuid\\\":\\\"__SYMBOL_UUID__\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  "{\"type\":\"META\",\"ticket\":59,\"id\":\"META\"}||{\"title\":\"Drawing-Symbol_A4\",\"tags\":[\"特殊器件\"],\"source\":\"__SOURCE__\",\"images\":[\"\"],\"attributes\":{\"@Board Name\":\"\",\"@Page Name\":\"\",\"@Create Date\":\"\",\"@Create Time\":\"\",\"@Page Count\":\"\",\"@Page No\":\"\",\"@Project Name\":\"\",\"@Schematic Name\":\"\",\"@Update Date\":\"\",\"@Update Time\":\"\",\"@Assembly Variant\":\"\",\"Company\":\"嘉立创EDA\",\"Drawed\":\"\",\"Page Size\":\"A4\",\"Reviewed\":\"\",\"Symbol\":\"__SYMBOL_UUID__\",\"Version\":\"V1.0\",\"Border\":\"1\",\"Title Block Position\":\"3\",\"Size\":\"A4\",\"Width\":\"__FW__\",\"Height\":\"__FH__\",\"Region Start\":\"1\",\"X Region Count\":\"__XC__\",\"Y Region Count\":\"__YC__\",\"Blade Width\":\"10\",\"Color\":\"\",\"Title Block\":\"__TB__\",\"Part Number\":\"\",\"Name\":\"\",\"Description\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"Drawing-Symbol_A4\\\",\\\"uuid\\\":\\\"__SYMBOL_UUID__\\\",\\\"source\\\":\\\"\\\"}\"}}|"
 ];
 
 function fill(l, v) {
@@ -68,14 +68,31 @@ function fill(l, v) {
     .replace(/__UUID__/g, v.uuid || '')
     .replace(/__TITLE__/g, v.title === undefined ? '' : JSON.stringify(v.title).slice(1, -1))
     .replace(/__BOARD__/g, v.board || '')
-    .replace(/__OUTLINE__/g, JSON.stringify(v.outline || ['R', 0, 0, 4000, 3000, 0, 0]));
+    .replace(/__OUTLINE__/g, JSON.stringify(v.outline || ['R', 0, 0, 4000, 3000, 0, 0]))
+    .replace(/__TB__/g, v.titleBlock === undefined ? '1' : String(v.titleBlock))
+    .replace(/__TBPOS__/g, v.titleBlockPosition === undefined ? '3' : String(v.titleBlockPosition))
+    .replace(/__SIZE__/g, v.size || 'A4')
+    .replace(/__FW__/g, String(v.frameWidth || 1170))
+    .replace(/__FH__/g, String(v.frameHeight || 825))
+    .replace(/__XC__/g, String(v.xRegions || 6))
+    .replace(/__YC__/g, String(v.yRegions || 4));
 }
 
 const SYM_DOC_LEN = 45;
 
 // Both docs are returned in one array: [A4 frame SYMBOL doc, frame DEVICE doc].
 function buildFrameDocs(v) {
-  return LINES.map((l) => fill(l, v));
+  const tbOff = String(v.titleBlock) === '0';
+  let lines = LINES;
+  if (tbOff) {
+    // the TABLE record IS the 明细表 drawing — with the client's Title Block
+    // flag off we also drop the embedded table so nothing renders
+    lines = lines.filter((l) => !l.startsWith('{"type":"TABLE"'));
+  }
+  const out = lines.map((l) => fill(l, v));
+  out.symLen = lines.findIndex((l) => l.includes('"docType":"DEVICE"'));
+  if (out.symLen < 0) out.symLen = SYM_DOC_LEN;
+  return out;
 }
 buildFrameDocs.SYM_DOC_LEN = SYM_DOC_LEN;
 

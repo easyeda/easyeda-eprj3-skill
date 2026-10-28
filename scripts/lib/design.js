@@ -199,6 +199,9 @@ function normalize(raw, file) {
       // a supply rail and its anode on ground, so the polarity gate must not
       // read "+" on a ground net as a reversal (intent.js I001)
       role: p.role === undefined ? null : String(p.role),
+      // pin definitions source note (datasheet URL / 官方库出处) — required by
+      // I007 for multi-pin inline symbols that look like real devices
+      pinoutSource: p.pinoutSource === undefined ? null : String(p.pinoutSource),
       rotation: rot,
       // the author chose this rotation — sch-tidy must not move it
       rotationExplicit: p.rotation !== undefined || p.rot !== undefined,
@@ -417,8 +420,24 @@ function unionRect(a, b) {
  */
 function layoutSchematic(d, lib) {
   const L = d.layout;
-  const A4_W = 11700;           // mirrors lint.js FRAME.x2
-  const WRAP_LIMIT = A4_W - 300;
+  const A4_W = 11700;           // maximum sheet width (lint.js FRAME.x2)
+  // 紧凑插空目标宽: one region sized ~1.15× the square root of the total
+  // block area, clamped so even the widest block fits — the frame is then
+  // auto-sized around whatever the packing produced.
+  let totalArea = 0;
+  let maxBlockW = 0;
+  for (const block of d.blocks) {
+    const n = block.parts.length;
+    const cols = Math.max(1, Math.min(L.cols, Math.ceil(Math.sqrt(n)) || 1));
+    const rows = Math.ceil(n / cols) || 1;
+    const w = L.margin * 2 + cols * L.cellW;
+    const h = rows * L.cellH + L.margin + 60;
+    totalArea += w * h;
+    maxBlockW = Math.max(maxBlockW, w);
+  }
+  const targetW = Math.max(maxBlockW + 300, Math.min(A4_W - 300,
+    Math.ceil(1.15 * Math.sqrt(totalArea) / 10) * 10));
+  const WRAP_LIMIT = targetW;
   const placements = [];
   const blocks = [];
   let cursorX = 0;

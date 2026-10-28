@@ -82,6 +82,7 @@
       },
       "name": "RS485_XCVR",
       "value": "MAX485",
+      "pinoutSource": "MAX485 数据手册标准引脚序（RO/RE/DE/DI/GND/A/B/VCC），通用示例配方未附官方符号证据",
       "pins": {
         "1": "RS485_RO",
         "2": "RS485_DE",

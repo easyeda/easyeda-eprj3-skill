@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.20.0] - 2026-10-28
+
+Sixth round: drawing-frame quality — no 明细表 by default, and the drawing
+frame auto-sizes around the compactly packed modules instead of a fixed A4.
+
+### Added
+- **明细表 (title block) hidden by default.** The frame's DEVICE attribute
+  `Title Block` is written as `0` and the embedded TABLE record (the title
+  block drawing itself) is stripped from the generated frame symbol — nothing
+  renders it. `design.frame.titleBlock: true` opts back in.
+- **Auto-sized drawing frames.** The frame's `Width`/`Height` attributes (the
+  client draws the border from them) are sized around each sheet's packed
+  blocks + margin, with `Size` reporting the nearest A-series sheet and the
+  region counts rescaled. A 2-block board now gets a ~790×800 mil sheet
+  instead of a mostly empty A4.
+- **Compact interlocking packing** (紧凑插空): the block shelf packs into a
+  region sized ~1.15× the square root of the total block area (clamped to
+  [max-block+300, A4]), instead of always spreading along a full A4 row.
+- **I007 — real-chip pinouts must not be invented** (user constraint): a
+  multi-pin inline symbol whose value looks like an MPN or whose pins carry
+  GPIO-style names fails the build unless the part declares `pinoutSource`
+  (datasheet URL / 官方库出处 verified by the author) or uses an `ic` entry.
+  Generic stand-ins declare what they are (`"pinoutSource": "通用示例符号…"`);
+  mcu-min and rs485 recipes annotated.
+- **Intake cache keys now include a recipe-content fingerprint** — an edited
+  recipe (like the new pinoutSource fields) invalidates stale cached resolves
+  instead of silently serving the old design.
+
+### Fixed
+- `lint` L007 (part outside the drawing frame) now reads each sheet's frame
+  size from its embedded frame device doc instead of a hardcoded A4 — the
+  check tracks the auto-sized frames.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21 (the sensor-board case passes again via the cache fix).
+- Probes: blink frame auto-fits to 79×80 units with no TABLE record; the
+  62-part probe stays lint 100; I007 verified firing on an un-annotated
+  10-pin stand-in and silent with `pinoutSource` declared.
+
 ## [1.19.0] - 2026-10-28
 
 Fifth round, from the user's report: 「单页原理图分散太厉害、每个模块平铺摆放、

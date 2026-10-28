@@ -304,7 +304,10 @@ function resolve(req, opts) {
   for (const f of picked) {
     const params = Object.assign(paramsFor(), overrides);
     const netMap = netsFor(f.recipe, ctx);
-    const key = `${f.recipe}|${JSON.stringify(params)}|${JSON.stringify(netMap)}`;
+    const recipeSig = M.recipeSignature(f.recipe);
+    // the key includes the recipe CONTENT fingerprint: an edited recipe
+    // (e.g. adding pinoutSource) must invalidate stale cached resolves
+    const key = `${f.recipe}|${recipeSig}|${JSON.stringify(params)}|${JSON.stringify(netMap)}`;
     const hit = cache && cache.get(key);
     const resolved = hit ? hit.value : M.resolveRecipe(f.recipe, params, netMap);
     if (cache && !hit) cache.set(key, resolved, f.recipe);

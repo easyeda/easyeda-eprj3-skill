@@ -127,6 +127,7 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `parts[].polarity` | optional `{ "1": "+", "2": "-" }` — checked by the intent gate (I001 catches an LED/diode wired backwards); TVS/clamp parts declare `"role": "shunt"` and are exempt |
 | `parts[].rotation` | 0 / 90 / 180 / 270 |
 | `expect` | optional intent block for the fifth gate — see below |
+| `frame` | `{ titleBlock: true }` re-enables the 明细表 (default: hidden); the drawing frame is AUTO-SIZED around the packed blocks (Size reports the nearest A-series, Width/Height are authoritative) |
 | `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed |
 | `pcb.rules` | DRC floors only: `clearance`, `trackWidth` (→ min track), `edgeClearance`, `minDrill`, `minRing`, `minAngle`. 0.5 mm-pitch parts want `clearance 6, trackWidth 6` |
 | `pcb.pour` / `pcb.route` | **removed (1.13)** — this skill never pours or routes; writing these keys has no effect |
@@ -204,7 +205,7 @@ real override rather than a find-and-replace in your head.
 | electric | `node scripts/erc.js --dir <p> [--design design.json]` | floating pins, dead-end nets, netlist≠design, PCB↔schematic mismatch |
 | layout | `node scripts/lint-layout.js --dir <p>` | overlapping symbols, wires through bodies, parts outside their block, off-grid |
 | copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). A board this skill built is always `placed-only` — `D004` (unrouted) and `D006` (no pour) are never judged on it; imported or client-saved boards that carry tracks/pours get the full copper rules |
-| intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations — mistakes *inside* design.json |
+| intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations, **unverified pinouts** (I007: a multi-pin inline symbol for a real device without `pinoutSource`) — mistakes *inside* design.json |
 | netlist | `node scripts/netcheck.js --dir <p>` | schematic ↔ PCB netlist mismatch, pin by pin (missing pads, retagged nets, floating pins). `build.js` runs it every build; re-run it standalone after hand edits in the client |
 
 `--json` on any of them gives machine-readable output (every finding carries a

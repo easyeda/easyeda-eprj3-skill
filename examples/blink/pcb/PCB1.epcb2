@@ -262,7 +262,7 @@
 {"type":"ATTR","ticket":44,"id":"e16"}||{"groupId":0,"parentId":"","layerId":3,"x":null,"y":null,"key":"Designator","value":"U?","keyVisible":false,"valueVisible":false,"fontFamily":"default","fontSize":67.5,"strokeWidth":6,"bold":false,"italic":false,"origin":"LEFT_BOTTOM","angle":0,"reverse":false,"expansion":0,"mirror":false,"locked":false,"zIndex":16}|
 {"type":"DOCHEAD","ticket":1}||{"docType":"DEVICE","client":"279b577b9c8c99f4","uuid":"15168aaae8d83d95","updateTime":1735689600000,"version":"1735689600000","editVersion":"2.3.0","user":{}}|
 {"type":"META","ticket":1,"id":"META"}||{"title":"R0603","tags":[],"source":"72aa32a215679f1e61f525bd404b2276|ab63bb334b83ee6647e675677caae54a","images":[],"attributes":{"Symbol":"dd106a1f05582744","Designator":"R?","Name":"R0603","Description":"","Footprint":"6fc3a9e2015d7e9d","FootprintName":"{\"name\":\"R0603\",\"uuid\":\"6fc3a9e2015d7e9d\",\"source\":\"\"}","SymbolName":"{\"name\":\"RES\",\"uuid\":\"dd106a1f05582744\",\"source\":\"\"}"}}|
-{"type":"DOCHEAD","ticket":1}||{"docType":"PCB","client":"279b577b9c8c99f4","uuid":"28db85c43814fd6b","updateTime":1735689600000,"version":"1735689600000","editVersion":"2.3.0","user":{}}|
+{"type":"DOCHEAD","ticket":1}||{"docType":"PCB","client":"279b577b9c8c99f4","uuid":"4b8542f81b484571","updateTime":1735689600000,"version":"1735689600000","editVersion":"2.3.0","user":{}}|
 {"type":"META","ticket":1,"id":"META"}||{"title":"PCB1","parent":"","source":"","board":"fe5d0a6b89d4985f","zIndex":null}|
 {"type":"PRIMITIVE","ticket":2,"id":"[\"PRIMITIVE\",\"ALL\"]"}||{"display":true,"pick":false}|
 {"type":"PRIMITIVE","ticket":3,"id":"[\"PRIMITIVE\",\"COMPONENT\"]"}||{"display":true,"pick":true}|

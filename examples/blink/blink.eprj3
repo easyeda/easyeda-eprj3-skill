@@ -26,8 +26,8 @@
       }
     },
     "schematics": {
-      "4b8542f81b484571": {
-        "uuid": "4b8542f81b484571",
+      "88e3536586843b8f": {
+        "uuid": "88e3536586843b8f",
         "name": "Schematic1",
         "board": "fe5d0a6b89d4985f",
         "source": "",
@@ -36,10 +36,10 @@
       }
     },
     "sheets": {
-      "88e3536586843b8f": {
-        "uuid": "88e3536586843b8f",
+      "da6d117dd8152786": {
+        "uuid": "da6d117dd8152786",
         "title": "P1",
-        "schematic_uuid": "4b8542f81b484571",
+        "schematic_uuid": "88e3536586843b8f",
         "zIndex": 1,
         "source": "",
         "version": "1735689600000",
@@ -47,8 +47,8 @@
       }
     },
     "pcbs": {
-      "28db85c43814fd6b": {
-        "uuid": "28db85c43814fd6b",
+      "4b8542f81b484571": {
+        "uuid": "4b8542f81b484571",
         "title": "PCB1",
         "board": "fe5d0a6b89d4985f",
         "parent_uuid": "",

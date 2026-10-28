@@ -1627,7 +1627,7 @@ class Project {
   // ------------------------------------------------------------ ensure docs
   // Creates schematic+sheet in the index and the .esch2 file containing
   // [A4 frame SYMBOL doc, frame DEVICE doc, SCH_PAGE doc].
-  ensureSheetDocument(schematicName, sheetTitle) {
+  ensureSheetDocument(schematicName, sheetTitle, frame) {
     const sch = this.ensureSchematic(schematicName);
     const sheet = this.ensureSheet(sch, sheetTitle);
     const file = this.sheetFile(sheet);
@@ -1636,12 +1636,22 @@ class Project {
       const source = makeSource(uuid32(), this.index.owner_uuid);
       const frameSymbolUuid = uuid16();
       const frameDeviceUuid = uuid16();
+      // frame = {width, height (in 10-mil units), size, xRegions, yRegions,
+      // titleBlock} — the client draws the border from the Width/Height
+      // attributes and hides the 明细表 when Title Block is 0
+      const f = frame || {};
       const frameLines = buildFrameDocs({
         symbolUuid: frameSymbolUuid,
         deviceUuid: frameDeviceUuid,
         client: this.client,
         ms,
-        source
+        source,
+        titleBlock: f.titleBlock,
+        size: f.size,
+        frameWidth: f.width,
+        frameHeight: f.height,
+        xRegions: f.xRegions,
+        yRegions: f.yRegions
       });
       const now = new Date(ms);
       const pad = (n) => String(n).padStart(2, '0');

@@ -28,7 +28,8 @@ const I_RULES = {
   I003: { level: 'error', weight: 8, text: 'declared pair missing or unbalanced' },
   I004: { level: 'error', weight: 8, text: 'part value outside its declared range' },
   I005: { level: 'error', weight: 10, text: 'divider wiring or ratio wrong' },
-  I006: { level: 'warn', weight: 2, text: 'declared pair is not routed as a pair' }
+  I006: { level: 'warn', weight: 2, text: 'declared pair is not routed as a pair' },
+  I007: { level: 'error', weight: 12, text: 'real-chip pin definitions hand-authored without a source' }
 };
 
 /** "10k" → 10000, "330R" → 330, "100nF" → 1e-7, "4.7uF" → 4.7e-6, "1MΩ" → 1e6. */
@@ -93,6 +94,30 @@ function runIntent(d) {
     }
   }
   if (polChecked) checks.push({ id: 'polarity', parts: polChecked });
+
+  // ---- I007: pin definitions of real devices must not be hand-invented.
+  // A multi-pin inline symbol whose value looks like a manufacturer part
+  // number (or whose pin names carry GPIO-style port names) needs a declared
+  // source: an "ic" entry (official-library evidence) or a "pinoutSource"
+  // note (datasheet/官方库出处) added AFTER checking the datasheet. Generic
+  // stand-ins stay legal by declaring what they are.
+  const GPIOish = /(GPIO|P[ABCDEF][0-9]+)/i;
+  const mpnLike = (v) => /^[A-Z]{1,5}[-]?[0-9][0-9A-Z\-]*$/i.test(String(v || '').trim());
+  let pinoutsChecked = 0;
+  for (const p of d.parts) {
+    if (!p.symbol || typeof p.symbol !== 'object' || !Array.isArray(p.symbol.pins)) continue;
+    if (p.ic || p.pinoutSource) continue;
+    if (p.symbol.pins.length < 8) continue;
+    const names = p.symbol.pins.map((s) => (typeof s === 'string' ? (s.split(':')[1] || '') : (s.name || '')));
+    const gpioNames = names.some((n) => GPIOish.test(n));
+    if (!gpioNames && !mpnLike(p.value)) continue;
+    pinoutsChecked += 1;
+    add('I007', `part ${p.id}: ${p.symbol.pins.length}-pin inline symbol${p.value ? ` ("${p.value}")` : ''} looks like a real device — its pin definitions must not be invented`, {
+      ref: p.id,
+      fix: `use an "ic" entry (official-library evidence), or verify the pinout against the datasheet and declare "pinoutSource": "<datasheet URL / 出处>" on the part; for a generic stand-in set "pinoutSource": "通用示例符号（非特定型号）"`
+    });
+  }
+  if (pinoutsChecked) checks.push({ id: 'pinoutSource', parts: pinoutsChecked });
 
   // ---- decoupling: every supply net needs a capacitor to a ground net.
   if (expect.decoupling) {

@@ -34,8 +34,11 @@ const RULES = {
   L010: { level: 'warn', weight: 2, text: 'wire endpoint dangles (touches nothing)' }
 };
 
-// A4 drawing frame extent in mil (the A4 frame symbol's own coordinate space).
-const FRAME = { x1: 0, y1: -8250, x2: 11700, y2: 0 };
+// Drawing frame extent in mil. The generated frame's size is per-sheet (read
+// from the frame device doc's Width/Height attributes, units of 10 mil);
+// FRAME_A4 is the fallback for sheets without a recognised frame.
+const FRAME_A4 = { x1: 0, y1: -8250, x2: 11700, y2: 0 };
+const FRAME = FRAME_A4;
 const GRID = 10;
 
 function isBlockRect(rect) {
@@ -90,7 +93,24 @@ function collectSheet(file) {
   return { parts, rects, texts, labels, segs, namedWires };
 }
 
+/** Frame extent of one sheet, read from its embedded frame device doc. */
+function frameOf(file) {
+  const { docs } = N.readSheet(file);
+  for (const d of docs) {
+    if (d.docType !== 'DEVICE') continue;
+    const meta = d.records.find((r) => r.type === 'META');
+    if (!meta || !meta.body || !String(meta.body.title || '').startsWith('Drawing-Symbol')) continue;
+    const a = meta.body.attributes || {};
+    const w = Number(a.Width), h = Number(a.Height);
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+      return { x1: 0, y1: -h * 10, x2: w * 10, y2: 0 };
+    }
+  }
+  return FRAME_A4;
+}
+
 function lintSheet(file, sheetLabel) {
+  const FRAME = frameOf(file);
   const findings = [];
   const add = (code, msg, extra) => {
     const rule = RULES[code];

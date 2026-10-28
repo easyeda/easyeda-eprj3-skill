@@ -351,12 +351,8 @@ function main() {
   }
   const project = E.Project.create(dir, design.name);
   project.ensureBoard();
-  // one sheet document per page: page 1 keeps the declared sheet name,
-  // pages 2+ are P2/P3/…
-  const sheetDocs = new Map();
-  for (let s = 1; s <= design.sheets; s += 1) {
-    sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`));
-  }
+  // sheet documents are created AFTER the schematic layout (see below) so the
+  // drawing frame can be sized around what the packing actually produced
   const pcbDoc = project.ensurePcbDocument(design.pcb, {
     outline: E.rectPath(0, 0, design.board.width, design.board.height)
   });
@@ -411,6 +407,32 @@ function main() {
       ({ placements, blocks } = D.layoutSchematic(design, lib));
       log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
     }
+  }
+  const sheetFrames = new Map();
+  // per-sheet frame: sized around what the packing produced, 明细表 off by
+  // default (design.frame.titleBlock opts back in)
+  const sheetDocs = new Map();
+  for (let s = 1; s <= design.sheets; s += 1) {
+    const sheetBlocks = blocks.filter((bl) => bl.sheet === s);
+    const sheetPls = placements.filter((p) => (p.sheet || 1) === s);
+    let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+    for (const bl of sheetBlocks) { x1 = Math.min(x1, bl.rect.x1); y1 = Math.min(y1, bl.rect.y1); x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
+    for (const p of sheetPls) { const e = p.extent; x1 = Math.min(x1, e.x1); y1 = Math.min(y1, e.y1); x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
+    if (x1 > x2) { x1 = 0; x2 = 1000; y1 = -600; y2 = 0; }
+    const M = 250;
+    const fw = Math.ceil((x2 - x1 + 2 * M) / 10);
+    const fh = Math.ceil((0 - y1 + M + 100) / 10);
+    const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
+    const fit = stds.find(([, w, h]) => fw <= w && fh <= h);
+    const frame = {
+      width: fw, height: fh,
+      size: fit ? fit[0] : 'A0',
+      xRegions: Math.max(1, Math.round(fw / 200)),
+      yRegions: Math.max(1, Math.round(fh / 200)),
+      titleBlock: design.frame && design.frame.titleBlock === true ? 1 : 0
+    };
+    sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`, frame));
+    sheetFrames.set(s, { ...frame, wMil: fw * 10, hMil: fh * 10 });
   }
   const routed = R.routeSchematic(design, placements);
 

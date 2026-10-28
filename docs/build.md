@@ -41,6 +41,7 @@ the printed codes point at the rule that failed.
 | `parts` | array | **required** | see below |
 | `expect` | object | — | fifth-gate declarations (`decoupling`, `pairs`, `valueRange`, `divider`) — see the end of this file |
 | `layout` | object | see table | grid/tuning knobs |
+| `frame` | object | `{}` | `{ titleBlock: true }` 显示明细表（默认隐藏）; the drawing frame auto-sizes around the packed blocks |
 | `pcb` | object or `false` | `{}` | `false` skips the PCB entirely |
 
 `layout` knobs: `cols` (max columns per block, default 3), `cellW` (260),

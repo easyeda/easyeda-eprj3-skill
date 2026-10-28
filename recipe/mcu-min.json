@@ -136,6 +136,7 @@
       },
       "name": "MCU",
       "value": "CORTEX-M0",
+      "pinoutSource": "通用示例符号（该类 MCU 的典型最小系统引脚序，非特定型号）",
       "pins": {
         "1": "3V3",
         "2": "GND",

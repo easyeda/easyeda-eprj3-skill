@@ -11,6 +11,7 @@
  * Everything is plain JSON manipulation — no template engine, no dependency.
  */
 const fs = require('fs');
+const crypto = require('crypto');
 const path = require('path');
 const { die } = require('./utils');
 
@@ -162,6 +163,15 @@ function renameNets(recipe, netRenames) {
 }
 
 /** Load + expand + net-rename a recipe by name, ready to merge. */
+function recipeSignature(name) {
+  // content fingerprint of a recipe file — the intake cache keys on it, so
+  // an edited recipe invalidates stale cached resolves
+  try {
+    const file = path.join(RECIPE_DIR, name + '.json');
+    return crypto.createHash('sha256').update(fs.readFileSync(file, 'utf8')).digest('hex').slice(0, 12);
+  } catch { return 'none'; }
+}
+
 function resolveRecipe(name, overrides, netRenames) {
   const { raw, params: declared } = loadRecipe(name);
   const unknown = Object.keys(overrides || {}).filter((k) => !(k in declared));
@@ -172,5 +182,5 @@ function resolveRecipe(name, overrides, netRenames) {
 
 module.exports = {
   ROOT, RECIPE_DIR, recipeFiles, recipeNames, loadRecipe, expand, parsePairs,
-  merge, renameNets, resolveRecipe, ensureShape
+  merge, renameNets, resolveRecipe, ensureShape, recipeSignature
 };
