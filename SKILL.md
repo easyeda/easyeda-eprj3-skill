@@ -60,6 +60,8 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    placement: connectors (J…) line the bottom edge, decoupling caps sit next
 #    to their IC, an undeclared board auto-fits the parts
 node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
+node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → netcheck → previews → build.json digest
+node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
 node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/
 node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
@@ -80,7 +82,11 @@ blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/1
 index, `sch/`, `pcb/`, `panel/`, `.tmp/`). `--dry-run` rehearses into a throwaway
 directory and deletes it. `--schematic-only` skips the PCB.
 `--report <file>` writes the machine-readable report (validate/erc/lint/drc +
-stats; its `pcb` section is `{parts, mode: 'placed-only', rats}`).
+netcheck + stats; its `pcb` section is `{parts, mode: 'placed-only', rats}`).
+`--no-tidy` keeps declared rotations — by default the build runs **sch-tidy**,
+a two-pass orientation optimizer that turns every symbol onto its signal axis
+(2-pin parts onto their connection axis, ICs toward their partner mass; the
+AI only supplies rough positions).
 
 ## design.json — the whole contract
 
@@ -263,7 +269,10 @@ parts, keep these invariants:
 ## Library tiers
 
 Presets ship with the skill (`templates/library/{symbol,footprint}/`) and resolve
-first; **IC pinout entries** (`templates/library/ic/`, referenced by
+first — the set is FROZEN at the common parts (passives, diodes, LED, test
+point, the common power flags, net ports): new device types do NOT grow the
+base library, they arrive as evidence-cited IC entries or on-demand inline
+generation. Presets resolve first; **IC pinout entries** (`templates/library/ic/`, referenced by
 `"ic": "STM32F103C8T6"`) carry evidence-cited symbol pinouts + footprints for
 real parts; generated/inline entries are staged under `<project>/.tmp/library/`
 during authoring and removed by `build.js` or `cleanup.js`. `load-library.js
@@ -323,5 +332,3 @@ library is **committed data — the skill never queries the network at runtime**
   manufacturing artifacts: BOM, pick-and-place / coordinate files, Gerber or
   production archives are out of scope; the EasyEDA client exports those. Do
   not add export commands to this skill.
-- `DIFF_PAIR`/`SHORT` special symbols and the A4/A3 frame symbols are not yet
-  verified against the real client.

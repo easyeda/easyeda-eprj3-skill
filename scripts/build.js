@@ -42,6 +42,7 @@ const SCHEMA = [
   { name: 'report', desc: 'write the machine-readable build report to this file' },
   { name: 'plan', desc: 'print what would be built (parts, nets, rules, intent gate) and write nothing', hasValue: false },
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
+  { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
   { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false }
 ];
 
@@ -398,7 +399,19 @@ function main() {
   }
 
   // ------------------------------------------------------------ schematic
-  const { placements, blocks } = D.layoutSchematic(design, lib);
+  // Two-pass layout: pass 1 places everything, sch-tidy decides each symbol's
+  // rotation from the net geometry (the human way — AI supplies rough
+  // positions, the algorithm finishes orientation), pass 2 re-lays-out with
+  // the improved rotations. --no-tidy keeps the declared rotations.
+  let { placements, blocks } = D.layoutSchematic(design, lib);
+  if (!opts['no-tidy']) {
+    const T = require('./lib/sch-tidy');
+    const tidy = T.tidyRotations(design, lib, placements);
+    if (tidy.rotated.length) {
+      ({ placements, blocks } = D.layoutSchematic(design, lib));
+      log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
+    }
+  }
   const routed = R.routeSchematic(design, placements);
 
   // one emitter per sheet; blocks/components/flags/ports/wires land on the

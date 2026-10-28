@@ -31,11 +31,9 @@ symbol 预置：
 | --- | --- | --- |
 | `RES` `CAP` `IND` `DIODE` `TEST_POINT` | symbol | 常用元件（designator R?/C?/L?/D?/TP?） |
 | `LED` | symbol | 发光二极管（designator D?，blink 派生） |
-| `GND` `AGND` `PGND` | power | 地标志（style down，net 同名） |
+| `GND` `` `` | power | 地标志（style down，net 同名） |
 | `5V` `VCC` | power | 电源标志（style up，net 同名） |
 | `PORT_IN` `PORT_OUT` `PORT_BI` | port | NetPort（net IN/OUT/BI） |
-| `OFFPAGE_IN` `OFFPAGE_OUT` `OFFPAGE_BI` | port | 离图连接器（net IN/OUT/BI） |
-| `DIFF_PAIR` `SHORT` | special | 差分对标志 / 短路标志（放置未经真机验证） |
 | `A4` `A3` | symbol | 图框符号（仅作参考，图页框架由 init.js 自动放置） |
 
 footprint 预置：

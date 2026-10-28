@@ -87,18 +87,36 @@ function resolvePin(components, ref) {
 function routeBetween(a, b, opts) {
   const stub = (opts && opts.stub) || 40;
   const mode = (opts && opts.mode) || 'auto';
+  const committed = (opts && opts.committed) || [];
   const pa = { x: a.x + (a.dir ? a.dir.x * stub : 0), y: a.y + (a.dir ? a.dir.y * stub : 0) };
   const pb = { x: b.x + (b.dir ? b.dir.x * stub : 0), y: b.y + (b.dir ? b.dir.y * stub : 0) };
-  const segs = [];
-  const push = (x1, y1, x2, y2) => {
-    if (Math.abs(x1 - x2) < G.EPS && Math.abs(y1 - y2) < G.EPS) return;
-    segs.push({ x1, y1, x2, y2 });
+  const build = (cornerMode) => {
+    const segs = [];
+    const push = (x1, y1, x2, y2) => {
+      if (Math.abs(x1 - x2) < G.EPS && Math.abs(y1 - y2) < G.EPS) return;
+      segs.push({ x1, y1, x2, y2 });
+    };
+    push(a.x, a.y, pa.x, pa.y);
+    for (const s of G.orthoPath(pa, pb, cornerMode)) push(s.x1, s.y1, s.x2, s.y2);
+    push(pb.x, pb.y, b.x, b.y);
+    return segs;
   };
-  push(a.x, a.y, pa.x, pa.y);
-  const mid = G.orthoPath(pa, pb, mode);
-  for (const s of mid) push(s.x1, s.y1, s.x2, s.y2);
-  push(pb.x, pb.y, b.x, b.y);
-  return segs;
+  // cross-net awareness: among the candidate corner modes pick the first that
+  // never touches a wire of a DIFFERENT net — at tight layout density a blind
+  // L-route T-merges into a neighbouring net. `committed` entries are
+  // {seg, net}; same-net contacts are legitimate junctions.
+  const modes = mode === 'auto' ? ['hv', 'vh'] : [mode];
+  let fallback = null;
+  for (const m of modes) {
+    const segs = build(m);
+    const clash = committed.some((c) => segs.some((s) => G.segsIntersect(s, c.seg, true)));
+    if (!clash) return segs;
+    if (!fallback) fallback = segs;
+  }
+  // every candidate touches something: emit the first anyway (a manual wire is
+  // the author's call), but say so
+  if (opts.warn) process.stderr.write(`  ! wire ${a.comp}.${a.pin} → ${b.comp}.${b.pin} touches existing wires of other nets — check the netlist\n`);
+  return fallback || build(mode === 'auto' ? 'hv' : mode);
 }
 
 module.exports = { sheetPins, resolvePin, routeBetween };

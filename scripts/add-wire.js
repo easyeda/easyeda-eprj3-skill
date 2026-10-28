@@ -73,12 +73,30 @@ function main() {
       if (!opts.from || !opts.to) die('--from and --to must be given together');
       pairs.push([opts.from, opts.to]);
     }
+    // existing wires become cross-net obstacles: a manual wire that T-merges
+    // into a neighbouring net corrupts the netlist exactly like a bad route
+    const N = require('./lib/netlist');
+    const { main } = N.readSheet(file);
+    const attrs = main.records.filter((r) => r.type === 'ATTR' && r.body);
+    const wireIds = new Set(main.records.filter((r) => r.type === 'WIRE').map((r) => r.id));
+    const wireNet = {};
+    for (const a of attrs) {
+      if (a.body.key === 'NET' && a.body.parentId && wireIds.has(a.body.parentId)) wireNet[a.body.parentId] = a.body.value;
+    }
+    const committed = [];
+    for (const r of main.records) {
+      if (r.type !== 'LINE' || !r.body || !wireIds.has(r.body.lineGroup)) continue;
+      committed.push({
+        seg: { x1: r.body.startX, y1: r.body.startY, x2: r.body.endX, y2: r.body.endY },
+        net: wireNet[r.body.lineGroup] || '?'
+      });
+    }
     segs = [];
     for (const [from, to] of pairs) {
       const a = P.resolvePin(components, from);
       const b = P.resolvePin(components, to);
       const stub = opts.stub !== undefined ? Number(opts.stub) : 40;
-      const path = P.routeBetween(a, b, { stub });
+      const path = P.routeBetween(a, b, { stub, committed, warn: true });
       segs.push(...path.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })));
       summary = summary || [];
       summary.push(`${a.comp}.${a.pin} → ${b.comp}.${b.pin}`);

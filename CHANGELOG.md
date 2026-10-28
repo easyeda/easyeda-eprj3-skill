@@ -5,6 +5,90 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.19.0] - 2026-10-28
+
+Fifth round, from the user's report: 「单页原理图分散太厉害、每个模块平铺摆放、
+导线不避让弯绕」— schematic drawing quality, part two.
+
+### Fixed
+- **Compact layout** (`layoutSchematic`): the grid ran on fixed 260×200 cells
+  with 70 mil frame padding and 280 mil block gaps — small parts sat alone in
+  big cells and neighbouring blocks kept 420 mil of air. Now the pitch is
+  derived from each part's real extent (120 mil floor), frames pad 36, block
+  gaps 150/130. A 2-part block shrank from ~700 to 290 mil wide.
+- **Asymmetric extent columns**: a rotated symbol's extent box reaches
+  BACKWARD past its origin (U2 rot 270 → 150 mil left); the column model now
+  tracks backward/forward reach separately and shifts origins right, so
+  rotated parts no longer overlap the previous column (L001).
+- **Cross-net wire contacts eliminated at the source** — the report's 「不避
+  让」 root cause, found while chasing E006 net-merges at tight density:
+  facing stubs of different nets met at a shared endpoint (R1.1 stub left
+  40 + D2.1 stub right 40 = exactly touching), power-flag stubs drove
+  through foreign flag origins, and the 3-sample-point shared-key check
+  missed unsampled T-touches. Fixes stack:
+  - `sch-route` candidates are REJECTED on any contact with another net's
+    committed segments (X, T, and collinear overlap — the client merges nets
+    at any contact), falling back to stub+label;
+  - label and power-flag stubs are ADAPTIVE (40 → 30 → 20 → 10, then a
+    perpendicular jog): facing stubs can no longer meet;
+  - a node already connected by an earlier edge of the same net is skipped
+    (no duplicate stubs/jogs);
+  - the netlist unions co-located pins (two pins snapped to one point
+    connect, the client behaviour), so flag-on-pin remains electrically sound;
+  - column/row corridors widened to 100 mil — the gap between facing stubs
+    (40 + 40) plus clearance, killing the collision class at layout level.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21 (lint/drc 100).
+- Zero cross-net wire contacts on blink and the two-sheet probe (programmatic
+  scan); the 57/62-part session probe builds lint 100 with the report's own
+  floating-pin artifacts as the only findings.
+
+## [1.18.0] - 2026-10-28
+
+Fourth round: the schematic drawing quality pass — an orientation optimizer
+that turns symbols onto their signal axes, a crossing-avoiding router, and
+functional pin grouping for generated symbols — plus the report's one-shot
+workflow tools and the frozen common-parts base library.
+
+### Added
+- **`sch-tidy` orientation optimizer** (`lib/sch-tidy.js`, two-pass in
+  `build.js`): after the first layout pass, every symbol's rotation is chosen
+  from the net geometry — 2-pin parts turn onto their connection axis
+  (vertical partners → vertical resistor), ICs rotate toward their partner
+  mass (objective: total Manhattan distance from each pin hotspot to its
+  net-partner centroid, minimized over 0/90/180/270). The AI supplies rough
+  positions; the algorithm finishes orientation. Explicit
+  `parts[].rotation` is respected; `--no-tidy` skips the pass.
+- **Crossing-avoiding router**: candidate routes are now penalized for X
+  intersections with other nets' committed segments (points were already
+  covered; crossings were the visual "弯绕" killer), and the candidate set
+  gains Z-paths through mid channels instead of only hugging endpoint rows.
+- **Functional pin grouping for generated symbols** (`autoPinLayout`): when
+  pin specs carry directions, inputs group top-left, outputs top-right,
+  bidirectionals under the outputs, passives under the inputs, and power
+  lands at the bottom of the shorter column — the human arrangement, in the
+  same 2-column format. No hints → the old alternating behaviour, unchanged.
+- **`floorplan.js`** (report P0-2): preview the PCB placement map (fitted
+  board + every `[x, y, angle]`) without building; `--write` pins the map
+  into `pcb.place` so the AI can tweak coordinates before building.
+- **`make-board.js`** (report P0-3): one-shot workflow — build (all gates +
+  netcheck) → SVG previews → `build.json` digest (`ok / scores / rats /
+  previews / actions[]` with code+fix). The AI writes one design file and
+  reads one report.
+- **Base library frozen at the common parts**: 9 zero-reference / unverified
+  presets removed (`A3` `A4` `AGND` `PGND` `DIFF_PAIR` `SHORT`
+  `OFFPAGE_IN/OUT/BI`). Policy in SKILL.md: the base set does not grow — new
+  device types arrive as evidence-cited IC entries or on-demand inline
+  generation.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21. Probes: blink rotates D2 vertical (its axis), the 62-part
+  session probe rotates 18 parts with lint 100; pin grouping verified
+  (VIN bottom, EN/FB above, OUT top-right); floorplan/make-board round-trip.
+
 ## [1.17.0] - 2026-10-28
 
 Third round, driven by the real 57-part STM32 session report

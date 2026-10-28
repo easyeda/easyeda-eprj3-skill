@@ -15,7 +15,9 @@ then run the same rehearsal; the target dir is never touched. This is the
 human confirmation gate; its board line reads
 "只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）"), `--schematic-only`,
 `--report <file>`, `--quiet`, `--keep-tmp`,
-`--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`.
+`--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`, `--no-tidy`
+(keep declared rotations — default runs the sch-tidy two-pass orientation
+optimizer: layout → rotate symbols onto their signal axes → re-layout).
 
 `--route`, `--pour`, `--no-route` and `--no-pour` were **removed in 1.13** —
 the skill never routes and never pours, so passing any of them is an
@@ -105,9 +107,7 @@ the key dimensions): `SOT23` `SOT23-5` `SOT23-6` `SOT223` · `SOP<n>` `SSOP<n>`
 `SW_4P` `XTAL` `OSC` `USB_C`. Knobs: `pins` (required unless the family fixes
 it), `pitch` (mil), `span` (pad row distance from the origin), `hole`
 (through-hole drill), `rowSpan`/`rowGap` (DIP/headers). Compound names like
-`"auto": "SOP8"` are family+pin-count shorthand. `USB_C` is POWER-ONLY
-(VBUS/GND/CC1/CC2 — 10 pads); DP/DM/SBU need a hand-written inline footprint,
-since a design pin without a pad fails ERC (E006).
+`"auto": "SOP8"` are family+pin-count shorthand. `USB_C` carries the official merged POWER pins only (A1B12/A4B9/A5/B5/B4A9/B1A12 — 6 pads, official TYPE-C-31-M-12 positions); DP/DM/SBU/shell need a hand-written inline footprint, since a design pin without a pad fails ERC (E006).
 
 ### IC pinout library (`"ic": …`)
 
@@ -245,8 +245,7 @@ node scripts/add-symbol.js     --dir <p> --sch Schematic1 --sheet P2 --symbol PO
 node scripts/add-wire.js       --dir <p> --sch Schematic1 --sheet P2 --from U1.3 --to J1.1
 ```
 
-Cross-sheet connectivity uses `PORT_IN` / `PORT_OUT` / `PORT_BI` entries or the
-`OFFPAGE_*` symbols; the netlist and ERC consider label/port names global.
+Cross-sheet connectivity uses net ports (built automatically) or `PORT_IN` / `PORT_OUT` / `PORT_BI` entries; the netlist and ERC consider label/port names global.
 
 ## Rebuilding and repair
 

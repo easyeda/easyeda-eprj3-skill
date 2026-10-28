@@ -157,6 +157,19 @@ function sheetNetlist(file) {
   // ---------------------------------------------------------- pins
   const pinNodes = [];
   const unconnected = [];
+  // two pins snapped to the SAME point connect in the client (power flags sit
+  // directly on a pin as a last resort) — union them like wire contacts
+  const pinsByPoint = new Map();
+  for (const comp of components) {
+    for (const pin of comp.pins) {
+      const k = key(pin.x, pin.y);
+      if (!pinsByPoint.has(k)) pinsByPoint.set(k, []);
+      pinsByPoint.get(k).push({ comp, pin, k });
+    }
+  }
+  for (const group of pinsByPoint.values()) {
+    for (let i = 1; i < group.length; i += 1) uf.union(group[0].k, group[i].k);
+  }
   for (const comp of components) {
     for (const pin of comp.pins) {
       const k = key(pin.x, pin.y);

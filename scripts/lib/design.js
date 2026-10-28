@@ -42,7 +42,7 @@ const DEFAULTS = {
   sheet: 'P1',
   pcb: 'PCB1',
   board: { width: 1600, height: 1000 },
-  layout: { cols: 3, cellW: 260, cellH: 200, blockGapX: 280, blockGapY: 240, margin: 120 }
+  layout: { cols: 3, cellW: 120, cellH: 120, blockGapX: 150, blockGapY: 130, margin: 80 }
 };
 
 const BLOCK_TITLE_H = 60;
@@ -200,6 +200,8 @@ function normalize(raw, file) {
       // read "+" on a ground net as a reversal (intent.js I001)
       role: p.role === undefined ? null : String(p.role),
       rotation: rot,
+      // the author chose this rotation — sch-tidy must not move it
+      rotationExplicit: p.rotation !== undefined || p.rot !== undefined,
       block: p.block === undefined ? null : (typeof p.block === 'number' ? p.block : String(p.block))
     };
   });
@@ -449,16 +451,30 @@ function layoutSchematic(d, lib) {
       return { part, sym, rot, rel: partExtent(sym, 0, 0, rot) };
     });
     const rows = Math.ceil(n / cols) || 1;
-    const colW = new Array(cols).fill(0);
-    const rowH = new Array(rows).fill(0);
+    // Column/row pitches from the ACTUAL rotated extents, including their
+    // asymmetry: a rotated symbol's extent box may reach far to the LEFT of
+    // its origin (U2 rot 270 reached back 150 mil into the previous column),
+    // so each column/row tracks its backward reach separately.
+    const colBack = new Array(cols).fill(0);   // min rel.x1 (≤ 0) per column
+    const colFwd = new Array(cols).fill(0);    // max rel.x2 per column
+    const rowBack = new Array(rows).fill(0);   // min rel.y1 per row
+    const rowFwd = new Array(rows).fill(0);    // max rel.y2 per row
     rels.forEach((r, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      colW[col] = Math.max(colW[col], r.rel.x2 - r.rel.x1);
-      rowH[row] = Math.max(rowH[row], r.rel.y2 - r.rel.y1);
+      colBack[col] = Math.min(colBack[col], r.rel.x1);
+      colFwd[col] = Math.max(colFwd[col], r.rel.x2);
+      rowBack[row] = Math.min(rowBack[row], r.rel.y1);
+      rowFwd[row] = Math.max(rowFwd[row], r.rel.y2);
     });
-    const colPitch = colW.map((w) => grid(Math.max(L.cellW, w + 60)));
-    const rowPitch = rowH.map((h) => grid(Math.max(L.cellH, h + 60)));
+    // Origins of one column share an x; a rotated symbol's extent may reach
+    // BACKWARD past its origin (U2 rot 270 reaches 150 mil left), so each
+    // column's origins shift right by its backward reach and the pitch covers
+    // shift + forward reach + gutter. Rows are TOP-aligned (py anchors every
+    // part's extent top to the row line), so height alone governs rowPitch.
+    const colShift = colBack.map((b) => Math.max(0, -b));
+    const colPitch = colBack.map((b, c) => grid(Math.max(L.cellW, colShift[c] + colFwd[c] + 100)));
+    const rowPitch = rowBack.map((b, r) => grid(Math.max(L.cellH, (rowFwd[r] - b) + 100)));
     const blockW = L.margin * 2 + colPitch.reduce((a, b) => a + b, 0);
 
     // wrap before placing: a block wider than the whole frame goes on its own
@@ -474,12 +490,9 @@ function layoutSchematic(d, lib) {
       const col = i % cols;
       const row = Math.floor(i / cols);
       // Y-up: rows march downward from the block's top, columns left→right.
-      // Origins sit on the cumulative row/column starts (as before); the
-      // adaptive pitch is what makes room for a large symbol's extent box.
-      // Origins snap to the 10 mil grid so pins keep landing on it too.
-      const colLeft = colPitch.slice(0, col).reduce((a, b) => a + b, 0);
+      const colStart = colPitch.slice(0, col).reduce((a, b) => a + b, 0) + colShift[col];
       const rowTop = -(L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0));
-      const px = grid(cursorX + L.margin + colLeft);
+      const px = grid(cursorX + L.margin + colStart);
       // anchor the part's extent TOP to the row top — a large IC symbol is
       // centred on its origin, so placing by the origin alone pushed half of
       // it above the drawing frame (L007)
@@ -490,7 +503,7 @@ function layoutSchematic(d, lib) {
       box = unionRect(box, pl.extent);
     });
 
-    const pad = 70;
+    const pad = 36;
     const rect = {
       x1: grid(box.x1 - pad),
       y1: grid(box.y1 - pad),

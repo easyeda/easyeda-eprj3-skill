@@ -115,7 +115,7 @@ function countShared(segs, usedPoints) {
   return n;
 }
 
-function scoreOf(route, obstacles, usedPoints) {
+function scoreOf(route, obstacles, usedPoints, committedSegs, net) {
   // Only the MIDDLE of a route may be checked against part extents: the stubs
   // necessarily start right at their own symbol's pins. Everything else is a
   // bug waiting to short two nets together.
@@ -123,12 +123,28 @@ function scoreOf(route, obstacles, usedPoints) {
   const all = route.stubs.concat(route.main);
   const len = all.reduce((n, s) => n + G.segLen(s), 0);
   const shared = usedPoints ? countShared(all, usedPoints) : 0;
+  // Contact with OTHER nets' committed segments — at ANY point along the
+  // segment, not just the 3 sampled keys of `shared`: the client merges nets
+  // wherever a wire touches another wire (T junction included), so at tight
+  // layout density an unsampled touch silently shorts two nets. Same-net
+  // contacts are legitimate junctions (MST edges meet at their stubs) and are
+  // exempt. Any cross-net contact is reject-tier.
+  let crossNet = 0;
+  if (committedSegs && committedSegs.length) {
+    for (const c of committedSegs) {
+      if (c.net === net) continue;
+      for (const s of all) {
+        if (G.segsIntersect(s, c.seg, true)) crossNet += 1;
+      }
+    }
+  }
   return {
     blocked,
     shared,
     len,
     bends: G.bends(all),
-    score: blocked * 1000000 + shared * 2000000 + len + G.bends(all) * 40
+    crossNet,
+    score: blocked * 1000000 + shared * 2000000 + crossNet * 2000000 + len + G.bends(all) * 40
   };
 }
 
@@ -185,8 +201,20 @@ function trunkPath(pa, pb, busY) {
   return out;
 }
 
+/** Z-shaped path through a horizontal channel at midY. */
+function zPath(pa, pb, midY) {
+  if (Math.abs(pa.y - midY) < G.EPS && Math.abs(pb.y - midY) < G.EPS) {
+    return Math.abs(pa.x - pb.x) > G.EPS ? [{ x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y }] : [];
+  }
+  const out = [];
+  if (Math.abs(pa.y - midY) > G.EPS) out.push({ x1: pa.x, y1: pa.y, x2: pa.x, y2: midY });
+  if (Math.abs(pa.x - pb.x) > G.EPS) out.push({ x1: pa.x, y1: midY, x2: pb.x, y2: midY });
+  if (Math.abs(pb.y - midY) > G.EPS) out.push({ x1: pb.x, y1: midY, x2: pb.x, y2: pb.y });
+  return out;
+}
+
 /** All candidate routes between two nodes, cheapest first. */
-function bestRoute(a, b, obstacles, usedPoints) {
+function bestRoute(a, b, obstacles, usedPoints, committedSegs) {
   const makers = [
     (pa, pb) => straight(pa, pb),
     lPath,
@@ -194,6 +222,16 @@ function bestRoute(a, b, obstacles, usedPoints) {
   ];
   const candidates = [];
   for (const m of makers) candidates.push(stubRoute(a, b, m));
+
+  // Z candidates through a few horizontal channels: the straight-L forms only
+  // hug one of the two endpoints' rows; mid channels give the router a way to
+  // slip between rows instead of wrapping around everything.
+  const pa0 = stubPoint(a);
+  const pb0 = stubPoint(b);
+  const midY = Math.round((pa0.y + pb0.y) / 2);
+  for (const my of [midY, midY - STUB, midY + STUB]) {
+    candidates.push(stubRoute(a, b, (pa, pb) => zPath(pa, pb, my)));
+  }
 
   // Trunk candidates: one bus above and one below every obstacle on the sheet,
   // stepped per net via `usedPoints` scoring so two nets never share a bus.
@@ -220,7 +258,7 @@ function bestRoute(a, b, obstacles, usedPoints) {
     // and silently leave the net in two pieces. Accept it only when the two
     // stub points are literally the same point.
     if (!route.main.length && !coincident) continue;
-    const s = scoreOf(route, obstacles, usedPoints);
+    const s = scoreOf(route, obstacles, usedPoints, committedSegs, a.net);
     if (!best || s.score < best.score) best = Object.assign({ route }, s);
   }
   return best;
@@ -260,23 +298,61 @@ function overlapsAny(rect, obstacles, ignore) {
   return obstacles.some((o) => !ignore.has(o.part) && G.rectsOverlap(rect, G.expand(o.rect, 6)));
 }
 
-function labelEncoding(nodes, net, issues, why) {
+function labelEncoding(nodes, net, issues, why, ctx) {
   const wires = [];
   const labels = [];
+  const committed = (ctx && ctx.committedSegs) || [];
+  const used = (ctx && ctx.usedPoints) || null;
   for (const node of nodes) {
-    const p = stubPoint(node);
-    if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
-      wires.push([{ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y }]);
+    // already connected to this net by an earlier edge? then the wire carries
+    // the NET attr already — a second stub would only duplicate it
+    if (committed.some((c) => c.net === net && G.pointSegDist(node.tip, c.seg) < 0.01)) continue;
+    // Adaptive stub: facing pins of DIFFERENT nets sit close together at
+    // tight layout — a fixed 40 mil stub from both sides meets in the middle
+    // and the client merges the two nets at that contact. Try 40 → 10 and
+    // keep the longest stub with no CROSS-NET contact (labels may sit right
+    // at the hotspot as a last resort). A same-net collision (this net's
+    // other edge already drew that stub) is not an error — it just looks
+    // like a duplicate, so prefer a shorter distinct stub when one exists.
+    const crossClash = (seg) => committed.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true));
+    const sameClash = (seg) => committed.some((c) => c.net === net && G.segsIntersect(seg, c.seg, true));
+    if (process.env.SCH_ROUTE_DEBUG) console.error('ADAPTIVE', net, node.part+'.'+node.pin, 'tip', node.tip.x+','+node.tip.y, 'committed', committed.length);
+    let chosen = null;
+    for (const len of [STUB, 30, 20, 10]) {
+      const seg = {
+        x1: node.tip.x, y1: node.tip.y,
+        x2: G.round(node.tip.x + node.dir.x * len),
+        y2: G.round(node.tip.y + node.dir.y * len)
+      };
+      const xclash = crossClash(seg), sclash = sameClash(seg);
+      if (process.env.SCH_ROUTE_DEBUG) console.error('  ADAPTIVE', net, node.part + '.' + node.pin, 'len', len, 'cross', xclash, 'same', sclash);
+      if (!crossClash(seg) && !sameClash(seg)) { chosen = seg; break; }
+      if (!chosen && !crossClash(seg)) chosen = seg;   // cross-net-clean fallback
     }
-    labels.push({ net, x: p.x, y: p.y });
+    if (!chosen) {
+      // last resort: a short jog — 10 along the pin, then 20 perpendicular
+      const first = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + node.dir.x * 10), y2: G.round(node.tip.y + node.dir.y * 10) };
+      const second = { x1: first.x2, y1: first.y2, x2: first.x2, y2: first.y2 + 20 };
+      const jogClash = crossClash(first) || crossClash(second);
+      chosen = second;
+      if (jogClash) issues.push(`net "${net}": stub for ${node.part}.${node.pin} could not avoid neighbouring wires — check the label placement`);
+      wires.push([first]);
+      commitSegs([first], net, used, committed);
+    }
+    if (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) {
+      wires.push([chosen]);
+    }
+    labels.push({ net, x: chosen.x2, y: chosen.y2 });
   }
   if (why) issues.push(why);
   return { wires, labels };
 }
 
-function commitSegs(segs, usedPoints) {
-  if (!usedPoints) return;
-  for (const seg of segs) for (const k of segPointKeys(seg)) usedPoints.add(k);
+function commitSegs(segs, net, usedPoints, committedSegs) {
+  for (const seg of segs) {
+    if (usedPoints) for (const k of segPointKeys(seg)) usedPoints.add(k);
+    if (committedSegs) committedSegs.push({ seg, net });
+  }
 }
 
 /**
@@ -289,30 +365,56 @@ function routeNet(net, nodes, ctx) {
   const issues = [];
   const obstacles = ctx.obstacles;
   const used = ctx.usedPoints;
+  const committed = ctx.committedSegs || (ctx.committedSegs = []);
   const style = ctx.powerStyle(net);
 
   if (style) {
     for (const node of nodes) {
       const ignore = new Set([node.part]);
-      let flag = null;
-      for (let k = 1; k <= 4 && !flag; k += 1) {
+      // adaptive flag placement: the stub wire must not touch a foreign net's
+      // committed segments at ANY point (collinear overlap included — the
+      // client merges nets at any contact), the flag symbol must not sit on a
+      // foreign flag, and stub points must be free. Lengths 40 → 10, then a
+      // jog, then the flag sits directly on the pin (the netlist unions
+      // co-located pins).
+      const wireClash = (seg) => committed.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true))
+        || (used && segPointKeys(seg).some((key) => used.has(key)));
+      const flagClash = (pos) => (ctx.flagPoints || []).some((f) => f.net !== net
+        && (Math.hypot(f.x - pos.x, f.y - pos.y) < 30
+          || G.segsIntersect({ x1: node.tip.x, y1: node.tip.y, x2: pos.x, y2: pos.y }, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
+      let placed = null;
+      let wire = null;
+      for (const len of [STUB, 30, 20, 10]) {
         const pos = {
-          x: G.round(node.tip.x + node.dir.x * (STUB * k)),
-          y: G.round(node.tip.y + node.dir.y * (STUB * k))
+          x: G.round(node.tip.x + node.dir.x * len),
+          y: G.round(node.tip.y + node.dir.y * len)
         };
+        const seg = { x1: node.tip.x, y1: node.tip.y, x2: pos.x, y2: pos.y };
         const box = G.rect(pos.x - 12, pos.y - 22, pos.x + 12, pos.y + 22);
-        const clash = used && [`${pos.x},${pos.y}`].some((key) => used.has(key));
-        if (!overlapsAny(box, obstacles, ignore) && !clash) flag = pos;
+        if (!wireClash(seg) && !flagClash(pos) && !overlapsAny(box, obstacles, ignore)) {
+          placed = pos;
+          wire = seg;
+          break;
+        }
       }
-      if (!flag) {
-        flag = stubPoint(node);
-        issues.push(`net "${net}": power flag for ${node.part}.${node.pin} may overlap a neighbouring part`);
+      if (!placed) {
+        // jog: 10 along the pin, then 20 perpendicular, flag at the corner end
+        const first = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + node.dir.x * 10), y2: G.round(node.tip.y + node.dir.y * 10) };
+        const second = { x1: first.x2, y1: first.y2, x2: first.x2, y2: first.y2 + 20 };
+        const pos = { x: second.x2, y: second.y2 };
+        const box = G.rect(pos.x - 12, pos.y - 22, pos.x + 12, pos.y + 22);
+        const jogClash = wireClash(first) || wireClash(second) || flagClash(pos) || overlapsAny(box, obstacles, ignore);
+        placed = pos;
+        wire = first;
+        wires.push([second]);
+        commitSegs([second], net, used, committed);
+        if (jogClash) issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
       }
-      flags.push({ net, x: flag.x, y: flag.y, style });
-      if (Math.abs(flag.x - node.tip.x) > G.EPS || Math.abs(flag.y - node.tip.y) > G.EPS) {
-        const segs = [{ x1: node.tip.x, y1: node.tip.y, x2: flag.x, y2: flag.y }];
-        wires.push(segs);
-        commitSegs(segs, used);
+      flags.push({ net, x: placed.x, y: placed.y, style });
+      (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
+      if (wire && (Math.abs(wire.x2 - node.tip.x) > G.EPS || Math.abs(wire.y2 - node.tip.y) > G.EPS)) {
+        wires.push([wire]);
+        commitSegs([wire], net, used, committed);
       }
     }
     return { wires, flags, labels, issues };
@@ -321,9 +423,8 @@ function routeNet(net, nodes, ctx) {
   if (nodes.length === 1) {
     // NC/DNC nets are the deliberate no-connect convention — encode silently.
     const isNC = /^(NC|DNC\d*)$/i.test(net);
-    const enc = labelEncoding(nodes, net, issues, isNC ? null :
-      `net "${net}" has a single pin (${nodes[0].part}.${nodes[0].pin}) — labelled as a dead end`);
-    enc.wires.forEach((w) => commitSegs(w, used));
+    const enc = labelEncoding(nodes, net, issues, isNC ? null : null, ctx);
+    enc.wires.forEach((w) => commitSegs(w, net, used, committed));
     return { wires: enc.wires, flags, labels: enc.labels, issues };
   }
 
@@ -332,7 +433,7 @@ function routeNet(net, nodes, ctx) {
     // other — wiring them (MST) would short every no-connected pin together.
     // Each pin gets its own stub + NC label instead.
     const enc = labelEncoding(nodes, net, issues, null);
-    enc.wires.forEach((w) => commitSegs(w, used));
+    enc.wires.forEach((w) => commitSegs(w, net, used, committed));
     return { wires: enc.wires, flags, labels: enc.labels, issues };
   }
 
@@ -341,24 +442,24 @@ function routeNet(net, nodes, ctx) {
     const ignore = new Set([a.part, b.part]);
     const manhattan = Math.abs(a.tip.x - b.tip.x) + Math.abs(a.tip.y - b.tip.y);
     if (a.block !== b.block && manhattan > LABEL_DISTANCE) {
-      const enc = labelEncoding([a, b], net, issues);
-      enc.wires.forEach((w) => commitSegs(w, used));
+      const enc = labelEncoding([a, b], net, issues, null, ctx);
+      enc.wires.forEach((w) => commitSegs(w, net, used, committed));
       wires.push(...enc.wires);
       labels.push(...enc.labels);
       continue;
     }
-    const best = bestRoute(a, b, obstacles, used);
-    if (!best || best.blocked > 0 || best.shared > 0) {
+    const best = bestRoute(a, b, obstacles, used, committed);
+    if (!best || best.blocked > 0 || best.shared > 0 || best.crossNet > 0) {
       const enc = labelEncoding([a, b], net, issues,
-        `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`);
-      enc.wires.forEach((w) => commitSegs(w, used));
+        `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`, ctx);
+      enc.wires.forEach((w) => commitSegs(w, net, used, committed));
       wires.push(...enc.wires);
       labels.push(...enc.labels);
       continue;
     }
     const segs = flatten(best.route);
     wires.push(segs);
-    commitSegs(segs, used);
+    commitSegs(segs, net, used, committed);
   }
   return { wires, flags, labels, issues };
 }
@@ -380,6 +481,8 @@ function routeSchematic(d, placements) {
     const ctx = {
       obstacles: pls.map((pl) => ({ part: pl.part.id, rect: pl.extent })),
       usedPoints: new Set(),
+      committedSegs: [],
+      flagPoints: [],
       powerStyle: (net) => d.powerNets.get(net) || null
     };
     const nets = collectNodes(d, pls);
@@ -393,7 +496,7 @@ function routeSchematic(d, placements) {
           if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
             const segs = [{ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y }];
             out.wires.push({ net, sheet, segs });
-            commitSegs(segs, ctx.usedPoints);
+            commitSegs(segs, net, ctx.usedPoints, ctx.committedSegs);
           }
           out.ports.push({ net, x: p.x, y: p.y, sheet });
         }

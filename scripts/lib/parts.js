@@ -236,10 +236,37 @@ function parseAutoPinSpec(spec) {
 function autoPinLayout(pins, pitch) {
   const left = [];
   const right = [];
-  for (const p of pins) {
-    if (p.side === 'L') left.push(p);
-    else if (p.side === 'R') right.push(p);
-    else (left.length <= right.length ? left : right).push(p);
+  const hinted = pins.some((p) => p.dir || p.side);
+  if (hinted) {
+    // Functional grouping (the way humans draw): inputs top-left, outputs
+    // top-right, bidirectionals under the outputs, passives under the inputs,
+    // power at the BOTTOM of whichever column is shorter. Declaration order
+    // is kept inside each group. The list order runs bottom→top, so groups
+    // are pushed bottom-first.
+    const inputs = [];
+    const outputs = [];
+    const bidirs = [];
+    const passives = [];
+    const power = [];
+    const explicitL = [];
+    const explicitR = [];
+    for (const p of pins) {
+      if (p.side === 'L') explicitL.push(p);
+      else if (p.side === 'R') explicitR.push(p);
+      else if (p.dir === 'W') power.push(p);
+      else if (p.dir === 'I') inputs.push(p);
+      else if (p.dir === 'P') passives.push(p);
+      else if (p.dir === 'O') outputs.push(p);
+      else if (p.dir) bidirs.push(p);                 // B / T / C
+      else inputs.push(p);                            // unmarked reads as input-ish
+    }
+    // power fills the shorter column, alternating on ties
+    for (const p of power) (left.length <= right.length ? left : right).push(p);
+    left.push(...passives, ...inputs, ...explicitL);  // bottom→top: passive, input, explicit
+    right.push(...bidirs, ...outputs, ...explicitR);
+  } else {
+    // no hints at all → the classic alternating balance (unchanged behaviour)
+    for (const p of pins) (left.length <= right.length ? left : right).push(p);
   }
   for (const [list, x, rot] of [[left, -20, 0], [right, 20, 180]]) {
     list.forEach((p, i) => {

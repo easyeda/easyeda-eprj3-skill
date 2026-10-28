@@ -28,7 +28,7 @@ Creates the index, the schematic container (`.ecfg`/`.evar`), the first sheet do
 
 ## 3. Library: presets first, then temp staging
 
-The skill ships a **preset template library** at `templates/library/{symbol,footprint}/` (committed with the skill — `RES` `CAP` `IND` `DIODE` `LED` `TEST_POINT`, power flags `GND` `AGND` `PGND` `5V` `VCC`, net ports `PORT_IN/OUT/BI` + off-page connectors, `DIFF_PAIR`/`SHORT` flags, footprints `R0402/R0603` `C0402/C0603` `L0402/L0603` `LED0603` `SMA` `TP0.5`). Every placement resolves presets FIRST, so common parts need no staging at all:
+The skill ships a **preset template library** at `templates/library/{symbol,footprint}/` (committed with the skill — `RES` `CAP` `IND` `DIODE` `LED` `TEST_POINT`, power flags `GND` `5V` `VCC`, net ports `PORT_IN/OUT/BI`, footprints `R0402/R0603` `C0402/C0603` `L0402/L0603` `LED0603` `SMA` `TP0.5`). Every placement resolves presets FIRST, so common parts need no staging at all:
 
 ```bash
 node scripts/load-library.js list        # preset catalog; add --dir to include project staging
@@ -64,7 +64,7 @@ Inspect or prune with `load-library.js list|show|remove` (`remove` only deletes 
 
 Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 2–8 components each, decoupling caps with their IC — with ≥150 mil gutters between them. Full rules with worked coordinates: [SKILL.md → Layout rules the builder already enforces](../SKILL.md#layout-rules-the-builder-already-enforces).
 
-`add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port, `special` → DIFF_PAIR/SHORT flag):
+`add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port):
 
 ```bash
 node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
