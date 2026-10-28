@@ -177,6 +177,23 @@ function normalize(raw, file) {
       }
     }
     const rot = Number(p.rotation || p.rot || 0);
+    // autoNC: unmapped pins of inline/IC symbols default to NC (the IC entry
+    // or inline spec defines the pin numbers, so this is evidence-based)
+    const autoNC = p.autoNC === true || d.autoNC === true;
+    if (autoNC) {
+      let symNums = null;
+      if (p.symbol && typeof p.symbol === 'object' && Array.isArray(p.symbol.pins)) {
+        symNums = p.symbol.pins.map((s) => String(typeof s === 'string' ? s.split(':')[0] : (s.num || '')));
+      } else if (p.ic) {
+        try {
+          const entry = loadIcEntry(String(p.ic));
+          symNums = entry.symbol.pins.map((s) => String(s.split(':')[0]));
+        } catch { symNums = null; }
+      }
+      if (symNums) {
+        for (const num of symNums) if (pins[num] === undefined) pins[num] = 'NC';
+      }
+    }
     if (![0, 90, 180, 270].includes(rot)) fail(`part "${id}": rotation must be 0/90/180/270`);
     // electrical directions (I/O/B/P/W/T/C) declared on the symbol spec or the
     // IC entry — consumed by the ERC output-conflict check (E008)

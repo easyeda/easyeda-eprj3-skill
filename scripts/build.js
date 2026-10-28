@@ -31,7 +31,8 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory to create', required: true },
-  { name: 'design', desc: 'design.json file', required: true },
+  { name: 'design', desc: 'design.json file (or use --gen)' },
+  { name: 'gen', desc: 'generator module exporting (A) => design — see lib/authoring.js' },
   { name: 'force', desc: 'overwrite an existing project (deletes skill-owned files only)', hasValue: false },
   { name: 'schematic-only', desc: 'skip the PCB entirely', hasValue: false },
   { name: 'allow-erc', desc: 'do not fail the build on ERC errors', hasValue: false },
@@ -52,7 +53,13 @@ function safeClean(dir) {
   const entries = fs.readdirSync(dir);
   const index = entries.find((e) => e.endsWith('.eprj3'));
   if (!index) {
-    die(`refusing to --force: no .eprj3 index in ${dir} — that does not look like a project this skill created`);
+    // no skill project here: the --gen workflow legitimately drops the
+    // generator into the target directory. Wipe nothing — but refuse when
+    // skill-owned dirs DO exist (that would be a broken project, not a fresh one)
+    if (SKILL_OWNED.some((e) => entries.includes(e))) {
+      die(`refusing to build into ${dir}: it contains skill-owned dirs but no .eprj3 index`);
+    }
+    return;
   }
   for (const e of entries) {
     if (SKILL_OWNED.includes(e) || e.endsWith('.eprj3') || e === '.easyeda-pro-client.json') {
@@ -330,9 +337,24 @@ function main() {
   if (rehearsal) {
     process.on('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } });
   }
-  const design = D.readDesign(path.resolve(opts.design));
+  // Design source: a plain design.json (--design) or a generator module
+  // (--gen board.gen.js exporting (A) => design, see lib/authoring.js) — big
+  // boards are authored as a short generator, never as thousands of JSON lines
+  // and never as an agent-invented temp script.
+  let designSource = opts.design ? path.resolve(opts.design) : path.resolve(opts.gen);
+  let design;
+  if (opts.gen) {
+    const A = require('./lib/authoring').createAuthoring();
+    const gen = require(designSource);
+    if (typeof gen !== 'function') die(`--gen file must export a function: module.exports = (A) => { ...; return A.design(); }`);
+    const out = gen(A);
+    design = D.normalize(out, designSource);
+  } else {
+    design = D.readDesign(designSource);
+  }
   const declaredW = design.board.width;   // declared size, for the --plan blow-up check
   const declaredH = design.board.height;
+  const t0 = Date.now();                  // report.elapsed_ms
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
   // Strategy: the skill NEVER lays copper — no auto routing, no pours, no flags
   // to turn them on. The deliverable is footprints placed with pad-net links
@@ -518,8 +540,13 @@ function main() {
     const MIN_H = 300;
     let plan = planPcb(design, lib, placements);
     for (let round = 0; round < 4; round += 1) {
-      const targetW = Math.max(design.boardDeclared ? design.board.width : 0, plan.required.width, MIN_W);
+      let targetW = Math.max(design.boardDeclared ? design.board.width : 0, plan.required.width, MIN_W);
       const targetH = Math.max(design.boardDeclared ? design.board.height : 0, plan.required.height, MIN_H);
+      // aspect guard (report 5.5): an undeclared board must not collapse into
+      // a 1:5 sliver — keep the area, clamp the aspect to 1:2.5 and replan
+      if (!design.boardDeclared && targetH > targetW * 2.5 && round < 2) {
+        targetW = Math.ceil(Math.sqrt((targetW * targetH) / 2.5) / 10) * 10;
+      }
       if (targetW === design.board.width && targetH === design.board.height) break;
       log(`board set to ${targetW}×${targetH} mil to fit ${design.parts.length} parts`
         + (design.boardDeclared ? ' (declared size kept as a floor)' : ' (auto-fit)'));
@@ -560,10 +587,18 @@ function main() {
     if (nets.size) E.ensurePcbNets(pcbDoc.file, [...nets]);
     project.save();
     log(`pcb: ${pcbParts.length} footprints · placement-only (this skill never routes or pours)`);
+    // partial-place notice (report 5.1): a hand-written pcb.place that covers
+    // only SOME parts silently auto-places the rest — say so loudly
+    const explicitCount = Object.keys(design.pcbSpec.place || {}).length;
+    if (explicitCount > 0 && explicitCount < design.parts.length) {
+      const autoIds = design.parts.filter((p) => !(design.pcbSpec.place || {})[p.id]).map((p) => p.id);
+      log(`  pcb.place: ${explicitCount}/${design.parts.length} placed explicitly — auto-placed: ${autoIds.join(' ')}`);
+    }
     log(`  rats: ${ratNets.length} net(s) to connect by hand in the client — ${ratNets.map(([n, c]) => `${n}(${c}p)`).join(' ') || 'none'}`);
   }
 
   // ------------------------------------------------------------ validate
+  if (!opts.design && !opts.gen) die('nothing to build: pass --design <file> or --gen <generator.js>');
   const report = {
     dir: requestedDir,
     design: design.file,
@@ -574,13 +609,21 @@ function main() {
       ...routed.stats
     },
     pcb: { parts: pcbParts.length, mode: doPcb ? 'placed-only' : null, rats: ratNets.length },
+    elapsed_ms: Date.now() - t0,
+    generatedAt: new Date().toISOString(),
     issues: routed.issues
   };
 
   // The staging area is authoring metadata: drop it once the project is built
   // and validated, so the deliverable is self-contained (cleanup.js does the
   // same thing by hand).
-  if (!opts['keep-tmp']) fs.rmSync(path.join(dir, '.tmp'), { recursive: true, force: true });
+  try {
+    if (!opts['keep-tmp']) fs.rmSync(path.join(dir, '.tmp'), { recursive: true, force: true });
+  } catch (e) {
+    // Windows file locks (EPERM/EBUSY) must not turn a finished build into a
+    // failure — the staging dir is removable later with cleanup.js
+    log(`  note: .tmp cleanup skipped (${e.code || e.message}) — run cleanup.js later`);
+  }
 
   const { runValidate } = require('./lib/checks');
   const v = runValidate(dir);
@@ -608,7 +651,7 @@ function main() {
   let intent = null;
   if (design.expect || design.parts.some((p) => p.polarity)) {
     const { runIntent } = require('./lib/intent');
-    intent = runIntent(design);
+    intent = runIntent(design, { placedOnly: true });
     report.intent = intent;
   }
 
@@ -644,7 +687,12 @@ function main() {
   }
 
   if (!opts.quiet) {
-    for (const i of routed.issues) console.log(`  ! ${i}`);
+    // aggregate the stub+label fallback notes (they flood big boards): one
+    // count line here, the full list stays in report.issues
+    const fallbacks = routed.issues.filter((i) => /encoded as/.test(i));
+    const others = routed.issues.filter((i) => !/encoded as/.test(i));
+    for (const i of others) console.log(`  ! ${i}`);
+    if (fallbacks.length) console.log(`  ! ${fallbacks.length} net(s) fell back to stub+label encoding (full list in the report)`);
     console.log(`validate: ${v.errors.length} errors, ${v.warnings.length} warnings`);
     for (const e of v.errors) console.log(`  ✗ ${e}`);
     for (const w of v.warnings) console.log(`  · ${w}`);

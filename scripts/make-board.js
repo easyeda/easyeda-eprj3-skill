@@ -16,7 +16,8 @@ const { spawnCaptured } = require('../test/capture');
 const { parseArgs, printHelp } = require('./lib/utils');
 
 const SCHEMA = [
-  { name: 'design', desc: 'design.json file', required: true },
+  { name: 'design', desc: 'design.json file (or use --gen)' },
+  { name: 'gen', desc: 'generator module (A) => design — see lib/authoring.js' },
   { name: 'dir', desc: 'project directory to create', required: true },
   { name: 'report', desc: 'write the digest JSON here (default: <dir>/build.json)', hasValue: false },
   { name: 'force', desc: 'rebuild an existing project', hasValue: false },
@@ -35,7 +36,7 @@ function main() {
   const reportFile = path.resolve(opts.report || path.join(dir, 'build.json'));
 
   // 1. build (all five gates + netcheck run inside)
-  const buildArgs = ['--design', path.resolve(opts.design), '--dir', dir, '--report', reportFile];
+  const buildArgs = [opts.gen ? '--gen' : '--design', path.resolve(opts.gen || opts.design), '--dir', dir, '--report', reportFile];
   if (opts.force) buildArgs.push('--force');
   const build = spawnCaptured(process.execPath, [path.join(__dirname, 'build.js'), ...buildArgs], { cwd: process.cwd(), encoding: 'utf8' });
   if (!opts.quiet) {

@@ -5,6 +5,89 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.23.0] - 2026-10-28
+
+Seventh round, from four real ESP32-S31 board sessions (`jlc-work-project/report/*`):
+every agent wrote its own generator scripts (6 temp scripts, 70k tokens of
+debugging in one session). This release makes the official authoring path the
+easy path, so agents call scripts with parameters instead of writing code.
+
+### Added
+- **`lib/authoring.js` + `build.js --gen board.gen.js`** (all four reports'
+  #1 ask): the agent writes a SHORT generator file using official helpers —
+  `A.block(title, {desc})`, `A.cap/res/ind/led/diode`, `A.ic` (library entry,
+  autoNC default), `A.chip` (inline symbol + footprint), `A.conn` (W003-exempt
+  connector), `A.place`, `A.power/net/pair/expect`, auto refdes numbering —
+  and build.js runs it through the full pipeline. No temp scripts, no
+  hand-written 60 KB JSON.
+- **`autoNC`** (deepseek/mimo reports): unmapped pins of inline/IC symbols
+  default to `"NC"` per part (`autoNC: true`) or design-wide (`A.autoNC()`).
+  IC entries default to it; 80-pin MCUs no longer enumerate 30 NC strings.
+- **Partial-place notice** (glm §5.1): a `pcb.place` covering only some parts
+  logs which parts remain auto-placed, instead of silently colliding.
+- **Aspect guard on auto-fit** (qwen §5.5): an undeclared board clamps to
+  aspect 1:2.5 (keeps area) instead of growing into a 40×235 mm sliver.
+- **DRC findings carry coordinates** (glm §5.4): D001/D003 messages include
+  the clash midpoint `[x,y]`.
+- **`build.js --report` gains `elapsed_ms` / `generatedAt`** (mimo §7.11).
+
+### Fixed
+- **W003 false positives** (all four reports): legal same-part bridges —
+  USB-C A6/B6 dual contacts, connector power pairs, module jumpers — no
+  longer warn. Exempt: power nets, designator `J`, parts with ≥6 pins
+  (connectors/modules), or `bridge: "ok"` on the part.
+- **I006 no longer fires on placed-only boards** (mimo §7.7): the pair
+  warning was permanent there and carried no information.
+- **`.tmp` cleanup EPERM/EBUSY no longer fails a finished build** (mimo §3,
+  Windows file locks): cleanup degrades to a note; make-board digests stay
+  truthful.
+- **Output noise** (mimo §7.6, glm §5.7): stub+label fallback notes
+  aggregate into one count line; details stay in the report JSON.
+- `--force` into a directory that only holds the generator file no longer
+  dies (the --gen workflow writes the gen file next to the project).
+
+### Deferred (from the reports, needs data or bigger scope)
+IC entry expansion (ESP32-S3/S31, CH343P, ES8389, QMI8658A… — needs the
+official-library LCSC ids, one `fetch-lcsc --install` each), connector auto
+families (USB-C 16P full, FPC, micro-SD, GH1.25/SH1.25), pin planner,
+power-domain checks, per-block cell sizes.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21. New probes: authoring helpers (refdes numbering, block
+  membership, autoNC) and a `--gen` end-to-end build (netcheck match,
+  elapsed_ms reported).
+
+## [1.22.0] - 2026-10-28
+
+**Official-library fetch is now a first-class capability** (user request): when
+a part is missing from the IC library, the agent pulls the official EasyEDA
+symbol + footprint verbatim instead of hand-typing pinouts — with a defined
+self-build fallback when the fetch fails.
+
+### Added
+- **`scripts/fetch-lcsc.js`** — `--id C<LCSC>` fetches
+  `https://easyeda.com/api/products/{LCSC}/components` and converts the
+  official symbol (pin numbers/names/columns verbatim, power-direction naming
+  rule applied) + footprint (pad coordinates verbatim, 10-mil units y-down →
+  mil/y-up) into an IC entry with the `evidence` block auto-filled (API URL,
+  footprint title, datasheet link from the payload). `--install` writes into
+  `templates/library/ic/`, `--out <file>` to a path, `--raw` dumps the API
+  JSON. Verified live: C6186 (AMS1117-3.3) and C8734 (STM32F103C8T6, 48 pins +
+  48 verbatim pads); unknown ids fail cleanly.
+- **Two-tier pinout policy** (user constraint, replaces the "never fetch"
+  boundary from 1.15.1): ① fetch the official library via the script; ② when
+  the fetch fails or the part is absent — self-build a quality symbol
+  (functional pin grouping) + an `{auto}` footprint, CONFIRM the pinout with
+  the user against the datasheet, and declare
+  `pinoutSource: "按 datasheet 手工绘制（用户已确认）"` (I007 still fails
+  undeclared real-device pinouts). Policy written into SKILL.md, build.md,
+  development.md and footprint-evidence.md.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21.
+
 ## [1.21.0] - 2026-10-28
 
 Seventh round, from the user's verdict on drawing quality and the hand-drawn

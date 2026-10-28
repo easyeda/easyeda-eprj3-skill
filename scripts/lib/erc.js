@@ -130,13 +130,24 @@ function runErc(dir, opts) {
       }
       const refs = new Set(real.map((p) => p.ref));
       if (real.length === 2 && refs.size === 1) {
-        warnings.push({
-          id: 'W003',
-          sheet: label,
-          net: net.name,
-          msg: `net "${net.name}" only bridges two pins of the same part (${real[0].ref})`,
-          fix: `check ${real[0].ref}'s parts[].pins — two of its pins map to "${net.name}"; usually one of them is a typo`
-        });
+        // legal same-part bridges (USB-C A6/B6 dual contacts, connector 3V3
+        // pairs, module-internal jumpers) must not spam W003: exempt power
+        // nets, connector-class parts (designator J or ≥6 pins), and parts
+        // that declare `bridge: "ok"`
+        const partDef = options.design && options.design.parts.find((x) => x.id === real[0].ref);
+        const bridged = !partDef || partDef.bridge === 'ok' || /^J/i.test(real[0].ref);
+        const comp = nl.components.find((c) => c.ref === real[0].ref);
+        const connectorish = comp && comp.pins.length >= 6;
+        const powerNet = options.design && options.design.powers && options.design.powers[net.name] !== undefined;
+        if (!bridged && !connectorish && !powerNet) {
+          warnings.push({
+            id: 'W003',
+            sheet: label,
+            net: net.name,
+            msg: `net "${net.name}" only bridges two pins of the same part (${real[0].ref})`,
+            fix: `check ${real[0].ref}'s parts[].pins — two of its pins map to "${net.name}"; usually one of them is a typo (declare "bridge": "ok" on the part if the bridge is intentional)`
+          });
+        }
       }
       if (POWER_ISH.test(net.name) && !net.flags) {
         warnings.push({

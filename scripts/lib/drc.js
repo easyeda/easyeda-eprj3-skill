@@ -278,8 +278,9 @@ function runDrc(file, opts) {
       if (gap < rules.clearance - 0.001) {
         const la = a.kind === 'pad' ? `pad ${a.ref}.${a.num}` : 'track';
         const lb = b.kind === 'pad' ? `pad ${b.ref}.${b.num}` : 'track';
-        add('D001', `${la} (${a.net}) is ${gap.toFixed(1)} mil from ${lb} (${b.net}) — min ${rules.clearance}`, {
-          a: a.net, b: b.net,
+        const mid = { x: (a.rect.x1 + a.rect.x2) / 2, y: (a.rect.y1 + a.rect.y2) / 2 };
+        add('D001', `${la} (${a.net}) is ${gap.toFixed(1)} mil from ${lb} (${b.net}) at [${mid.x.toFixed(0)},${mid.y.toFixed(0)}] — min ${rules.clearance}`, {
+          a: a.net, b: b.net, at: [Math.round(mid.x), Math.round(mid.y)],
           fix: a.kind === 'pad' && b.kind === 'pad' && a.ref === b.ref
             ? `fix the land pattern of ${a.ref} in parts[].footprint — its own pads must clear each other`
             : `space is tight: enlarge the board, move the parts with pcb.place, or lower pcb.rules.clearance for fine-pitch parts`
@@ -293,7 +294,7 @@ function runDrc(file, opts) {
     const gap = rectEdgeGap(c.rect, board);
     if (gap < rules.edge - 0.001) {
       add('D003', `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} is ${gap.toFixed(1)} mil from the board edge — min ${rules.edge}`, {
-        net: c.net,
+        net: c.net, at: [Math.round((c.rect.x1 + c.rect.x2) / 2), Math.round((c.rect.y1 + c.rect.y2) / 2)],
         fix: `grow board.width/height or raise pcb.rules.edgeClearance, then re-run build.js --force`
       });
     }

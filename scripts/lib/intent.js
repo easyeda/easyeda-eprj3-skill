@@ -53,7 +53,8 @@ function parseValue(v) {
  * @param d   normalized design (design.js normalize output)
  * @returns {errors, warnings, checks:[{id,text}]} — checks are the rules that ran
  */
-function runIntent(d) {
+function runIntent(d, opts) {
+  const placedOnly = !!(opts && opts.placedOnly);
   const errors = [];
   const warnings = [];
   const checks = [];
@@ -152,8 +153,10 @@ function runIntent(d) {
       add('I003', `declared pair [${a}, ${b}] is unbalanced: ${pa.length} pin(s) vs ${pb.length} pin(s)`, {
         fix: `a differential pair needs the same pin count on both sides — check parts[].pins`
       });
-    } else {
-      addW('I006', `pair [${a}, ${b}] declared — the 2-layer router does not route pairs; finish them in the client`, {
+    } else if (!placedOnly) {
+      // placed-only boards route pairs by hand in the client — the warning is
+      // permanent there and carries no information (report: mimo §7.7)
+      addW('I006', `pair [${a}, ${b}] declared — finish the pair side by side in the client`, {
         fix: `informational: keep the two nets side by side manually with pcb.place if length matching matters`
       });
     }

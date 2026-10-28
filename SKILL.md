@@ -66,6 +66,42 @@ node scripts/render.js --dir <project dir>      # SVG previews → <project>/pre
 node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
 
+## 大型设计：写 gen 生成器，不手写 JSON
+
+50+ 器件的板子不要手写 design.json（token 不可承受），也不要自造临时脚本。
+写一个短的生成器文件（~25 行），交给官方管道：
+
+```js
+// board.gen.js — module.exports = (A) => { ...; return A.design(); }
+module.exports = (A) => {
+  A.name('esp32s31-hmi');
+  A.power('3V3', 'up'); A.power('GND', 'down');
+  A.block('POWER', { desc: '电源输入与保护' });
+  A.cap('VBUS', 'GND', '10uF');
+  A.chip({ id: 'U9', name: 'TG28', pins: { 1: 'VSYS', 2: 'GND' },
+           footprint: { auto: 'QFN', pins: 20 }, autoNC: true,
+           pinoutSource: '按 datasheet 手工绘制（用户已确认）' });
+  A.block('MCU', { desc: '主控' });
+  A.ic({ id: 'U1', ic: 'STM32F103C8T6', pins: { 1: '3V3' }, autoNC: true });
+  A.place('J1', [300, 150, 0]);
+  return A.design();
+};
+```
+
+```bash
+node scripts/build.js --gen board.gen.js --dir <proj> --force --report build.json
+node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式含预览
+```
+
+助手 API：`A.cap/res/ind/led/diode`（自动位号）、`A.ic`（IC 条目，autoNC
+默认开）、`A.chip`（内联符号+封装）、`A.conn`（连接器，W003 豁免）、
+`A.block`（模块 + 功能描述）、`A.place/power/net/pair/expect/frame`。
+完整列表见 [scripts/lib/authoring.js](scripts/lib/authoring.js)。
+助手 API：（自动位号）、（IC 条目，autoNC
+默认开）、（内联符号+封装）、（连接器，W003 豁免）、
+（模块 + 功能描述）、。
+完整列表见 [scripts/lib/authoring.js](scripts/lib/authoring.js)。
+
 Rebuild loops (fix → rebuild → read gates) should pass `--quiet --report
 build.json`: one summary line on stdout, the full machine-readable report
 (scores, rats, netcheck issues) in the JSON — don't re-read verbose output
@@ -326,10 +362,16 @@ library is **committed data — the skill never queries the network at runtime**
   and impedance control are client tasks too. Flat multi-sheet authoring IS
   supported (`sheets: N` + net ports); hierarchical sheet navigation and
   simulation documents are not — finish those in the client.
-- **The library is committed data — the skill never queries the network at
-  runtime.** No live library lookup: if no IC entry fits a real part, hand-write
-  the inline symbol (gates still run); curating new entries is a maintainer
-  task (`docs/development.md`).
+- **Pin definitions of real devices are never invented.** For a part missing
+  from the IC library, in order: ① `node scripts/fetch-lcsc.js --id C<LCSC>
+  --install` — pulls the official EasyEDA symbol + footprint verbatim (the ONE
+  sanctioned network call, user-initiated per part); ② fetch fails / part
+  absent → self-build a quality symbol (functional pin grouping) + an `{auto}`
+  footprint, **confirm the pinout with the user against the datasheet**, and
+  declare `pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails
+  any multi-pin inline symbol for a real device without that declaration.
+- **The library is committed data.** Presets and IC entries are read from
+  disk; `fetch-lcsc.js` (above) is the only network path, and only on request.
 - **The deliverable is the `.eprj3` project itself — nothing else.** No
   manufacturing artifacts: BOM, pick-and-place / coordinate files, Gerber or
   production archives are out of scope; the EasyEDA client exports those. Do

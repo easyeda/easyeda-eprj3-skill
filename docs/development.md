@@ -191,8 +191,15 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 > 库提交的固化数据。本章节是**维护者新增/校准库数据**的流程，由维护会话执行，
 > 不属于 skill 的日常使用。
 
-新增 IC 条目（`templates/library/ic/`）或校准封装家族（`fp-auto.js`）时，从
-EasyEDA 官方库抓取样例器件数据：
+新增 IC 条目（`templates/library/ic/`）优先用现成脚本抓取并转换（输出即条目
+格式，evidence 三来源自动填写）：
+
+```bash
+node scripts/fetch-lcsc.js --id C8734 --install   # 官方库逐字 → IC 条目
+node scripts/fetch-lcsc.js --id C8734             # 仅打印转换结果
+```
+
+脚本不可达（器件不在官方库/网络受限）时再按以下手动流程从官方库抓取样例器件数据：
 
 ```
 https://easyeda.com/api/products/{LCSC}/components

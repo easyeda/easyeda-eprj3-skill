@@ -128,11 +128,15 @@ electrical directions and column layout) and the footprint spec, each with a
 citable `evidence` block (symbol source, footprint source, datasheet URL).
 Map only the pins the design actually uses; everything else becomes `"NC"`.
 An IC entry replaces `symbol` + `footprint` — give one or the other, never
-both. Entries are curated, committed data — the skill reads them from disk and
-**never queries the network at runtime**; there is no live library lookup. If
-no entry fits a real part, do NOT fetch anything: hand-write the inline symbol
-per [docs/build.md](build.md) rules, or (maintainers only, see
-[`docs/development.md`](development.md)) curate a new entry.
+both. Entries are curated, committed data. For a part NOT in the library, in
+order: ① `node scripts/fetch-lcsc.js --id C<LCSC> --install` — pulls the
+official EasyEDA symbol + footprint verbatim (the one sanctioned network call,
+user-initiated per part); ② if the fetch fails, self-build the inline symbol
+(functional pin grouping) + an `{auto}` footprint, CONFIRM the pinout with the
+user against the datasheet, and declare
+`pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails undeclared
+real-device pinouts. Never hand-type a real chip's pins from memory without
+either step.
 
 ### Inline footprints
 
