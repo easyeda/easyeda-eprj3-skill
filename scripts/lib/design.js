@@ -129,6 +129,10 @@ function normalize(raw, file) {
     parts: [],
     pcbSpec: raw.pcb && typeof raw.pcb === 'object' ? raw.pcb : {},
     skipPcb: raw.pcb === false,
+    // schematic pagination: 1 = every block on one sheet; N = blocks fill N
+    // sheets in declaration order (or per-block "sheet" overrides). The
+    // intake asks 单页/多页 before generating.
+    sheets: Math.max(1, Math.floor(Number(raw.sheets) || 1)),
     expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null
   };
 
@@ -212,15 +216,33 @@ function normalize(raw, file) {
       if (assigned.has(id)) fail(`part "${id}" is listed in two blocks`);
       assigned.set(id, i);
     }
-    d.blocks.push({ title, parts: list, colspan: Number(b.colspan || 0) || 0 });
+    d.blocks.push({
+      title,
+      parts: list,
+      colspan: Number(b.colspan || 0) || 0,
+      // one-line functional description rendered under the block title
+      desc: b.desc === undefined ? '' : String(b.desc),
+      // explicit sheet assignment (1-based); undefined → auto-filled below
+      sheet: b.sheet === undefined ? null : Number(b.sheet)
+    });
   });
   const leftovers = d.parts.filter((p) => !assigned.has(p.id)).map((p) => p.id);
   if (leftovers.length) {
-    if (!d.blocks.length) d.blocks.push({ title: 'CIRCUIT', parts: [] });
+    if (!d.blocks.length) d.blocks.push({ title: 'CIRCUIT', parts: [], sheet: null });
     d.blocks[d.blocks.length - 1].parts.push(...leftovers);
   }
   // drop empty blocks, then reindex every part → block
   d.blocks = d.blocks.filter((b) => b.parts.length);
+  // sheet assignment: explicit per-block wins, otherwise blocks fill pages in
+  // declaration order (ceil(blocks/sheets) per page)
+  for (const b of d.blocks) {
+    if (b.sheet !== null && (!Number.isInteger(b.sheet) || b.sheet < 1 || b.sheet > d.sheets)) {
+      fail(`block "${b.title}": sheet ${b.sheet} out of range 1..${d.sheets}`);
+    }
+  }
+  const auto = d.blocks.filter((b) => b.sheet === null);
+  const perSheet = Math.ceil(auto.length / d.sheets) || 1;
+  auto.forEach((b, i) => { b.sheet = Math.min(d.sheets, Math.floor(i / perSheet) + 1); });
   d.parts.forEach((p) => { p.blockIndex = 0; });
   d.blocks.forEach((b, i) => {
     for (const id of b.parts) {
@@ -400,8 +422,17 @@ function layoutSchematic(d, lib) {
   let cursorX = 0;
   let rowBaseY = 0;             // top edge of the current block row (≤ 0)
   let rowMaxH = 0;              // tallest block frame in the current row
+  let currentSheet = 0;         // sheet the cursors belong to (reset on change)
 
   for (const block of d.blocks) {
+    // a new sheet starts a fresh cursor: blocks on sheet 2+ are laid out
+    // independently (multi-sheet = the intake's 单页/多页 answer)
+    if (block.sheet !== currentSheet) {
+      currentSheet = block.sheet;
+      cursorX = 0;
+      rowBaseY = 0;
+      rowMaxH = 0;
+    }
     const members = block.parts
       .map((id) => d.parts.find((p) => p.id === id))
       .filter(Boolean);
@@ -453,7 +484,7 @@ function layoutSchematic(d, lib) {
       // centred on its origin, so placing by the origin alone pushed half of
       // it above the drawing frame (L007)
       const py = grid(rowBaseY + rowTop - r.rel.y2);
-      const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block };
+      const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block, sheet: currentSheet };
       pl.extent = partExtent(r.sym, px, py, r.rot);
       placements.push(pl);
       box = unionRect(box, pl.extent);
@@ -466,7 +497,7 @@ function layoutSchematic(d, lib) {
       x2: grid(box.x2 + pad),
       y2: grid(box.y2 + pad + BLOCK_TITLE_H)
     };
-    blocks.push({ title: block.title, rect, members: ordered.map((p) => p.id) });
+    blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: ordered.map((p) => p.id) });
     cursorX = rect.x2 + L.blockGapX;
     rowMaxH = Math.max(rowMaxH, rect.y2 - rect.y1);
   }

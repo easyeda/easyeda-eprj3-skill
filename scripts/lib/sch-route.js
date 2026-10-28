@@ -59,6 +59,7 @@ function collectNodes(d, placements) {
         tip,
         dir: exitDir(pl, tip, pin),
         placement: pl,
+        sheet: pl.sheet || 1,
         block: pl.block ? pl.block.title : null
       });
     }
@@ -367,39 +368,62 @@ function routeNet(net, nodes, ctx) {
  * A shared point registry keeps two nets from ever touching.
  */
 function routeSchematic(d, placements) {
-  const obstacles = placements.map((pl) => ({ part: pl.part.id, rect: pl.extent }));
-  const ctx = {
-    obstacles,
-    usedPoints: new Set(),
-    powerStyle: (net) => d.powerNets.get(net) || null
-  };
-  const nets = collectNodes(d, placements);
-  const out = { wires: [], flags: [], labels: [], issues: [] };
-
-  for (const [net, nodes] of nets) {
-    const r = routeNet(net, nodes, ctx);
-    for (const segs of r.wires) {
-      const seen = new Set();
-      const clean = segs.filter((s) => {
-        if (G.segLen(s) < G.EPS) return false;
-        const k = segKey(s);
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      });
-      if (clean.length) out.wires.push({ net, segs: clean });
+  const out = { wires: [], flags: [], labels: [], ports: [], issues: [] };
+  // Per-sheet routing: sheets are independent coordinate spaces (obstacles
+  // and the shared-point registry never cross sheets). A net whose pins sit
+  // on MORE THAN ONE sheet is a cross-sheet net — each sheet gets its own
+  // stub + net port (the netlist merges ports by name globally).
+  const sheets = [...new Set(placements.map((p) => p.sheet || 1))].sort((a, b) => a - b);
+  let totalNets = 0;
+  for (const sheet of sheets) {
+    const pls = placements.filter((p) => (p.sheet || 1) === sheet);
+    const ctx = {
+      obstacles: pls.map((pl) => ({ part: pl.part.id, rect: pl.extent })),
+      usedPoints: new Set(),
+      powerStyle: (net) => d.powerNets.get(net) || null
+    };
+    const nets = collectNodes(d, pls);
+    totalNets += nets.size;
+    for (const [net, nodes] of nets) {
+      const onSheets = new Set(nodes.map((n) => n.sheet || 1));
+      if (onSheets.size > 1) {
+        // cross-sheet: every node gets its own stub + net port
+        for (const node of nodes) {
+          const p = stubPoint(node);
+          if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
+            const segs = [{ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y }];
+            out.wires.push({ net, sheet, segs });
+            commitSegs(segs, ctx.usedPoints);
+          }
+          out.ports.push({ net, x: p.x, y: p.y, sheet });
+        }
+        continue;
+      }
+      const r = routeNet(net, nodes, ctx);
+      for (const segs of r.wires) {
+        const seen = new Set();
+        const clean = segs.filter((s) => {
+          if (G.segLen(s) < G.EPS) return false;
+          const k = segKey(s);
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        });
+        if (clean.length) out.wires.push({ net, sheet, segs: clean });
+      }
+      out.flags.push(...r.flags.map((f) => Object.assign({ sheet }, f)));
+      out.labels.push(...r.labels);
+      out.issues.push(...r.issues);
     }
-    out.flags.push(...r.flags);
-    out.labels.push(...r.labels);
-    out.issues.push(...r.issues);
   }
   out.stats = {
-    nets: nets.size,
+    nets: totalNets,
+    sheets: sheets.length,
     wires: out.wires.length,
     segments: out.wires.reduce((n, w) => n + w.segs.length, 0),
     flags: out.flags.length,
     labels: out.labels.length,
-    usedPoints: ctx.usedPoints.size
+    ports: out.ports.length
   };
   return out;
 }

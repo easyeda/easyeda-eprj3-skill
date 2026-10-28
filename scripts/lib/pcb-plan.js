@@ -108,25 +108,46 @@ function planPcb(design, lib, schematicPlacements) {
     if (it.explicit && it.ext) placed.push({ ref: it.part.id, ext: it.ext });
   }
 
-  // connectors first: one row along the bottom edge
+  // connectors first: along the bottom edge, wrapping upward into further
+  // edge rows when the declared board is too narrow for one row (S3: many
+  // pin headers used to march past the board outline). Explicit placements
+  // (a hand-placed USB-C at the board edge, say) are respected: connectors
+  // skip past their footprints instead of stacking on them.
+  const explicitBoxes = items.filter((it) => it.explicit && it.ext).map((it) => it.ext);
   let cursorX = EDGE;
-  let connRowTop = 0;
+  let rowBase = 0;      // y offset of the CURRENT connector row's base
+  let rowHConn = 0;     // tallest extent in the current row
+  let connBand = 0;     // total connector band height (grid starts above it)
   for (const it of connectors) {
     it.angle = connectorAngle(it.fp);
     it.ext = footprintExtent(it.fp, it.angle);
-    const x = cursorX - it.ext.x1;
-    const y = EDGE - it.ext.y1;             // extent bottom sits at EDGE
+    const w = it.ext.x2 - it.ext.x1;
+    if (cursorX > EDGE && cursorX + w > design.board.width - EDGE) {
+      cursorX = EDGE;
+      rowBase += rowHConn + GAP_MAX;
+      rowHConn = 0;
+    }
+    let x = cursorX - it.ext.x1;
+    const y = EDGE + rowBase - it.ext.y1;   // extent bottom sits EDGE above the row base
+    // slide right past any explicit footprint already sitting in this band
+    for (let guard = 0; guard < 16; guard += 1) {
+      const box = G.translateBox(it.ext, x, y);
+      const hit = explicitBoxes.find((o) => G.rectsOverlap(box, G.expand(o, 10)));
+      if (!hit) break;
+      x = hit.x2 + gapFor(w) - it.ext.x1;
+    }
     it.x = G.round(x);
     it.y = G.round(y);
     placed.push({ ref: it.part.id, ext: G.translateBox(it.ext, it.x, it.y) });
-    cursorX += (it.ext.x2 - it.ext.x1) + gapFor(it.ext.x2 - it.ext.x1);
-    connRowTop = Math.max(connRowTop, it.ext.y2 - it.ext.y1);
+    cursorX = it.x + it.ext.x1 + w + gapFor(w);
+    rowHConn = Math.max(rowHConn, it.ext.y2 - it.ext.y1);
+    connBand = rowBase + rowHConn;
   }
 
   // everything else grids in rows above the connector row — starting back at
   // the LEFT edge (cursorX currently sits where the connector row ended)
   cursorX = EDGE;
-  let cursorY = EDGE + (connectors.length ? connRowTop + GAP_MAX : 0);
+  let cursorY = EDGE + (connectors.length ? connBand + GAP_MAX : 0);
   let rowH = 0;
   let boardW = design.board.width;
   let neededW = 0;
@@ -137,13 +158,16 @@ function planPcb(design, lib, schematicPlacements) {
     // cursorX/cursorY track the CURRENT row's extent edges (left/bottom), so
     // the wrap test compares extent right edge against the usable width —
     // mixing in the part ORIGIN (as the old `x + w` form did) overstates the
-    // right edge by |ext.x1| and wraps one part too many.
-    const right = cursorX + w;
-    if (cursorX > EDGE && right > Math.max(boardW, neededW) - EDGE) {
+    // right edge by |ext.x1| and wraps one part too many. `right` MUST be
+    // recomputed after a wrap: using the pre-wrap cursorX cascaded every
+    // later part onto the pre-wrap position (single row → single column,
+    // board explosion on 50+ part designs).
+    if (cursorX > EDGE && cursorX + w > Math.max(boardW, neededW) - EDGE) {
       cursorX = EDGE;
       cursorY += rowH + gapFor(rowH);
       rowH = 0;
     }
+    const right = cursorX + w;
     it.x = G.round(cursorX - it.ext.x1);
     it.y = G.round(cursorY - it.ext.y1);
     placed.push({ ref: it.part.id, ext: G.translateBox(it.ext, it.x, it.y) });
@@ -185,10 +209,12 @@ function planPcb(design, lib, schematicPlacements) {
 
   // ---- required board size from the FINAL extents -------------------------
   // (explicit placements included — a wide part at a hand-written [x,y] must
-  // not stick past the outline the way the old x+EDGE heuristic allowed)
+  // not stick past the outline the way the old x+EDGE heuristic allowed.
+  // Explicit extents were ALREADY translated to absolute in pass 1 —
+  // translating again here doubled the board, 3540 → 6850/13666 mil.)
   for (const it of items) {
     if (!it.ext) continue;
-    const box = G.translateBox(it.ext, it.x, it.y);
+    const box = it.explicit ? it.ext : G.translateBox(it.ext, it.x, it.y);
     neededW = Math.max(neededW, box.x2 + EDGE);
     neededH = Math.max(neededH, box.y2 + EDGE);
   }

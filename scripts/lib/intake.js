@@ -57,6 +57,9 @@ const FIELDS = [
   { key: 'board.layers', tier: 'ask', def: 2,
     q: { zh: '层数？（本 skill 不布线不铺铜，层数只是记录；>2 层的布线在客户端完成）',
          en: 'Layer count? (this skill never routes or pours — the number is recorded; the copper happens in the client)' } },
+  { key: 'schematic.sheets', tier: 'ask', def: 1,
+    q: { zh: '原理图：全部电路模块放在同一页，还是按模块分页？（模块多/块 >8 个建议分页；每页内的跨页网络用网络端口连接）',
+         en: 'Schematic: all modules on ONE sheet, or split across sheets? (>8 blocks suggest splitting; cross-sheet nets join through net ports)' } },
   { key: 'package', tier: 'default', def: '0603',
     note: '阻容封装偏好：0402 / 0603；默认 0603（DFM 最稳）' },
   { key: 'constraints.differential', tier: 'default', def: [],
@@ -290,6 +293,10 @@ function resolve(req, opts) {
   const bh = getPath(req, 'board.height');
   if (bw && bh) design.board = { width: Number(bw), height: Number(bh) };
   if (getPath(req, 'output.schematic_only')) design.pcb = false;
+  // 单页/多页：intake 的询问结果直接进 design 契约（blocks 自动按页分配，
+  // 也可以在 blocks[].sheet 里显式指定）
+  const sheets = Number(getPath(req, 'schematic.sheets'));
+  if (sheets > 1) design.sheets = Math.floor(sheets);
 
   const used = [];
   const cache = o.noCache ? null : C.open('intake');

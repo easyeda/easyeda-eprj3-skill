@@ -41,6 +41,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 建议问 | `mcu` | null | 有 MCU 则自动拉 mcu-min + crystal |
 | 建议问 | `board.width/height` | null=自动扩板 | 有结构限制才填 |
 | 建议问 | `board.layers` | 2 | >2 会提示人工复核 |
+| 建议问 | `schematic.sheets` | 1 | **单页/多页询问**：全部模块放同一页还是分页；块 >8 个建议分页，跨页网络用网络端口连接 |
 | 建议问 | `constraints.crystal` | 有 MCU 即需要 | 8MHz 等 |
 | 默认 | `name` | board | 工程名 |
 | 默认 | `package` | 0603 | 0402 可切换；0805 提示后仍按 0603 |

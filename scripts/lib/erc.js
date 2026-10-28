@@ -67,6 +67,12 @@ function runErc(dir, opts) {
   }
 
   const sheetSummaries = [];
+  // how many sheets carry each net name — cross-sheet nets (ports) legitimately
+  // have one pin per sheet, so the per-sheet single-pin rule must not fire
+  const netSheetCount = new Map();
+  for (const s of all.perSheet) {
+    for (const net of s.netlist.nets) netSheetCount.set(net.name, (netSheetCount.get(net.name) || 0) + 1);
+  }
   for (const s of all.perSheet) {
     const nl = s.netlist;
     const label = `${s.schematic}/${s.sheet}`;
@@ -101,8 +107,10 @@ function runErc(dir, opts) {
     for (const net of nl.nets) {
       const real = net.pins;
       // NC/DNC nets are the deliberate "no connect" convention: a lone pin on
-      // one of them is intentional, not a wiring mistake.
-      if (real.length === 1 && !net.flags && !/^(NC|DNC\d*)$/i.test(net.name)) {
+      // one of them is intentional, not a wiring mistake. A net that also
+      // exists on another sheet is a cross-sheet (port) net — its per-sheet
+      // single pin joins the global net through the port.
+      if (real.length === 1 && !net.flags && (netSheetCount.get(net.name) || 0) < 2 && !/^(NC|DNC\d*)$/i.test(net.name)) {
         errors.push({
           id: 'E002',
           sheet: label,

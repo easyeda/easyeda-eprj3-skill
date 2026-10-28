@@ -59,9 +59,15 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
 #    placement: connectors (J…) line the bottom edge, decoupling caps sit next
 #    to their IC, an undeclared board auto-fits the parts
+node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
 node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/
 node scripts/open.js open --dir <project dir>   # launch the offline client
 ```
+
+Rebuild loops (fix → rebuild → read gates) should pass `--quiet --report
+build.json`: one summary line on stdout, the full machine-readable report
+(scores, rats, netcheck issues) in the JSON — don't re-read verbose output
+every iteration.
 
 `build.js` exits non-zero if any gate has an error, so a clean exit *is* the
 quality proof. It prints one summary line:
@@ -105,7 +111,8 @@ All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
 | `powers` | net → `"up"` (supply) or `"down"` (ground): these get **power flags** instead of wires |
 | `nets` | per-net **annotations**: `{ "width": 30 }` records the intended track width (derived from current) — it never lays copper; the DRC uses it as a per-net floor when reviewing imported tracks. `{ "class": "POWER" }` groups via `netClasses` |
 | `netClasses` | `{ "POWER": { "width": 30 } }` — named width groups referenced from `nets` (annotation only) |
-| `blocks` | titled boxes in signal-flow order; parts left out join the last block; keep **2–8 related parts** per block |
+| `blocks` | titled boxes in signal-flow order; parts left out join the last block; keep **2–8 related parts** per block. `blocks[].desc` = one-line functional description rendered under the title (ask the user for one per module); `blocks[].sheet` = 1-based page override |
+| `sheets` | schematic pagination (intake asks 单页/多页): 1 = all blocks on one sheet (default); N = blocks fill N sheets in declaration order. Cross-sheet nets join through net ports (merged by name globally) |
 | `parts[].id` | reference designator **and** the part key used by `blocks` / `pcb.place` |
 | `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
 | `parts[].ic` | evidence-sourced IC entry (`STM32F103C8T6`…) — replaces `symbol`+`footprint`, pins map by pin number, unused pins `"NC"` |
@@ -192,6 +199,7 @@ real override rather than a find-and-replace in your head.
 | layout | `node scripts/lint-layout.js --dir <p>` | overlapping symbols, wires through bodies, parts outside their block, off-grid |
 | copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). A board this skill built is always `placed-only` — `D004` (unrouted) and `D006` (no pour) are never judged on it; imported or client-saved boards that carry tracks/pours get the full copper rules |
 | intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations — mistakes *inside* design.json |
+| netlist | `node scripts/netcheck.js --dir <p>` | schematic ↔ PCB netlist mismatch, pin by pin (missing pads, retagged nets, floating pins). `build.js` runs it every build; re-run it standalone after hand edits in the client |
 
 `--json` on any of them gives machine-readable output (every finding carries a
 `fix` field — do what it says). lint and DRC also print a 0–100 score. Rule
@@ -304,9 +312,13 @@ library is **committed data — the skill never queries the network at runtime**
   `rats:` line `build.js` prints (nets still to connect, with pad counts), and
   every `pcb.rules` number you declare is used as the DRC floor when the DRC
   reviews imported or client-saved copper. Differential pairs, length matching
-  and impedance control are client tasks too. Hierarchical multi-sheet
-  navigation and simulation documents are not authored — finish those in the
-  client.
+  and impedance control are client tasks too. Flat multi-sheet authoring IS
+  supported (`sheets: N` + net ports); hierarchical sheet navigation and
+  simulation documents are not — finish those in the client.
+- **The library is committed data — the skill never queries the network at
+  runtime.** No live library lookup: if no IC entry fits a real part, hand-write
+  the inline symbol (gates still run); curating new entries is a maintainer
+  task (`docs/development.md`).
 - **The deliverable is the `.eprj3` project itself — nothing else.** No
   manufacturing artifacts: BOM, pick-and-place / coordinate files, Gerber or
   production archives are out of scope; the EasyEDA client exports those. Do

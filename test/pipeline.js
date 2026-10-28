@@ -138,6 +138,53 @@ function main() {
   ok(/dry run/.test(dryOut), 'dry run says so', dryOut);
   ok(!fs.existsSync(dryDir), 'dry run left no directory behind');
 
+  // ---------------------------------------------- board does not explode
+  // S1/S2 regression (real 57-part session): explicit pcb.place must not
+  // double-translate, and row wraps must recompute the cursor — the board
+  // stays at its declared size instead of 13666×10347 mil.
+  const bigDesign = path.join(TMP, 'big.json');
+  const bigParts = [];
+  for (let i = 0; i < 50; i += 1) {
+    bigParts.push({ id: `C${i + 1}`, symbol: 'CAP', footprint: 'C0402', value: '100nF', pins: { 1: '3V3', 2: 'GND' } });
+  }
+  for (let i = 0; i < 6; i += 1) {
+    bigParts.push({
+      id: `J${i + 1}`,
+      symbol: { name: `HDR20P${i}`, designator: 'J', pins: Array.from({ length: 20 }, (_, k) => `${k + 1}:NC`) },
+      footprint: { auto: 'HDR2R', pins: 20 },
+      pins: Object.fromEntries(Array.from({ length: 20 }, (_, k) => [k + 1, 'NC']))
+    });
+  }
+  bigParts.push({ id: 'JX', symbol: { name: 'HDR2PX', designator: 'J', pins: ['1:3V3', '2:GND'] }, footprint: { auto: 'HDR', pins: 2 }, pins: { 1: '3V3', 2: 'GND' } });
+  const bigBlocks = [];
+  for (let i = 0; i < bigParts.length; i += 7) {
+    bigBlocks.push({ title: `B${i / 7 + 1}`, parts: bigParts.slice(i, i + 7).map((p) => p.id) });
+  }
+  fs.writeFileSync(bigDesign, JSON.stringify({
+    name: 'big-probe', board: { width: 3540, height: 2360 },
+    powers: { '3V3': 'up', GND: 'down' }, blocks: bigBlocks, parts: bigParts,
+    pcb: { place: { JX: [300, 2000, 0] } }
+  }), 'utf8');
+  const bigDir = path.join(TMP, 'big');
+  const bigOut = run('scripts/build.js', ['--design', bigDesign, '--dir', bigDir, '--force', '--report', path.join(TMP, 'big-report.json')], 0);
+  const bigReport = JSON.parse(fs.readFileSync(path.join(TMP, 'big-report.json'), 'utf8'));
+  ok(bigReport.netcheck && bigReport.netcheck.match === true, '57-part probe: netcheck matches (explicit place not double-translated)', JSON.stringify(bigReport.netcheck && bigReport.netcheck.issues.slice(0, 3)));
+  ok(/3540×2360/.test(bigOut), 'board stays at the declared size (wrap cursor recomputed)', (bigOut.match(/board set to [^\n]+/) || ['?'])[0]);
+  // every part inside the board: D003 (edge clearance) would fire otherwise
+  ok(!/D003/.test(bigOut), '57-part probe: no part sticks past the board edge', bigOut);
+
+  // ------------------------------------------------- netcheck CLI contract
+  const nc = JSON.parse(run('scripts/netcheck.js', ['--dir', bigDir, '--json']));
+  ok(nc.match === true, 'netcheck CLI reports match on a clean build', JSON.stringify(nc.issues && nc.issues.slice(0, 3)));
+  const badDir = path.join(TMP, 'bad-nc');
+  run('scripts/build.js', ['--design', design, '--dir', badDir, '--force', '--quiet']);
+  // tamper: rewire one PCB pad net through a direct record patch
+  const pcbFile = path.join(badDir, 'pcb', 'PCB1.epcb2');
+  const tampered = fs.readFileSync(pcbFile, 'utf8').replace(/"padNet":"GND"/, '"padNet":"GNDX"');
+  fs.writeFileSync(pcbFile, tampered, 'utf8');
+  run('scripts/netcheck.js', ['--dir', badDir], 1);
+  ok(true, 'netcheck CLI exits 1 on a tampered pad net');
+
   // --------------------------------------------------- error handling path
   const bad = path.join(TMP, 'bad.json');
   fs.writeFileSync(bad, JSON.stringify({

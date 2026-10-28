@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.16.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.17.0** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -116,7 +116,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **边界**：交付物就是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。自动布线、铺铜、制造文件导出（BOM / 坐标 / Gerber）都不归这个 skill 管——在客户端完成。
 
-**当前版本：1.16.0** · [更新记录](CHANGELOG.md)
+**当前版本：1.17.0** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 

@@ -34,7 +34,8 @@ the printed codes point at the rule that failed.
 | `powers` | object | `{}` | net → `"up"`/`"down"`; those nets become power flags |
 | `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` **annotates** the intended track width (nothing is routed — the DRC uses it as a per-net floor when it reviews imported copper) |
 | `netClasses` | object | `{}` | `{ "POWER": { "width": 30 } }` — groups referenced from `nets` via `{ "class": "POWER" }` (annotation only) |
-| `blocks` | array | one implicit block | `[{ title, parts:[id,…] }]` in signal-flow order; keep 2–8 related parts per block |
+| `blocks` | array | one implicit block | `[{ title, parts:[id,…], desc, sheet }]` in signal-flow order; keep 2–8 related parts per block; `desc` = one-line functional description rendered under the title; `sheet` = 1-based page override |
+| `sheets` | number | `1` | schematic pagination — blocks fill N sheets in declaration order (see Multi-sheet designs) |
 | `parts` | array | **required** | see below |
 | `expect` | object | — | fifth-gate declarations (`decoupling`, `pairs`, `valueRange`, `divider`) — see the end of this file |
 | `layout` | object | see table | grid/tuning knobs |
@@ -229,10 +230,17 @@ copper is acceptable for the moment, pass `--allow-drc` and read the reported
 
 ## Multi-sheet designs
 
-`build.js` creates one sheet. Multi-sheet work is incremental:
+`sheets: N` splits the blocks across N sheets in declaration order
+(~`ceil(blocks/N)` per page); `blocks[].sheet` (1-based) assigns a block
+explicitly. Page 1 keeps the declared sheet name, pages 2+ are `P2`, `P3`….
+The intake asks 单页/多页 and writes this field.
+
+A net whose pins sit on more than one sheet becomes a **cross-sheet net**:
+each sheet gets a stub + net port (`PORT_<NET>`), and the netlist/ERC merge
+port names globally — both sides connect without wires. Manual multi-sheet
+editing still goes through the primitives:
 
 ```bash
-# after a build, add a second sheet through the primitives:
 node scripts/add-symbol.js     --dir <p> --sch Schematic1 --sheet P2 --symbol PORT_IN --x …
 node scripts/add-wire.js       --dir <p> --sch Schematic1 --sheet P2 --from U1.3 --to J1.1
 ```

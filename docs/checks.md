@@ -153,6 +153,21 @@ and through the design contract: `pcb.rules.minDrill` / `minRing` / `minAngle`
 are forwarded by `build.js`, so a design that declares a fab floor is judged by
 its own floor, not the default.
 
+## Netlist — `netcheck.js` (schematic ↔ PCB)
+
+`build.js` runs this comparison after every build and stores it in
+`report.netcheck`; `node scripts/netcheck.js --dir <p> [--json]` re-runs it
+standalone (exit 1 on any mismatch). It diffs both netlists pin by pin:
+
+| Code | Meaning | Fix |
+| --- | --- | --- |
+| `PAD_NET` | schematic pin's PCB pad has no net | re-run `build.js --force` |
+| `NET_MISMATCH` | pad net ≠ schematic net | re-run `build.js --force`; if it persists fix `parts[].pins` |
+| `NO_PAD` / `EXTRA_PAD` | symbol pin without a footprint pad (or the reverse) | align `parts[].pins` with the footprint |
+| `NO_FOOTPRINT` / `NO_SYMBOL` | part on one side only | add the missing half |
+| `PAD_NO_NET` | PCB pad without a net | map every pad in `parts[].pins` |
+| `PIN_FLOATING` | schematic pin connects to nothing | map it (or `"NC"`) |
+
 ## Intent — `intent.js` (the fifth gate)
 
 Catches mistakes that live *inside* design.json, which no connectivity or copper

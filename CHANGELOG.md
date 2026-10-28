@@ -5,6 +5,64 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.17.0] - 2026-10-28
+
+Third round, driven by the real 57-part STM32 session report
+(`D:\下载\ne555-eprj3\SKILL-WORKFLOW-REPORT.md`): the two PCB-placer bugs that
+blew the board up to 347×247 mm are fixed with regressions, multi-sheet
+schematics and block descriptions answer the 单页/多页 intake question, and the
+schematic↔PCB netlist check is an explicit workflow step.
+
+### Fixed
+- **`pcb-plan` board blow-up (S1/S2, report P0-1).** Explicit `pcb.place`
+  extents were translated twice (once at resolve, once in the final required
+  pass → 3540 declared became 6850/13666 mil), and the grid wrap kept the
+  PRE-wrap cursor for `right`/`neededW`, cascading every later part onto one
+  row then one column. Both fixed; probe (62 parts, 6 double-row headers,
+  explicit place, declared 3540×2360) now stays at **3540×2618** with lint 100.
+- **Connectors wrap into further edge rows** when the declared board is too
+  narrow (S3), and **slide past explicit footprints** already sitting in the
+  band instead of stacking on them (the report's USB-C-at-board-edge
+  conflict).
+- **L004 judged the whole part extent** — since 1.16.0 wires attach at the
+  hotspot inside that extent; the rule now tests the symbol BODY rectangle.
+
+### Added
+- **`netcheck.js` — schematic ↔ PCB netlist comparison, in the workflow**
+  (user request): `build.js` runs it after every build (verdict line +
+  `report.netcheck`), and `node scripts/netcheck.js --dir <p> [--json]` re-runs
+  it standalone (exit 1 on mismatch) — including after hand edits in the
+  client. Codes PAD_NET / NET_MISMATCH / NO_PAD / EXTRA_PAD / NO_FOOTPRINT /
+  NO_SYMBOL / PAD_NO_NET / PIN_FLOATING, each with a fix line
+  (`docs/checks.md`).
+- **Multi-sheet schematics + the 单页/多页 intake question.** `sheets: N`
+  fills N sheets in declaration order; `blocks[].sheet` overrides; the intake
+  asks (default 单页). Cross-sheet nets become stubs + net ports
+  (`PORT_<NET>` per sheet), merged by name globally; ERC exempts cross-sheet
+  nets from the per-sheet single-pin rule. Probe: 2 sheets, LED_NET joins
+  U1.3 (P1) ↔ R1.1 (P2), ERC 0 errors.
+- **Block functional descriptions**: `blocks[].desc` renders under the block
+  title and shows in `--plan` (模块 POWER（3V3 LDO 电源）@P1 …). The intake/AI
+  asks for one per module.
+- **`--plan` prints the rehearsed board** (S7): 板框（演练） W×H with a ⚠ when
+  it exceeds the declared size by 1.5× — the plan gate can no longer hide a
+  board blow-up.
+- **Rebuild-loop guidance** (S8): SKILL.md now tells agents to iterate with
+  `--quiet --report build.json` instead of re-reading verbose output.
+- **Regressions (S10)**: pipeline grows 56 checks (+9) — 57-part probe asserts
+  the board stays at its declared size, netcheck matches with explicit
+  places, and the CLI exits 1 on a tampered pad net.
+
+### Deferred (report P0-2/3/4, P1-6/7 — next rounds)
+`floorplan.js`/`make-board.js` one-shot workflow, pin planner, board-level
+recipes, CH340C/LM386/USB-C-16P library entries (each needs an official-library
+sample per the evidence policy).
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21 (lint/drc 100). Multi-sheet probe and 57-part probe build clean;
+  blink example byte-identical under EPRJ3_DETERMINISTIC.
+
 ## [1.16.0] - 2026-10-28
 
 **Pin-attachment semantics fixed — the report that started it: "生成的原理图导

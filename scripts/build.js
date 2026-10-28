@@ -229,6 +229,27 @@ function placePowerFlag(em, project, flag, entry) {
   em.t = block.nextTicket + 1;
 }
 
+// net port for cross-sheet nets — same placement model as power flags: the
+// component's pin sits at its origin, the wire from the part's hotspot lands
+// exactly there, and the net name lives in the component's ATTR records
+function placeNetPort(em, project, port, entry) {
+  em.embed([
+    E.rewriteDocHeads(entry.portSymbolDoc, project.client),
+    E.rewriteDocHeads(entry.portDeviceDoc, project.client)
+  ]);
+  const block = E.portComponentBlock({
+    compId: E.randId(),
+    x: port.x, y: port.y,
+    zIndex: em.nextZ(),
+    symbolUuid: entry.symbolUuid,
+    deviceUuid: entry.deviceUuid,
+    net: port.net,
+    ticketBase: em.nextTicket() - 1
+  });
+  em.addLines(block.lines);
+  em.t = block.nextTicket + 1;
+}
+
 function placePcbComponent(em, project, design, pl, lib) {
   const part = pl.part;
   const sym = lib.symbolOf(part);
@@ -309,6 +330,8 @@ function main() {
     process.on('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } });
   }
   const design = D.readDesign(path.resolve(opts.design));
+  const declaredW = design.board.width;   // declared size, for the --plan blow-up check
+  const declaredH = design.board.height;
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
   // Strategy: the skill NEVER lays copper — no auto routing, no pours, no flags
   // to turn them on. The deliverable is footprints placed with pad-net links
@@ -327,11 +350,17 @@ function main() {
   }
   const project = E.Project.create(dir, design.name);
   project.ensureBoard();
-  const sheetDoc = project.ensureSheetDocument(design.schematic, design.sheet);
+  // one sheet document per page: page 1 keeps the declared sheet name,
+  // pages 2+ are P2/P3/…
+  const sheetDocs = new Map();
+  for (let s = 1; s <= design.sheets; s += 1) {
+    sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`));
+  }
   const pcbDoc = project.ensurePcbDocument(design.pcb, {
     outline: E.rectPath(0, 0, design.board.width, design.board.height)
   });
-  log(`created ${design.name} at ${dir} (board ${design.board.width}×${design.board.height} mil)`);
+  log(`created ${design.name} at ${dir} (board ${design.board.width}×${design.board.height} mil)`
+    + (design.sheets > 1 ? `, ${design.sheets} schematic sheets` : ''));
 
   // ------------------------------------------------------------ library
   const lib = makeLibrary(project, design);
@@ -356,8 +385,8 @@ function main() {
     const widths = Object.entries(design.netWidths || {});
     if (widths.length) console.log(`  线宽  ${widths.map(([n, w]) => `${n}=${w}mil`).join(' ')}`);
     if (Object.keys(rules).length) console.log(`  规则  ${Object.entries(rules).map(([k, v]) => `${k}=${v}`).join(' ')}`);
-    console.log(`  规模  ${design.parts.length} parts · ${nets.length} nets · ${(design.blocks || []).length} blocks`);
-    console.log(`  模块  ${(design.blocks || []).map((b) => b.title).join(' | ') || '(未分块)'}`);
+    console.log(`  规模  ${design.parts.length} parts · ${nets.length} nets · ${(design.blocks || []).length} blocks · ${design.sheets} 原理图页`);
+    console.log(`  模块  ${(design.blocks || []).map((b) => `${b.title}${b.desc ? `（${b.desc}）` : ''}@P${b.sheet}`).join(' | ') || '(未分块)'}`);
     console.log(`  网络  ${nets.slice(0, 18).join(' ')}${nets.length > 18 ? ' …' : ''}`);
     if (design.expect) {
       const keys = Object.entries(design.expect).filter(([, v]) => v !== undefined && (!Array.isArray(v) || v.length));
@@ -371,10 +400,16 @@ function main() {
   // ------------------------------------------------------------ schematic
   const { placements, blocks } = D.layoutSchematic(design, lib);
   const routed = R.routeSchematic(design, placements);
-  const em = new Emitter(sheetDoc.file);
 
-  // block frames first (lowest z, so components draw on top)
+  // one emitter per sheet; blocks/components/flags/ports/wires land on the
+  // sheet their block was assigned to
+  const emitters = new Map();
+  for (let s = 1; s <= design.sheets; s += 1) emitters.set(s, new Emitter(sheetDocs.get(s).file));
+
+  // block frames first (lowest z, so components draw on top) + the block's
+  // one-line functional description under its title
   for (const b of blocks) {
+    const em = emitters.get(b.sheet);
     em.addLines([E.schRectLine({
       x1: b.rect.x1, y1: b.rect.y1, x2: b.rect.x2, y2: b.rect.y2,
       zIndex: em.nextZ(), ticketBase: em.nextTicket()
@@ -384,9 +419,16 @@ function main() {
       value: b.title, fontSize: 14,
       zIndex: em.nextZ(), ticketBase: em.nextTicket()
     })]);
+    if (b.desc) {
+      em.addLines([E.schTextLine({
+        x: b.rect.x1 + 10, y: b.rect.y2 - 48,
+        value: b.desc, fontSize: 9,
+        zIndex: em.nextZ(), ticketBase: em.nextTicket()
+      })]);
+    }
   }
 
-  for (const pl of placements) placeSchematicComponent(em, project, pl, lib);
+  for (const pl of placements) placeSchematicComponent(emitters.get(pl.sheet || 1), project, pl, lib);
 
   const powerEntries = new Map();
   for (const flag of routed.flags) {
@@ -395,10 +437,23 @@ function main() {
       project.saveLibrary(entry);
       powerEntries.set(flag.net, entry);
     }
-    placePowerFlag(em, project, flag, powerEntries.get(flag.net));
+    placePowerFlag(emitters.get(flag.sheet || 1), project, flag, powerEntries.get(flag.net));
+  }
+
+  // cross-sheet nets: a net port on each sheet it touches (netlist merges
+  // port names globally, so both sides connect without wires)
+  const portEntries = new Map();
+  for (const port of routed.ports) {
+    if (!portEntries.has(port.net)) {
+      const entry = require('./lib/entries').buildPortEntry(project, port.net, `PORT_${port.net}`);
+      project.saveLibrary(entry);
+      portEntries.set(port.net, entry);
+    }
+    placeNetPort(emitters.get(port.sheet || 1), project, port, portEntries.get(port.net));
   }
 
   for (const w of routed.wires) {
+    const em = emitters.get(w.sheet || 1);
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
       net: w.net,
@@ -409,9 +464,10 @@ function main() {
     em.t = block.nextTicket + 1;
   }
 
-  em.flush();
+  for (const em of emitters.values()) em.flush();
   project.save();
-  log(`schematic: ${placements.length} parts in ${blocks.length} blocks, ${routed.stats.segments} wire segments, ${routed.stats.flags} power flags`);
+  log(`schematic: ${placements.length} parts in ${blocks.length} blocks across ${design.sheets} sheet(s)`
+    + `, ${routed.stats.segments} wire segments, ${routed.stats.flags} power flags, ${routed.stats.ports} net ports`);
 
   // ------------------------------------------------------------ pcb
   const pcbParts = [];
@@ -501,6 +557,17 @@ function main() {
   const erc = runErc(dir, { design, pcb: doPcb });
   report.erc = erc;
 
+  // Schematic ↔ PCB netlist comparison (netcheck): independent pin-by-pin
+  // diff of both netlists — the explicit cross-check that the two documents
+  // agree. Full detail in report.netcheck; `scripts/netcheck.js` re-runs it
+  // standalone (e.g. after hand edits in the client).
+  let netcheck = null;
+  if (doPcb) {
+    const NC = require('./lib/netcheck');
+    netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir));
+    report.netcheck = { match: netcheck.match, summary: netcheck.summary, issues: netcheck.issues };
+  }
+
   // Fifth gate: design intent (polarity, decoupling, declared pairs, ranges).
   // It fails the build like the others; --allow-intent skips it. Polarity
   // marks are checked even without an `expect` block — that is the promise in
@@ -563,6 +630,11 @@ function main() {
       for (const f of drc.findings) console.log(`  drc ${f.code}: ${f.msg}${f.fix ? `\n      fix: ${f.fix}` : ''}`);
       console.log(`drc score ${drc.score}/100 (${drc.errors} error(s), ${drc.warnings} warning(s))`);
     }
+    if (netcheck) {
+      console.log(netcheck.match
+        ? `netcheck: OK — schematic ↔ PCB netlists match (${netcheck.summary.schematic.pins} pins)`
+        : `netcheck: ${netcheck.issues.length} mismatch(es) — run scripts/netcheck.js --dir ${dir} for the full diff`);
+    }
   }
   if (opts.report) {
     fs.writeFileSync(path.resolve(opts.report), JSON.stringify(report, null, 2), 'utf8');
@@ -598,6 +670,15 @@ function main() {
       : `${design.name}.eprj3 at ${dir}`;
   console.log(`${where} — ${placements.length} components, ${routed.stats.segments} wire segments, `
     + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100 (placed-only)` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
+  // --plan: show the REHEARSED board, not the declared one — a plan that
+  // hides a board blow-up (S7) defeats its own purpose
+  if (opts.plan) {
+    const blown = design.boardDeclared
+      && (design.board.width > declaredW * 1.5 || design.board.height > declaredH * 1.5);
+    console.log(`  板框（演练）  ${design.board.width}×${design.board.height} mil`
+      + (design.boardDeclared ? `（声明 ${declaredW}×${declaredH}）` : '（自动适配）')
+      + (blown ? ' — ⚠ 超出声明 1.5×，请检查 pcb.place 或加大板框' : ''));
+  }
 }
 
 main();
