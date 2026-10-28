@@ -837,7 +837,7 @@ function powerComponentBlock(v) {
 
   line('COMPONENT', {
     partId: PART_ID,
-    x: v.x, y: v.y, rotation: 0, isMirror: false,
+    x: v.x, y: v.y, rotation: v.rotation || 0, isMirror: false,
     attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
     zIndex: v.zIndex
   }, v.compId);

@@ -1,0 +1,105 @@
+{
+  "name": "esp32-s31",
+  "owner_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "creator_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "created_at": "2026-10-28 20:44:45",
+  "updated_at": "2026-10-28 20:44:45",
+  "modifier_uuid": "52159e623a734559a92667bdcb3b3e5d",
+  "content": "",
+  "archive": false,
+  "cbb_project": 0,
+  "thumb": "",
+  "ticket": 1,
+  "g_ticket": 1,
+  "boards": [],
+  "block_symbol_attrs_groups": {},
+  "default_sheet": "",
+  "branch_uuid": "",
+  "pcb_count": 0,
+  "format": "folder",
+  "config": "{\"type\":\"DOCHEAD\",\"ticket\":971713}||{\"docType\":\"BOARD\",\"client\":\"442a96ea2d9163ff\",\"uuid\":\"04b842c9c90f2f3f\",\"updateTime\":1789465365113,\"version\":\"1789465365113\",\"editVersion\":\"3.2.186\",\"user\":{\"uuid\":\"97a37ff62a58ff6f\"}}|\n{\"type\":\"META\",\"ticket\":971713,\"id\":\"META\",\"firstTicket\":953989}||{\"title\":\"V0.4（上一版修正版本）\",\"zIndex\":2}|\n{\"type\":\"META_MODIFY\",\"ticket\":971714,\"id\":\"META_MODIFY\",\"firstTicket\":970354}||{\"updateTime\":1789465365168}",
+  "profile": {
+    "boards": {
+      "04b842c9c90f2f3f": {
+        "uuid": "04b842c9c90f2f3f",
+        "title": "esp32-s31",
+        "zIndex": 2
+      }
+    },
+    "schematics": {
+      "1dabac86407ad8c6": {
+        "uuid": "1dabac86407ad8c6",
+        "name": "Schematic2",
+        "board": "04b842c9c90f2f3f",
+        "source": "",
+        "version": "1789465632166",
+        "updateTime": 1789465632166
+      }
+    },
+    "sheets": {
+      "8bbe00dbce06c61a": {
+        "uuid": "8bbe00dbce06c61a",
+        "title": "AUDIO",
+        "schematic_uuid": "1dabac86407ad8c6",
+        "zIndex": 2.25,
+        "source": "",
+        "version": "1789465525005",
+        "updateTime": 1789465525005
+      },
+      "bdba0632e17e06f8": {
+        "uuid": "bdba0632e17e06f8",
+        "title": "DEVICE",
+        "schematic_uuid": "1dabac86407ad8c6",
+        "zIndex": 3,
+        "source": "",
+        "version": "1789462771391",
+        "updateTime": 1789462771391
+      },
+      "d1c3012c9e8655a4": {
+        "uuid": "d1c3012c9e8655a4",
+        "title": "ESP32-S31",
+        "schematic_uuid": "1dabac86407ad8c6",
+        "zIndex": 1.5,
+        "source": "",
+        "version": "1789465632166",
+        "updateTime": 1789465632166
+      },
+      "41a0282602972c42": {
+        "uuid": "41a0282602972c42",
+        "title": "OVERVIEW",
+        "schematic_uuid": "1dabac86407ad8c6",
+        "zIndex": 0.5,
+        "source": "",
+        "version": "1789464913703",
+        "updateTime": 1789464913703
+      },
+      "98919606fea99c70": {
+        "uuid": "98919606fea99c70",
+        "title": "POWER",
+        "schematic_uuid": "1dabac86407ad8c6",
+        "zIndex": 3.5,
+        "source": "",
+        "version": "1789462782570",
+        "updateTime": 1789462782570
+      }
+    },
+    "pcbs": {
+      "5997b37ea4c65fd9": {
+        "uuid": "5997b37ea4c65fd9",
+        "title": "PCB2",
+        "board": "04b842c9c90f2f3f",
+        "parent_uuid": "",
+        "source": "",
+        "version": "1789466150258",
+        "updateTime": 1789466150258
+      }
+    },
+    "panels": {},
+    "blockSymbols": {},
+    "owner": {
+      "uuid": "52159e623a734559a92667bdcb3b3e5d"
+    },
+    "simSchematics": {},
+    "simulations": {}
+  }
+}

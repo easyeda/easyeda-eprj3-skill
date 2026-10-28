@@ -255,10 +255,17 @@ function sheetNetlist(file) {
     merged.get(n.name).flags += n.flags;
   }
 
+  // a floating pin whose key landed in a named group (e.g. a net port placed
+  // directly on the pin) is NOT floating — re-evaluate after naming
+  const namedUnconnected = unconnected.filter((u) => {
+    const root = uf.find(key(u.x, u.y));
+    return !rootNet.has(root);
+  });
+
   return {
     components,
     nets: [...merged.values()].sort((a, b) => a.name.localeCompare(b.name)),
-    unconnected,
+    unconnected: namedUnconnected,
     pinCount: pinNodes.length,
     wireCount: segments.length
   };

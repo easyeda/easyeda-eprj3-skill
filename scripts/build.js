@@ -445,10 +445,8 @@ function main() {
   // one-line functional description under its title
   for (const b of blocks) {
     const em = emitters.get(b.sheet);
-    em.addLines([E.schRectLine({
-      x1: b.rect.x1, y1: b.rect.y1, x2: b.rect.x2, y2: b.rect.y2,
-      zIndex: em.nextZ(), ticketBase: em.nextTicket()
-    })]);
+    // no module RECT frames — the human style groups by whitespace and the
+    // title line, boxes read as clutter
     em.addLines([E.schTextLine({
       x: b.rect.x1 + 10, y: b.rect.y2 - 30,
       value: b.title, fontSize: 14,

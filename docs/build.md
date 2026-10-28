@@ -42,6 +42,7 @@ the printed codes point at the rule that failed.
 | `expect` | object | — | fifth-gate declarations (`decoupling`, `pairs`, `valueRange`, `divider`) — see the end of this file |
 | `layout` | object | see table | grid/tuning knobs |
 | `frame` | object | `{}` | `{ titleBlock: true }` 显示明细表（默认隐藏）; the drawing frame auto-sizes around the packed blocks |
+| — | — | — | cross-block nets encode as **net-port connectors** (short stub + PORT per pin, merged by name) — the human pattern; only same-block nets draw wires |
 | `pcb` | object or `false` | `{}` | `false` skips the PCB entirely |
 
 `layout` knobs: `cols` (max columns per block, default 3), `cellW` (260),

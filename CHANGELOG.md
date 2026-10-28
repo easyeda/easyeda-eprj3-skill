@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.21.0] - 2026-10-28
+
+Seventh round, from the user's verdict on drawing quality and the hand-drawn
+`examples/esp32-s31` sample as ground truth. The decisive observation: **the
+human never routes long wires** — every cross-module signal is a short stub +
+named connector pair placed in tight columns (10 mil spacing), power flags are
+local and rotated to the pin direction, modules are grouped by whitespace and
+title lines without RECT boxes, and each sheet uses a custom-sized frame.
+
+### Added
+- **Connector encoding for cross-block nets** (`sch-route`): any net spanning
+  >1 block or >500 mil is encoded per-pin as an adaptive short stub (40→10)
+  + named net port — long routed wires no longer exist. Only short
+  same-block nets draw visible wires. Same-sheet ports flow through
+  `routeNet → routeSchematic → build` (they were silently dropped before).
+- **Flag/port collision registries**: connector ports and power flags refuse
+  positions within 34/30 mil of a foreign port, on top of the wire-contact
+  rules.
+- **`netlist` unions co-located pins AND re-evaluates floating pins against
+  named groups after UF naming** — a port placed directly on a pin (last
+  resort) stays electrically sound instead of reading as E001.
+
+### Fixed
+- The connector last-resort no longer emits a jog that can touch a foreign
+  wire: the port sits directly on the pin hotspot (clean by construction).
+- All `routeNet` returns carry `ports` (the power branch and both
+  label-encoding branches dropped them, corrupting same-sheet port nets).
+- `layoutSchematic` writes `block.sheet` AFTER pagination; `rc-highpass` and
+  the pipeline's pin-reference case route clean again at tight density.
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21 (lint/drc 100). Zero cross-net wire contacts on blink,
+  rc-highpass, the two-sheet and the 62-part probes (programmatic scan).
+
 ## [1.20.0] - 2026-10-28
 
 Sixth round: drawing-frame quality — no 明细表 by default, and the drawing

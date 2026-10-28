@@ -42,7 +42,7 @@ const DEFAULTS = {
   sheet: 'P1',
   pcb: 'PCB1',
   board: { width: 1600, height: 1000 },
-  layout: { cols: 3, cellW: 120, cellH: 120, blockGapX: 150, blockGapY: 130, margin: 80 }
+  layout: { cols: 3, cellW: 90, cellH: 80, blockGapX: 110, blockGapY: 100, margin: 70 }
 };
 
 const BLOCK_TITLE_H = 60;
@@ -492,8 +492,8 @@ function layoutSchematic(d, lib) {
     // shift + forward reach + gutter. Rows are TOP-aligned (py anchors every
     // part's extent top to the row line), so height alone governs rowPitch.
     const colShift = colBack.map((b) => Math.max(0, -b));
-    const colPitch = colBack.map((b, c) => grid(Math.max(L.cellW, colShift[c] + colFwd[c] + 100)));
-    const rowPitch = rowBack.map((b, r) => grid(Math.max(L.cellH, (rowFwd[r] - b) + 100)));
+    const colPitch = colBack.map((b, c) => grid(Math.max(L.cellW, colShift[c] + colFwd[c] + 30)));
+    const rowPitch = rowBack.map((b, r) => grid(Math.max(L.cellH, (rowFwd[r] - b) + 30)));
     const blockW = L.margin * 2 + colPitch.reduce((a, b) => a + b, 0);
 
     // wrap before placing: a block wider than the whole frame goes on its own

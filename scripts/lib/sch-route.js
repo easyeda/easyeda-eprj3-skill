@@ -362,6 +362,7 @@ function routeNet(net, nodes, ctx) {
   const wires = [];
   const flags = [];
   const labels = [];
+  const ports = [];
   const issues = [];
   const obstacles = ctx.obstacles;
   const used = ctx.usedPoints;
@@ -417,15 +418,58 @@ function routeNet(net, nodes, ctx) {
         commitSegs([wire], net, used, committed);
       }
     }
-    return { wires, flags, labels, issues };
+    return { wires, flags, labels, ports, issues };
   }
 
-  if (nodes.length === 1) {
+  // ------------------------------------------------- connector encoding
+  // The human pattern (hand-drawn esp32-s31 sample): signals that cross module
+  // boundaries are NEVER routed as long wires — every pin gets a short stub +
+  // a named net-port connector, and the netlist merges by name. Long wires are
+  // the source of every 弯绕/交叉 problem; only SHORT local same-block nets
+  // deserve visible wires.
+  const blocksOf = new Set(nodes.map((n) => n.block));
+  const xs = nodes.map((n) => n.tip.x), ys = nodes.map((n) => n.tip.y);
+  const span = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
+  if (blocksOf.size > 1 || span > 500) {
+    for (const node of nodes) {
+      const foreign = committed.filter((c) => c.net !== net);
+      let chosen = null;
+      for (const len of [STUB, 30, 20, 10]) {
+        const seg = {
+          x1: node.tip.x, y1: node.tip.y,
+          x2: G.round(node.tip.x + node.dir.x * len),
+          y2: G.round(node.tip.y + node.dir.y * len)
+        };
+        const pos = { x: seg.x2, y: seg.y2 };
+        const box = G.rect(pos.x - 14, pos.y - 12, pos.x + 14, pos.y + 12);
+        const wireHit = foreign.some((c) => G.segsIntersect(seg, c.seg, true))
+          || (used && segPointKeys(seg).some((key) => used.has(key)));
+        const portHit = (ctx.portPoints || []).some((f) => f.net !== net
+          && (Math.hypot(f.x - pos.x, f.y - pos.y) < 34 || G.segsIntersect(seg, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
+        const partHit = overlapsAny(box, ctx.obstacles, new Set([node.part]));
+        if (!wireHit && !portHit && !partHit) { chosen = seg; break; }
+      }
+      if (!chosen) {
+        // last resort: the port sits directly ON the hotspot — the netlist
+        // unions co-located pins, so this stays electrically clean without a
+        // wire that could touch a foreign net
+        chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+      }
+      if (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) {
+        wires.push([chosen]);
+        commitSegs([chosen], net, used, committed);
+      }
+      ports.push({ net, x: chosen.x2, y: chosen.y2, sheet: node.sheet || 1 });
+    }
+    return { wires, flags, labels, ports, issues };
+  }
+
+    if (nodes.length === 1) {
     // NC/DNC nets are the deliberate no-connect convention — encode silently.
     const isNC = /^(NC|DNC\d*)$/i.test(net);
     const enc = labelEncoding(nodes, net, issues, isNC ? null : null, ctx);
     enc.wires.forEach((w) => commitSegs(w, net, used, committed));
-    return { wires: enc.wires, flags, labels: enc.labels, issues };
+    return { wires: enc.wires, flags, labels: enc.labels, ports, issues };
   }
 
   if (/^(NC|DNC\d*)$/i.test(net)) {
@@ -434,7 +478,7 @@ function routeNet(net, nodes, ctx) {
     // Each pin gets its own stub + NC label instead.
     const enc = labelEncoding(nodes, net, issues, null);
     enc.wires.forEach((w) => commitSegs(w, net, used, committed));
-    return { wires: enc.wires, flags, labels: enc.labels, issues };
+    return { wires: enc.wires, flags, labels: enc.labels, ports, issues };
   }
 
   const edges = manhattanMst(nodes);
@@ -461,7 +505,7 @@ function routeNet(net, nodes, ctx) {
     wires.push(segs);
     commitSegs(segs, net, used, committed);
   }
-  return { wires, flags, labels, issues };
+  return { wires, flags, labels, ports, issues };
 }
 
 /**
@@ -515,6 +559,7 @@ function routeSchematic(d, placements) {
         if (clean.length) out.wires.push({ net, sheet, segs: clean });
       }
       out.flags.push(...r.flags.map((f) => Object.assign({ sheet }, f)));
+      out.ports.push(...r.ports.map((p) => Object.assign({ sheet }, p)));
       out.labels.push(...r.labels);
       out.issues.push(...r.issues);
     }

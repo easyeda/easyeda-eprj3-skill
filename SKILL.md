@@ -317,6 +317,7 @@ library is **committed data — the skill never queries the network at runtime**
   `validate.js` first, then compare with [`examples/blink`](examples/blink).
   Set `EPRJ3_DETERMINISTIC=1` to build byte-identical projects for golden-file
   diffs.
+- **Cross-module signals are net-port connectors, not wires** (the human pattern from the hand-drawn esp32-s31 sample): any net spanning >1 block or >500 mil is encoded as short stubs + named net ports per pin — long routed wires do not exist. Only short same-block nets get visible wires.
 - No routing, no copper pour — by design. The skill never writes tracks, vias
   or pours; copper is done by a human in the EasyEDA client. The handoff is the
   `rats:` line `build.js` prints (nets still to connect, with pad counts), and
