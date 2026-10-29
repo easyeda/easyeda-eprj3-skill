@@ -5,6 +5,63 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.30.0] - 2026-10-29
+
+**Netlist audit — an independent reviewer for every generated netlist.**
+
+The build's own `E003` compares the recovered netlist with design.json, but the
+agent that wrote the design is the agent reading that verdict: a mistake shared
+by both sides is invisible. Every build now ends by handing the netlist to a
+reviewer that has **none of the author's context**.
+
+### Added
+- [`lib/audit.js`](scripts/lib/audit.js) +
+  `scripts/netlist.js --design <design.json> --audit <out.json>` (or
+  `--gen <board.gen.js>` for generator-authored designs, via the new
+  `design.readSource`): a self-contained package
+  (`schema: eprj3-netlist-audit/1`) with the two views side by side — `spec`
+  (pin→net declared in design.json) and `built` (netlist recovered from the
+  schematic) — plus `mechanical` (net-by-net diff, pins on two nets, vanished
+  pins, NC violations, netcheck verdict, advisory suspicions), the `rubric` the
+  reviewer must run, and the `verdictSchema` it must return. Always exits 0 —
+  it reports, it does not judge.
+- `make-board.js` writes that package automatically and puts
+  `audit: {ok, file}` in the digest, so the one-shot path ends with the exact
+  file to hand the reviewer.
+- SKILL.md **Netlist audit** step: the copy-paste task for a fresh sub-agent,
+  the 3-round repair loop (apply `fix:` → rebuild → regenerate → **new**
+  reviewer; never follow up with the old one), and the fallback when the host
+  has no sub-agent capability.
+- `netlist.js --design` without `--audit` prints the spec↔built diff as a table
+  (fast debugging of "which pin ended up on the wrong net").
+- `test/pipeline.js`: clean package, a skewed design fails and names the moved
+  pin, a package built without `--design` still audits built + netcheck, and a
+  two-sheet build (per-page split + cross-sheet merge + netcheck).
+
+### Fixed
+- **Multi-sheet builds** (`sheets: N`) died on every design — blink on two
+  pages included — with "cross-net contact(s) … at every density", and the
+  no-contact case still failed because the layout was judged `invalid`. Sheets
+  are independent coordinate spaces (separate `.esch2` documents), but three
+  places compared objects globally:
+  - `countCrossNetContacts` paired segments, ports and flags across pages →
+    phantom contacts that no density retry could remove (4 for layered, 8 for
+    shelf, identical at every scale).
+  - `quality.evaluate` paired parts↔wires across pages → phantom `through`
+    hits flipped every candidate to `valid: false`; the error then printed
+    "0 cross-net contact(s)" and failed anyway.
+  - the cross-sheet port branch tested a **per-sheet** node set, so
+    `onSheets.size > 1` could never be true: cross-sheet pins fell through to
+    single-sheet routing and got labels instead of net ports.
+  Fix: contacts and quality only pair objects on the same `sheet` (the parts
+  handed to `evaluate` now carry it); cross-sheet detection collects nodes over
+  the whole design, while power nets keep their flags on every page. Single-sheet
+  layouts are unaffected: every object is on sheet 1, so the pairings are
+  identical.
+
+### Verified
+- smoke 133/133 · pipeline 83/83 · dfm 97/97 · corpus 110/110 · depcheck 0.
+
 ## [1.29.0] - 2026-10-29
 
 **Schematic layout & routing upgrade, and preview images removed.**

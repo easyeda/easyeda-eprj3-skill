@@ -168,6 +168,33 @@ standalone (exit 1 on any mismatch). It diffs both netlists pin by pin:
 | `PAD_NO_NET` | PCB pad without a net | map every pad in `parts[].pins` |
 | `PIN_FLOATING` | schematic pin connects to nothing | map it (or `"NC"`) |
 
+## Netlist audit — `netlist.js --audit` (independent review)
+
+`netcheck.js` compares the schematic with the PCB — both produced by this
+skill, so a mistake present on both sides matches perfectly. The audit closes
+that hole by handing a reviewer **two independent views** of the same design:
+
+- **spec** — the pin→net map declared in design.json (what was asked for)
+- **built** — the netlist recovered from the generated schematic (what exists)
+
+```bash
+node scripts/netlist.js --dir <p> --design design.json --audit <out.json>
+```
+
+It writes a self-contained package (`schema: eprj3-netlist-audit/1`) holding
+both views, `mechanical` (the tool's diff, the netcheck verdict and advisory
+`suspicions`), the `rubric` to run and the required `verdictSchema`. It always
+exits 0 — it reports, it does not judge. A fresh sub-agent with no inherited
+context runs the rubric and returns `{ok, summary, findings[]}`; the exact loop
+lives in [SKILL.md § Netlist audit](../SKILL.md#netlist-audit--a-fresh-reviewer-not-you).
+
+`mechanical.ok` is true only when spec and built agree net by net, no pin sits
+on two nets, no declared pin has vanished from the symbol, NC declarations are
+honoured on both sides, no pin is floating, and `netcheck` matches. The
+reviewer adds judgement on top — single-pin nets, auto-named `N$` nets, supply
+names drawn without a power flag, a part whose pins all sit on one net — as
+`warn` findings that never trigger a rebuild by themselves.
+
 ## Intent — `intent.js` (the fifth gate)
 
 Catches mistakes that live *inside* design.json, which no connectivity or copper

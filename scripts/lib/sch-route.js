@@ -688,6 +688,15 @@ function routeSchematic(d, placements) {
   // on MORE THAN ONE sheet is a cross-sheet net — each sheet gets its own
   // stub + net port (the netlist merges ports by name globally).
   const sheets = [...new Set(placements.map((p) => p.sheet || 1))].sort((a, b) => a - b);
+  // A net is cross-sheet when its pins are not all on one page. This must be
+  // computed over the WHOLE design: collectNodes() below is called per sheet
+  // and can only ever see one page, so a per-sheet `onSheets.size > 1` test
+  // never fires (it was dead code, and cross-sheet pins silently fell through
+  // to single-sheet routing).
+  const crossSheet = new Set();
+  for (const [net, nodes] of collectNodes(d, placements)) {
+    if (new Set(nodes.map((n) => n.sheet || 1)).size > 1) crossSheet.add(net);
+  }
   let totalNets = 0;
   for (const sheet of sheets) {
     const pls = placements.filter((p) => (p.sheet || 1) === sheet);
@@ -701,9 +710,10 @@ function routeSchematic(d, placements) {
     const nets = collectNodes(d, pls);
     totalNets += nets.size;
     for (const [net, nodes] of nets) {
-      const onSheets = new Set(nodes.map((n) => n.sheet || 1));
-      if (onSheets.size > 1) {
-        // cross-sheet: every node gets its own stub + net port
+      // Power nets keep their flags on every sheet (routeNet handles them) —
+      // turning GND into a port would drop the flag convention for nothing.
+      if (crossSheet.has(net) && !ctx.powerStyle(net)) {
+        // cross-sheet: every node on THIS sheet gets its own stub + net port
         for (const node of nodes) {
           const p = stubPoint(node);
           if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
@@ -753,23 +763,31 @@ function routeSchematic(d, placements) {
  * nets' stubs meet).
  */
 function countCrossNetContacts(routed) {
+  // Sheets are independent coordinate spaces (separate .esch2 documents): a
+  // segment on P1 can never merge with a segment on P2, however their global
+  // coordinates overlap. Comparing them would reject every multi-sheet design.
   const segs = [];
-  for (const w of routed.wires || []) for (const s of w.segs || []) segs.push({ net: w.net, s });
+  for (const w of routed.wires || []) {
+    for (const s of w.segs || []) segs.push({ net: w.net, sheet: w.sheet || 1, s });
+  }
   let n = 0;
   for (let i = 0; i < segs.length; i += 1) {
     for (let j = i + 1; j < segs.length; j += 1) {
+      if (segs[i].sheet !== segs[j].sheet) continue;
       if (segs[i].net === segs[j].net) continue;
       if (G.segsIntersect(segs[i].s, segs[j].s, true)) n += 1;
     }
   }
   for (const p of routed.ports || []) {
     for (const sg of segs) {
+      if (sg.sheet !== (p.sheet || 1)) continue;
       if (sg.net === p.net) continue;
       if (G.pointSegDist({ x: p.x, y: p.y }, sg.s) < 0.01) n += 1;
     }
   }
   for (const f of routed.flags || []) {
     for (const sg of segs) {
+      if (sg.sheet !== (f.sheet || 1)) continue;
       if (sg.net === f.net) continue;
       if (G.pointSegDist({ x: f.x, y: f.y }, sg.s) < 0.01) n += 1;
     }

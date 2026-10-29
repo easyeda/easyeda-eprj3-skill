@@ -5,9 +5,10 @@
  *
  *   node scripts/make-board.js --design <design.json> --dir <project> [--report build.json] [--force]
  *
- * Pipeline: build (schematic + placement + 5 gates + netcheck) → a brief
- * JSON/one-line digest. The AI writes only the design file and reads back the
- * report — no temp scripts, no verbose build logs on every iteration.
+ * Pipeline: build (schematic + placement + 5 gates + netcheck) → netlist audit
+ * package (the spec↔built view a fresh reviewer reads) → a brief JSON/one-line
+ * digest. The AI writes only the design file and reads back the report — no
+ * temp scripts, no verbose build logs on every iteration.
  */
 const fs = require('fs');
 const path = require('path');
@@ -43,7 +44,26 @@ function main() {
     process.stderr.write(build.stderr || '');
   }
 
-  // 2. digest: the few things an AI actually needs
+  // 2. netlist audit package — the self-contained spec↔built view a FRESH
+  //    reviewer reads (SKILL.md "Netlist audit"). Written after the build's own
+  //    .tmp cleanup so it survives until the reviewer has read it.
+  let audit = null;
+  if (build.status === 0 && (opts.design || opts.gen)) {
+    try {
+      const D = require('./lib/design');
+      const A = require('./lib/audit');
+      const design = D.readSource(opts.gen || opts.design, !!opts.gen);
+      const pkg = A.buildPackage(dir, design);
+      const file = path.join(dir, '.tmp', 'netlist-audit.json');
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+      audit = { ok: pkg.mechanical.ok, file };
+    } catch (e) {
+      audit = { ok: null, file: null, error: e.message };
+    }
+  }
+
+  // 3. digest: the few things an AI actually needs
   let report = null;
   try { report = JSON.parse(fs.readFileSync(reportFile, 'utf8')); } catch { /* build failed earlier */ }
   const actions = [];
@@ -61,10 +81,11 @@ function main() {
     if (report.netcheck && !report.netcheck.match) push('netcheck', report.netcheck.issues);
   }
   const digest = {
-    ok: build.status === 0 && (!actions.length),
+    ok: build.status === 0 && (!actions.length) && (!audit || audit.ok !== false),
     exit: build.status,
     dir,
     report: reportFile,
+    audit,
     scores: report ? {
       lint: report.lint && report.lint.score,
       drc: report.drc && report.drc.score,
@@ -75,9 +96,15 @@ function main() {
     actions
   };
   fs.writeFileSync(reportFile, JSON.stringify(digest, null, 2) + '\n', 'utf8');
-  const verdict = digest.ok
-    ? `make-board: OK — ${digest.summary || dir}`
-    : `make-board: ${actions.length} action(s) needed — read ${reportFile}`;
+  let verdict;
+  if (!digest.ok) {
+    verdict = audit && audit.ok === false
+      ? `make-board: netlist audit FAILED — ${audit.file}`
+      : `make-board: ${actions.length} action(s) needed — read ${reportFile}`;
+  } else {
+    const note = audit ? (audit.ok === null ? ' · audit error (built-only)' : ' · audit OK') : '';
+    verdict = `make-board: OK — ${digest.summary || dir}${note}`;
+  }
   console.log(verdict);
   process.exit(digest.ok ? 0 : 1);
 }

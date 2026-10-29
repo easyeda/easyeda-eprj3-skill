@@ -76,17 +76,25 @@ function properCrossing(a, b) {
 }
 
 /**
- * @param {object} sheet {parts:[{extent}], wires:[{net,segs}], blocks:[{rect}]}
+ * @param {object} sheet {parts:[{extent, body?, sheet?}], wires:[{net,segs,sheet?}], blocks:[{rect}]}
+ *
+ * Everything carries an optional `sheet` (default 1). Sheets are independent
+ * coordinate spaces — a wire on P1 cannot cross a part on P2 — so every
+ * pairwise metric below only pairs objects from the SAME sheet. Without this,
+ * a multi-sheet design is rejected for overlaps/crossings that no document
+ * actually contains.
  */
 function evaluate(sheet) {
   const parts = sheet.parts || [];
   const wires = sheet.wires || [];
   const blocks = sheet.blocks || [];
+  const sheetOf = (o) => (o && o.sheet) || 1;
 
-  // --- node overlap (hard invalid)
+  // --- node overlap (hard invalid) — same sheet only
   let overlaps = 0;
   for (let i = 0; i < parts.length; i += 1) {
     for (let j = i + 1; j < parts.length; j += 1) {
+      if (sheetOf(parts[i]) !== sheetOf(parts[j])) continue;
       if (G.rectsOverlap(G.expand(parts[i].extent, -4), G.expand(parts[j].extent, -4))) overlaps += 1;
     }
   }
@@ -122,13 +130,15 @@ function evaluate(sheet) {
       const hNext = Math.abs(q.y1 - q.y2) < G.EPS;
       if (share && hPrev !== hNext) bends += 1;
     }
-    for (const s of all) segs.push({ net: wire.net, s });
+    for (const s of all) segs.push({ net: wire.net, sheet: sheetOf(wire), s });
   }
   // through-node: a segment middle strictly inside a part BODY (the symbol's
   // own BBOX, not the extent — the extent includes pins, and a wire must reach
-  // its own pin); falls back to the extent when no body is given
+  // its own pin); falls back to the extent when no body is given. Same sheet
+  // only: a wire cannot pass through a symbol that is not on its page.
   for (const sg of segs) {
     for (const p of parts) {
+      if (sheetOf(p) !== sg.sheet) continue;
       const body = G.expand(p.body || p.extent, -4);
       for (const t of [0.25, 0.5, 0.75]) {
         const pt = { x: sg.s.x1 + (sg.s.x2 - sg.s.x1) * t, y: sg.s.y1 + (sg.s.y2 - sg.s.y1) * t };
@@ -136,10 +146,11 @@ function evaluate(sheet) {
       }
     }
   }
-  // crossings between DIFFERENT nets
+  // crossings between DIFFERENT nets (same sheet)
   let crossings = 0;
   for (let i = 0; i < segs.length; i += 1) {
     for (let j = i + 1; j < segs.length; j += 1) {
+      if (segs[i].sheet !== segs[j].sheet) continue;
       if (segs[i].net === segs[j].net) continue;
       if (properCrossing(segs[i].s, segs[j].s) || properCrossing(segs[j].s, segs[i].s)) crossings += 1;
     }
@@ -148,6 +159,7 @@ function evaluate(sheet) {
   let collinear = 0;
   for (let i = 0; i < segs.length; i += 1) {
     for (let j = i + 1; j < segs.length; j += 1) {
+      if (segs[i].sheet !== segs[j].sheet) continue;
       if (segs[i].net === segs[j].net) continue;
       const a = segs[i].s; const b = segs[j].s;
       const ah = Math.abs(a.y1 - a.y2) < G.EPS;

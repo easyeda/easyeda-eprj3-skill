@@ -110,6 +110,64 @@ function main() {
   ok(vled && vled.pins.length === 3, 'V_LED connects 3 pins', JSON.stringify(vled));
   ok(nl && nl[0].unconnected.length === 0, 'no unconnected pins');
 
+  // -------------------------------------------------------- netlist audit
+  // The audit package is what a fresh reviewer (no inherited context) reads:
+  // spec (design intent) + built (recovered netlist) + the mechanical diff.
+  const auditFile = path.join(TMP, 'netlist-audit.json');
+  const auditOut = run('scripts/netlist.js', ['--dir', proj, '--design', design, '--audit', auditFile]);
+  ok(/netlist-audit: wrote/.test(auditOut) && /mechanical OK/.test(auditOut), 'netlist --audit reports a clean package', auditOut);
+  const pkg = JSON.parse(fs.readFileSync(auditFile, 'utf8'));
+  ok(pkg.schema === 'eprj3-netlist-audit/1', 'audit package carries its schema', pkg.schema);
+  ok(pkg.mechanical.ok === true, 'audit: spec == built and netcheck matches', JSON.stringify(pkg.mechanical.diff));
+  ok(pkg.mechanical.netcheck.match === true, 'audit: netcheck verdict is inside the package');
+  ok(pkg.built.nets.length === 4 && pkg.built.unconnected.length === 0,
+    'audit: built side carries the recovered netlist', `${pkg.built.nets.length} nets`);
+  ok(pkg.spec.parts.length === 4, 'audit: spec side carries every part');
+  ok(Array.isArray(pkg.rubric) && pkg.rubric.length >= 6, 'audit: rubric is present for the reviewer');
+  ok(pkg.verdictSchema && pkg.verdictSchema.shape && pkg.verdictSchema.shape.ok, 'audit: verdict schema is present');
+
+  // a design that disagrees with the built project must fail, and name the pin
+  const skewDesign = path.join(TMP, 'blink-skew.json');
+  const skew = JSON.parse(fs.readFileSync(design, 'utf8'));
+  skew.parts.find((p) => p.id === 'R1').pins['2'] = 'V_LED';
+  fs.writeFileSync(skewDesign, JSON.stringify(skew, null, 2), 'utf8');
+  const skewFile = path.join(TMP, 'netlist-audit-skew.json');
+  const skewOut = run('scripts/netlist.js', ['--dir', proj, '--design', skewDesign, '--audit', skewFile]);
+  ok(/mechanical FAIL/.test(skewOut), 'netlist --audit reports FAIL when the design disagrees', skewOut);
+  const skewPkg = JSON.parse(fs.readFileSync(skewFile, 'utf8'));
+  ok(skewPkg.mechanical.ok === false, 'audit: a moved pin fails the mechanical verdict');
+  const skewVled = skewPkg.mechanical.diff.nets.find((n) => n.name === 'V_LED');
+  ok(skewVled && skewVled.missing.includes('R1.2'), 'audit: the diff names the pin that moved', JSON.stringify(skewPkg.mechanical.diff.nets));
+
+  // without --design the package still audits built + netcheck (manual flows)
+  const bareFile = path.join(TMP, 'netlist-audit-bare.json');
+  run('scripts/netlist.js', ['--dir', proj, '--audit', bareFile]);
+  const bare = JSON.parse(fs.readFileSync(bareFile, 'utf8'));
+  ok(bare.mechanical.specAvailable === false && bare.mechanical.ok === true,
+    'audit: no --design still audits built + netcheck');
+
+  // ------------------------------------------------------ multi-sheet build
+  // Regression: sheets are independent coordinate spaces. The contact check
+  // and the quality model used to pair objects across pages, so every 2-sheet
+  // design died with "cross-net contact(s) ... at every density"; the
+  // cross-sheet port branch was unreachable for the same reason.
+  const msDesign = path.join(TMP, 'blink-ms.json');
+  const msRaw = JSON.parse(fs.readFileSync(design, 'utf8'));
+  msRaw.name = 'blink-ms';
+  msRaw.sheets = 2;
+  fs.writeFileSync(msDesign, JSON.stringify(msRaw, null, 2), 'utf8');
+  const msDir = path.join(TMP, 'blink-ms');
+  const msOut = run('scripts/build.js', ['--design', msDesign, '--dir', msDir, '--force']);
+  ok(/across 2 sheet/.test(msOut), 'two-sheet design builds', msOut);
+  const msNets = json('scripts/netlist.js', ['--dir', msDir, '--json']);
+  ok(msNets && msNets.length === 2, 'two-sheet project has two sheet netlists', msNets ? String(msNets.length) : 'no json');
+  const vledP1 = msNets && msNets[0].nets.find((n) => n.name === 'V_LED');
+  const vledP2 = msNets && msNets[1].nets.find((n) => n.name === 'V_LED');
+  ok(vledP1 && vledP1.pins.length === 2 && vledP2 && vledP2.pins.length === 1,
+    'cross-sheet net is split by page and merges by name', JSON.stringify([vledP1, vledP2]));
+  const msNc = JSON.parse(run('scripts/netcheck.js', ['--dir', msDir, '--json']));
+  ok(msNc.match === true, 'two-sheet netcheck matches', JSON.stringify(msNc.issues.slice(0, 3)));
+
   // ------------------------------------------------------------- pins CLI
   const pinsOut = run('scripts/pins.js', ['--dir', proj]);
   ok(/R1\.2/.test(pinsOut), 'pins lists R1.2', pinsOut);

@@ -59,11 +59,81 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
 #    placement: connectors (J…) line the bottom edge, decoupling caps sit next
 #    to their IC, an undeclared board auto-fits the parts
+node scripts/netlist.js --dir <project dir> --design design.json --audit <project dir>/.tmp/netlist-audit.json
+#    netlist audit package → a FRESH sub-agent reviews it (mandatory; see the
+#    "Netlist audit" section below, not an optional nicety)
 node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
-node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → build.json digest
+node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → digest + audit package
 node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
 node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
 ```
+
+## Netlist audit — a fresh reviewer, not you
+
+A green build proves the files are well formed and every gate ran — including
+`E003`, which compares the built netlist with design.json **inside the build**.
+That is not an independent check: the agent that wrote design.json is the agent
+reading the verdict, and a mistake shared by both sides (a wrong pin number in
+the design, a net the layout silently merged) is invisible to it. So every
+build gets one read of the netlist by a reviewer that has **none of your
+context**:
+
+```bash
+node scripts/netlist.js --dir <project> --design design.json \
+     --audit <project>/.tmp/netlist-audit.json
+# generator-authored board? --gen board.gen.js replaces --design (the same
+# design the build used — there is no design.json to read)
+```
+
+`make-board.js` already writes this package to `<project>/.tmp/netlist-audit.json`
+and lists it in the digest as `audit: {ok, file}` — hand that `file` straight to
+the reviewer, no extra command.
+
+The package is self-contained (schema `eprj3-netlist-audit/1`):
+
+| Field | Meaning |
+| --- | --- |
+| `spec` | what the design asked for — every part's pin→net map, `powers`, `expect` |
+| `built` | what the schematic actually connects — nets, pins, power-flag counts, unconnected pins, PCB pad nets |
+| `mechanical` | the tool's own diff, `mechanical.ok`, netcheck verdict, plus advisory `suspicions` |
+| `rubric` | the checklist the reviewer must perform |
+| `verdictSchema` | the exact JSON the reviewer must return |
+
+Hand the **file path** (absolute), never your notes or reasoning, to a **fresh**
+sub-agent. Copy this task verbatim:
+
+> You are an independent netlist auditor. You have no prior context and need none.
+> Read `<absolute path to netlist-audit.json>`. It is a self-contained audit
+> package (`schema: eprj3-netlist-audit/1`): `spec` is the required pin→net map
+> from design.json, `built` is the netlist recovered from the generated
+> schematic, `mechanical` is the tool's diff — **do not trust it**, recompute
+> every net group from `spec.parts` and `built.nets` yourself — `rubric` lists
+> the checks you must perform, `verdictSchema` is the required output shape.
+> Follow the rubric, then output ONE JSON object and nothing else: no prose, no
+> markdown fence. `ok` is true only when no finding has severity "error".
+
+Then loop, **max 3 rounds**:
+
+1. `mechanical.ok === false` — a hard floor that applies **even if the reviewer
+   said ok** — or the reviewer returns `ok: false` → apply each finding's `fix:`
+   to design.json (or to the gen/recipe that produced it), rebuild with
+   `--force`, regenerate the package, and spawn a **new** reviewer. If the
+   reviewer missed a mechanical failure, repair straight from
+   `mechanical.diff` / `missingPins` / `pinTwice`. Never follow up with the
+   previous reviewer: it has seen the old netlist and would be grading its own
+   earlier answer.
+2. `ok: true` → go on with `netcheck`, `open`. Put the reviewer's `summary` in
+   your final report, so the user knows the netlist was independently read.
+3. Still failing after 3 rounds → **stop** and show the findings to the user
+   verbatim. Do not accept them silently and do not loop forever.
+
+A finding with no concrete `fix:` is not actionable — ask that reviewer for the
+design.json line in the same round; never guess a repair. After a green audit,
+`node scripts/cleanup.js --dir <project>` removes `.tmp/` (the audit package
+lives there; a rebuild wipes it too).
+
+If the host has no sub-agent capability, run `rubric` yourself against the
+package — and say plainly in your report that the audit was **not independent**.
 
 ## 大型设计：写 gen 生成器，不手写 JSON
 
@@ -89,7 +159,7 @@ module.exports = (A) => {
 
 ```bash
 node scripts/build.js --gen board.gen.js --dir <proj> --force --report build.json
-node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式：build + digest
+node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式：build + digest（含网表审计包）
 ```
 
 助手 API：`A.cap/res/ind/led/diode`（自动位号）、`A.ic`（IC 条目，autoNC
@@ -254,6 +324,7 @@ real override rather than a find-and-replace in your head.
 | copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). A board this skill built is always `placed-only` — `D004` (unrouted) and `D006` (no pour) are never judged on it; imported or client-saved boards that carry tracks/pours get the full copper rules |
 | intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations, **unverified pinouts** (I007: a multi-pin inline symbol for a real device without `pinoutSource`) — mistakes *inside* design.json |
 | netlist | `node scripts/netcheck.js --dir <p>` | schematic ↔ PCB netlist mismatch, pin by pin (missing pads, retagged nets, floating pins). `build.js` runs it every build; re-run it standalone after hand edits in the client |
+| netlist audit | `node scripts/netlist.js --dir <p> --design design.json --audit <out>` | spec ↔ built disagreement, floating pins, NC violations, PCB mismatch — judged by a fresh sub-agent against the package's `rubric`, not by you (see [Netlist audit](#netlist-audit--a-fresh-reviewer-not-you)) |
 
 `--json` on any of them gives machine-readable output (every finding carries a
 `fix` field — do what it says). lint and DRC also print a 0–100 score. Rule
@@ -265,7 +336,8 @@ the design, re-run `build.js --force`). Mechanical fixes — NC for unconnected
 pins, decoupling caps — are automated, but **show the diff before writing**:
 `node scripts/autofix.js --design design.json --diff` prints the exact
 before/after lines and writes nothing; drop `--diff` only after the user has
-seen it. Never hand-edit project files unless you have read
+seen it. Netlist-audit findings join the same loop: each round ends with a
+rebuild **and** a fresh audit of the new netlist. Never hand-edit project files unless you have read
 [`docs/format-reference.md`](docs/format-reference.md).
 
 ## Incremental editing (when a design file is overkill)

@@ -62,6 +62,25 @@ function readDesign(file) {
   return normalize(raw, file);
 }
 
+/**
+ * Load a normalized design from a design.json or from a generator module
+ * (`--gen <file>` exporting `(A) => design`, see lib/authoring.js).
+ * Shared by `netlist.js --audit` and `make-board.js` so the audit compares the
+ * SAME design the build used — for a 50-part board written as a generator there
+ * is no design.json to read.
+ */
+function readSource(file, isGen) {
+  if (!isGen) return readDesign(file);
+  const abs = path.resolve(file);
+  if (!fs.existsSync(abs)) fail(`generator not found: ${abs}`);
+  const A = require('./authoring').createAuthoring();
+  const gen = require(abs);
+  if (typeof gen !== 'function') {
+    fail('generator file must export a function: module.exports = (A) => { ...; return A.design(); }');
+  }
+  return normalize(gen(A), abs);
+}
+
 // ------------------------------------------------------------ IC pinout library
 // Model-specific parts are NOT committed with the skill (library policy: only
 // generic, non-model entries live in templates/library/). A real IC entry is
@@ -584,6 +603,7 @@ module.exports = {
   DEFAULTS,
   DesignError,
   readDesign,
+  readSource,
   normalize,
   validateDesign,
   layoutSchematic,

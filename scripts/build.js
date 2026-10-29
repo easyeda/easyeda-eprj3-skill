@@ -481,7 +481,7 @@ function main() {
       return G.bboxOfPoints(pts);
     };
     const quality = Q.evaluate({
-      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p) })),
+      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p), sheet: p.sheet || 1 })),
       wires: routed.wires,
       blocks
     });
