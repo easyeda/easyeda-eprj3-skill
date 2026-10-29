@@ -340,6 +340,16 @@ function main() {
     ok(Math.abs(t20[0][1] + 112.7) < 0.01 && Math.abs(Math.abs(t20[1][2] - t20[0][2]) - 25.6) < 0.01,
       'auto TSSOP20 pads 58×16 at ±112.7, pitch 25.6 (IPC-derived)', JSON.stringify(t20.slice(0, 2)));
   }
+  // DFN / LGA — IPC-7351B derivation for the sensor class (SHT30 / BMP280
+  // 0.65 mm pitch); same "derived, official sample pending" status as TSSOP
+  {
+    const dfn = famPads({ auto: 'DFN8', pitch: 25.6 });
+    ok(dfn.length === 8 && Math.abs(dfn[0][3] - 28) < 1 && Math.abs(dfn[0][4] - 13) < 1,
+      'auto DFN8 pads ≈28×13 at 25.6 pitch (IPC-derived)', JSON.stringify(dfn.slice(0, 2)));
+    const lga = famPads({ auto: 'LGA8', pitch: 25.6 });
+    ok(lga.length === 8 && Math.abs(lga[0][3] - 20) < 1 && Math.abs(lga[0][4] - 20) < 1,
+      'auto LGA8 square pads ≈20×20 at 25.6 pitch (IPC-derived)', JSON.stringify(lga.slice(0, 2)));
+  }
   // USB-C — official TYPE-C-31-M-12 (C165948): 6 merged power/CC pads
   {
     const usbc = famPads({ auto: 'USB_C' });

@@ -576,6 +576,38 @@ function routeSchematic(d, placements) {
   return out;
 }
 
+/**
+ * Count places where wires/ports of DIFFERENT nets touch — the client merges
+ * nets at any contact, so a non-zero count means the drawn sheet would be
+ * electrically wrong (shorted nets). The builder treats it as a hard failure
+ * after retrying with a looser layout grid (report P2: tight cells let two
+ * nets' stubs meet).
+ */
+function countCrossNetContacts(routed) {
+  const segs = [];
+  for (const w of routed.wires || []) for (const s of w.segs || []) segs.push({ net: w.net, s });
+  let n = 0;
+  for (let i = 0; i < segs.length; i += 1) {
+    for (let j = i + 1; j < segs.length; j += 1) {
+      if (segs[i].net === segs[j].net) continue;
+      if (G.segsIntersect(segs[i].s, segs[j].s, true)) n += 1;
+    }
+  }
+  for (const p of routed.ports || []) {
+    for (const sg of segs) {
+      if (sg.net === p.net) continue;
+      if (G.pointSegDist({ x: p.x, y: p.y }, sg.s) < 0.01) n += 1;
+    }
+  }
+  for (const f of routed.flags || []) {
+    for (const sg of segs) {
+      if (sg.net === f.net) continue;
+      if (G.pointSegDist({ x: f.x, y: f.y }, sg.s) < 0.01) n += 1;
+    }
+  }
+  return n;
+}
+
 module.exports = {
   STUB,
   TRUNK_OFFSET,
@@ -585,5 +617,6 @@ module.exports = {
   collectNodes,
   manhattanMst,
   exitDir,
-  stubPoint
+  stubPoint,
+  countCrossNetContacts
 };

@@ -162,9 +162,21 @@ function planPcb(design, lib, schematicPlacements) {
     // recomputed after a wrap: using the pre-wrap cursorX cascaded every
     // later part onto the pre-wrap position (single row → single column,
     // board explosion on 50+ part designs).
-    if (cursorX > EDGE && cursorX + w > Math.max(boardW, neededW) - EDGE) {
+    //
+    // Explicit `pcb.place` parts are KEEPOUTS for the auto placer (report P5:
+    // an auto-placed resistor used to land on a fixed mounting hole). When the
+    // slot collides, drop below the blocking footprint and continue.
+    for (let guard = 0; guard < 12; guard += 1) {
+      if (cursorX > EDGE && cursorX + w > Math.max(boardW, neededW) - EDGE) {
+        cursorX = EDGE;
+        cursorY += rowH + gapFor(rowH);
+        rowH = 0;
+      }
+      const cand = G.translateBox(it.ext, G.round(cursorX - it.ext.x1), G.round(cursorY - it.ext.y1));
+      const hit = explicitBoxes.find((o) => G.rectsOverlap(cand, G.expand(o, 10)));
+      if (!hit) break;
       cursorX = EDGE;
-      cursorY += rowH + gapFor(rowH);
+      cursorY = hit.y2 + gapFor(hit.y2 - hit.y1);
       rowH = 0;
     }
     const right = cursorX + w;

@@ -138,6 +138,19 @@ const FAMILIES = {
   // TSSOP — IPC-7351B derivation (0.65 mm pitch class), official sample not
   // fetched yet.
   TSSOP:   { gen: (s) => dualRow(s.pins, { span: s.span || 112.7, pitch: s.pitch || 25.6, padW: 58, padH: 16 }), designator: 'U' },
+  // DFN / LGA (report P4: sensors such as SHT30 / BMP280 only had hand-written
+  // pads). Dual-row no-lead class, IPC-7351B-derived: radial pad 1.1×pitch,
+  // tangential 0.5×pitch, pad centres = pin-span half + 1.3×pitch. No
+  // thermal pad modelled — a package that needs one wants an inline
+  // footprint. **Derivation, official sample pending** (footprint-evidence.md).
+  DFN:     { gen: (s) => { const pitch = s.pitch || 25.6; const perSide = s.pins / 2;
+              const padW = Math.max(9, Math.round(pitch * 1.1)); const padH = Math.max(9, Math.round(pitch * 0.5));
+              const span = s.span || Math.round(((perSide - 1) * pitch) / 2 + pitch * 1.3);
+              return dualRow(s.pins, { span, pitch, padW, padH }); }, designator: 'U' },
+  LGA:     { gen: (s) => { const pitch = s.pitch || 25.6; const perSide = s.pins / 2;
+              const padW = Math.max(10, Math.round(pitch * 0.8)); const padH = padW;
+              const span = s.span || Math.round(((perSide - 1) * pitch) / 2 + pitch * 1.2);
+              return dualRow(s.pins, { span, pitch, padW, padH }); }, designator: 'U' },
   // QFN — official MPU-6050 (C24112, QFN-24 4×4 0.5 mm): pads 0.8 mm radial ×
   // 0.28 mm tangential at ±2.0 mm → radial 1.6×pitch, centres = pin-span
   // half + 0.75 mm. **Thermal pad NOT modelled** — hand-write an inline
@@ -214,7 +227,7 @@ function expandAuto(spec) {
   if (!s.pins) throw new Error(`auto footprint "${spec.auto}" needs "pins"`);
   if (familyName === 'QFN' || familyName === 'QFP') {
     if (s.pins % 4) throw new Error(`${familyName} pin count must be divisible by 4 (got ${s.pins})`);
-  } else if (['SOP', 'SSOP', 'TSSOP', 'DIP', 'HDR2R'].includes(familyName)) {
+  } else if (['SOP', 'SSOP', 'TSSOP', 'DIP', 'HDR2R', 'DFN', 'LGA'].includes(familyName)) {
     if (s.pins % 2) throw new Error(`${familyName} pin count must be even (got ${s.pins})`);
   } else if (familyName === 'HDR' && s.pins < 2) {
     throw new Error('HDR needs at least 2 pins');

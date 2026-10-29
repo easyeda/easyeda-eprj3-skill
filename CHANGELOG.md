@@ -5,6 +5,59 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.26.0] - 2026-10-29
+
+From the R7FA2E1A72DFL run report (`jlc-work-project/report/easyeda-eprj3-run-report.md`):
+an 83-part board delivered green, but with ten friction points. This round fixes
+the seven that are skill-side.
+
+### Fixed
+- **`A.chip` no longer binds pin names to net names** (P1, high): a real IC
+  can have pin 1 named `G` on net `PUMP_EN` — pass
+  `{ pins: {1:'PUMP_EN'}, pinNames: {1:'G'} }`. Without `pinNames` the old
+  behaviour (pin name = net) is unchanged.
+- **Layout density can no longer short nets** (P2, high — the report's most
+  dangerous finding: tight cells merged `CHG_PROG` into `STDBY_ANODE`).
+  `build.js` now verifies every routed sheet with `countCrossNetContacts`
+  (wires/ports/flags of different nets touching, where the client merges
+  them); on a hit it re-lays-out on a 170 % looser grid (up to twice) and, if
+  contacts remain, **fails the build with the fix** instead of shipping a
+  shorted sheet.
+- **Refdes collisions are impossible by construction** (P3): auto-numbering
+  and explicit ids share one registry, checked at the call site
+  (`duplicate part id "D2"` fires where the second `D2` is created), and
+  `A.part` without an id takes its prefix from the symbol's designator
+  (diodes no longer come out as `U8`).
+- **Fixed `pcb.place` parts are keepouts** (P5): the auto placer slides past
+  them instead of dropping a resistor onto a mounting hole (D001 0-mil clash).
+- **`--plan` net count uses the report's wording** (P7): `N 信号网络 (+ M NC)`
+  instead of a single ambiguous number.
+- **Informational notes aggregate** (P9): "flag placed on the pin" joins the
+  stub+label fallback count line; the full list stays in `report.issues`.
+
+### Added
+- **`DFN<n>` / `LGA<n>` auto footprint families** (P4): the sensor class
+  (SHT30 / BMP280, 0.65 mm pitch) no longer needs hand-written pads —
+  IPC-7351B-derived, evidence-table row marked "derived, official sample
+  pending", dfm assertions added. No thermal pad modelled.
+- **`--digest`** (report §8.3): one-page snapshot (counts, gate scores, rats)
+  for resuming a session without re-reading logs.
+- **SKILL.md context discipline**: never read whole SVG/log/PDF into context;
+  grep the `viewBox`, read `--report` JSON, hand datasheet extraction to a
+  sub-agent.
+
+### Deferred (report items needing a design decision or data)
+Recipe typing (`class` + `pinRoles` + `select.js`, report §9 — a 5-phase
+migration), `render.js --png` (headless Chrome failed in the field),
+auto pitch scaling for large official symbols (P6, needs a real-client check
+that a 50-mil symbol renders acceptably).
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 97/97 (+2 DFN/LGA assertions) ·
+  corpus 110/110 · depcheck 0 · eval 21/21.
+- Probes: fixed mounting hole + 8 caps → 0 D001, drc 100; `--digest` prints
+  the one-page snapshot; `A.chip` with `pinNames` builds and netchecks clean.
+
 ## [1.25.0] - 2026-10-29
 
 Two field reports from opening a generated project in the client: the preview

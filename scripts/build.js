@@ -41,6 +41,7 @@ const SCHEMA = [
   { name: 'allow-drc', desc: 'do not fail the build on DRC errors', hasValue: false },
   { name: 'dry-run', desc: 'build into a throwaway directory, report, then delete it', hasValue: false },
   { name: 'report', desc: 'write the machine-readable build report to this file' },
+  { name: 'digest', desc: 'print a one-page design digest (counts, gates, rats) — for resuming a session without re-reading logs', hasValue: false },
   { name: 'plan', desc: 'print what would be built (parts, nets, rules, intent gate) and write nothing', hasValue: false },
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
   { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
@@ -404,7 +405,10 @@ function main() {
     const widths = Object.entries(design.netWidths || {});
     if (widths.length) console.log(`  线宽  ${widths.map(([n, w]) => `${n}=${w}mil`).join(' ')}`);
     if (Object.keys(rules).length) console.log(`  规则  ${Object.entries(rules).map(([k, v]) => `${k}=${v}`).join(' ')}`);
-    console.log(`  规模  ${design.parts.length} parts · ${nets.length} nets · ${(design.blocks || []).length} blocks · ${design.sheets} 原理图页`);
+    // same net counting as the build report: signal nets and NC separately,
+    // so the plan and the final report always agree (report P7)
+    const signalNets = nets.filter((n) => !/^(NC|DNC\d*)$/i.test(n));
+    console.log(`  规模  ${design.parts.length} parts · ${signalNets.length} 信号网络${nets.length > signalNets.length ? ` + ${nets.length - signalNets.length} NC` : ''} · ${(design.blocks || []).length} blocks · ${design.sheets} 原理图页`);
     console.log(`  模块  ${(design.blocks || []).map((b) => `${b.title}${b.desc ? `（${b.desc}）` : ''}@P${b.sheet}`).join(' | ') || '(未分块)'}`);
     console.log(`  网络  ${nets.slice(0, 18).join(' ')}${nets.length > 18 ? ' …' : ''}`);
     if (design.expect) {
@@ -421,14 +425,43 @@ function main() {
   // rotation from the net geometry (the human way — AI supplies rough
   // positions, the algorithm finishes orientation), pass 2 re-lays-out with
   // the improved rotations. --no-tidy keeps the declared rotations.
-  let { placements, blocks } = D.layoutSchematic(design, lib);
-  if (!opts['no-tidy']) {
-    const T = require('./lib/sch-tidy');
-    const tidy = T.tidyRotations(design, lib, placements);
-    if (tidy.rotated.length) {
-      ({ placements, blocks } = D.layoutSchematic(design, lib));
-      log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
+  //
+  // Robustness loop (report P2): at tight grid densities two different nets'
+  // stubs can meet, and the client would merge them. Density is not a guess we
+  // are allowed to get wrong, so routing is verified and, if any cross-net
+  // contact exists, the layout is redone on a looser grid before giving up.
+  let placements;
+  let blocks;
+  let routed;
+  let layoutScale = 1;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const knobs = layoutScale === 1 ? design.layout : {
+      cols: design.layout.cols,
+      cellW: Math.round(design.layout.cellW * layoutScale),
+      cellH: Math.round(design.layout.cellH * layoutScale),
+      blockGapX: Math.round(design.layout.blockGapX * layoutScale),
+      blockGapY: Math.round(design.layout.blockGapY * layoutScale),
+      margin: design.layout.margin
+    };
+    const passDesign = layoutScale === 1 ? design : Object.assign({}, design, { layout: knobs });
+    ({ placements, blocks } = D.layoutSchematic(passDesign, lib));
+    if (!opts['no-tidy']) {
+      const T = require('./lib/sch-tidy');
+      const tidy = T.tidyRotations(design, lib, placements);
+      if (tidy.rotated.length) {
+        ({ placements, blocks } = D.layoutSchematic(passDesign, lib));
+        if (attempt === 0) log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
+      }
     }
+    routed = R.routeSchematic(design, placements);
+    const contacts = R.countCrossNetContacts(routed);
+    if (contacts === 0) break;
+    if (attempt === 2) {
+      die(`schematic routing still produces ${contacts} cross-net contact(s) at the loosest grid — `
+        + 'two nets would be merged in the client. Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
+    }
+    layoutScale *= 1.7;
+    log(`layout: ${contacts} cross-net contact(s) at this density — retrying on a ${Math.round(layoutScale * 100)}% looser grid`);
   }
   const sheetFrames = new Map();
   // per-sheet frame: sized around what the packing produced, 明细表 off by
@@ -458,7 +491,6 @@ function main() {
     sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`, frame));
     sheetFrames.set(s, { ...frame, wMil: fw * 10, hMil: fh * 10 });
   }
-  const routed = R.routeSchematic(design, placements);
 
   // one emitter per sheet; blocks/components/flags/ports/wires land on the
   // sheet their block was assigned to
@@ -689,12 +721,14 @@ function main() {
   }
 
   if (!opts.quiet) {
-    // aggregate the stub+label fallback notes (they flood big boards): one
-    // count line here, the full list stays in report.issues
-    const fallbacks = routed.issues.filter((i) => /encoded as/.test(i));
-    const others = routed.issues.filter((i) => !/encoded as/.test(i));
+    // aggregate the informational notes that flood big boards (stub+label
+    // fallbacks, flags parked on a pin): one count line each, full list in
+    // report.issues
+    const isNoise = (i) => /encoded as|placed on the pin/.test(i);
+    const noise = routed.issues.filter(isNoise);
+    const others = routed.issues.filter((i) => !isNoise(i));
     for (const i of others) console.log(`  ! ${i}`);
-    if (fallbacks.length) console.log(`  ! ${fallbacks.length} net(s) fell back to stub+label encoding (full list in the report)`);
+    if (noise.length) console.log(`  ! ${noise.length} informational note(s) (stub+label fallback / flag on pin — full list in the report)`);
     console.log(`validate: ${v.errors.length} errors, ${v.warnings.length} warnings`);
     for (const e of v.errors) console.log(`  ✗ ${e}`);
     for (const w of v.warnings) console.log(`  · ${w}`);
@@ -718,6 +752,23 @@ function main() {
         ? `netcheck: OK — schematic ↔ PCB netlists match (${netcheck.summary.schematic.pins} pins)`
         : `netcheck: ${netcheck.issues.length} mismatch(es) — run scripts/netcheck.js --dir ${dir} for the full diff`);
     }
+  }
+  if (opts.digest) {
+    // one-page snapshot: enough to resume a session (or hand off) without
+    // re-reading build logs, the SVG previews or the docs
+    const signalNets = new Set();
+    for (const p of design.parts) for (const n of Object.values(p.pins)) if (!/^(NC|DNC\d*)$/i.test(n)) signalNets.add(n);
+    const pins = placements.reduce((n, pl) => n + pl.sym.pins.length, 0);
+    console.log('— digest —');
+    console.log(`工程 ${design.name} → ${requestedDir}`);
+    console.log(`规模 ${design.parts.length} 器件 · ${signalNets.size} 信号网络 · ${pins} 引脚 · ${blocks.length} 模块 · ${design.sheets} 页`);
+    console.log(`模块 ${blocks.map((b) => b.title).join(' | ')}`);
+    console.log(`门禁 validate ${v.errors.length}/${v.warnings.length} · erc ${erc.errors.length}/${erc.warnings.length}`
+      + `${intent ? ` · intent ${intent.errors.length}/${intent.warnings.length}` : ''}`
+      + ` · lint ${lint.score} · drc ${drc ? drc.score : '-'}`
+      + `${netcheck ? ` · netcheck ${netcheck.match ? 'OK' : `${netcheck.issues.length} 失配`}` : ''}`);
+    if (ratNets.length) console.log(`布线交接 rats ${ratNets.length} 网络 → ${ratNets.slice(0, 12).map(([n, c]) => `${n}(${c}p)`).join(' ')}${ratNets.length > 12 ? ' …' : ''}`);
+    console.log('— end digest —');
   }
   if (opts.report) {
     fs.writeFileSync(path.resolve(opts.report), JSON.stringify(report, null, 2), 'utf8');

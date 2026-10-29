@@ -9,6 +9,9 @@ node scripts/build.js --design design.json --dir <absolute project dir> [options
 ```
 
 Options: `--force` (rebuild; removes index, `sch/`, `pcb/`, `panel/`, `.tmp/`),
+`--design <file>` **or** `--gen <generator.js>` (a module `(A) => design` using
+`lib/authoring.js`), `--digest` (one-page snapshot: counts, gates, rats — for
+resuming a session),
 `--dry-run` (rehearse into a throwaway dir, then delete it),
 `--plan` (print the confirmed plan — power chain, nets, widths, rules, intent —
 then run the same rehearsal; the target dir is never touched. This is the
@@ -105,7 +108,7 @@ Families (pad geometry generated from formulas with **external evidence** —
 JEDEC / IPC-7351B / real LCSC parts; the per-family table with sources lives in
 [`docs/footprint-evidence.md`](footprint-evidence.md) and `test/dfm.js` asserts
 the key dimensions): `SOT23` `SOT23-5` `SOT23-6` `SOT223` · `SOP<n>` `SSOP<n>`
-`TSSOP<n>` · `QFN<n>` `QFP<n>`/`LQFP<n>` · `DIP<n>` · `HDR<n>` `HDR2R<n>` ·
+`TSSOP<n>` · `QFN<n>` `QFP<n>`/`LQFP<n>` · `DFN<n>` `LGA<n>` · `DIP<n>` · `HDR<n>` `HDR2R<n>` ·
 `SW_4P` `XTAL` `OSC` `USB_C`. Knobs: `pins` (required unless the family fixes
 it), `pitch` (mil), `span` (pad row distance from the origin), `hole`
 (through-hole drill), `rowSpan`/`rowGap` (DIP/headers). Compound names like
@@ -187,7 +190,14 @@ schematic, with three deterministic refinements:
 The board outline settles after placement: a declared `board` is a floor
 (grown when the placer needs more), an **undeclared** board auto-fits the
 parts (a 3-part board no longer ships on a 1600×1000 mil blank). Supply
-`place` when a part needs an exact spot — it always wins.
+`place` when a part needs an exact spot — it always wins, and a fixed part is
+a **keepout** for everything the placer arranges around it (mounting holes no
+longer get a resistor dropped on them).
+
+The **schematic** side gets the same treatment: the build verifies the routed
+sheet for cross-net contacts (where the client would merge two nets) and, if
+one exists, redoes the layout on a looser grid before failing — density is
+never allowed to silently short a net.
 
 ## Copper policy (out of scope since 1.13)
 

@@ -36,15 +36,18 @@ function createAuthoring() {
   const counters = {};
   let currentBlock = null;
   let expect_ = null;
+  // every id ever handed out (auto-numbered OR explicit) — a later explicit id
+  // colliding with an auto one is a hard error at the point of use (report P3)
+  const usedIds = new Set();
+  const die = (msg) => { throw new Error(msg); };
 
   const nextRef = (prefix) => {
-    counters[prefix] = (counters[prefix] || 0) + 1;
-    let id = `${prefix}${counters[prefix]}`;
-    const taken = new Set(design.parts.map((p) => p.id));
-    while (taken.has(id)) {
+    counters[prefix] = counters[prefix] || 0;
+    let id;
+    do {
       counters[prefix] += 1;
       id = `${prefix}${counters[prefix]}`;
-    }
+    } while (usedIds.has(id));
     return id;
   };
 
@@ -53,6 +56,8 @@ function createAuthoring() {
   };
 
   const push = (p) => {
+    if (usedIds.has(p.id)) die(`duplicate part id "${p.id}"`);
+    usedIds.add(p.id);
     design.parts.push(p);
     joinBlock(p.id);
     return p;
@@ -83,7 +88,13 @@ function createAuthoring() {
     // ------- generic part (full control)
     part(obj) {
       const p = Object.assign({}, obj);
-      if (!p.id) p.id = nextRef(p.designator || 'U');
+      if (!p.id) {
+        // default prefix from the symbol's own designator (report P3: diodes
+        // used to come out as U8)
+        const prefix = (p.symbol && typeof p.symbol === 'object' && p.symbol.designator)
+          || p.designator || 'U';
+        p.id = nextRef(String(prefix).replace(/\?$/, ''));
+      }
       return push(p);
     },
 
@@ -110,14 +121,28 @@ function createAuthoring() {
     },
 
     // ------- chip: inline symbol + footprint (self-build fallback path)
-    // pins: object {num: name} or array ['num:name:dir:side', …]
+    // `pins` maps pin → NET. `pinNames` maps pin → SYMBOL PIN NAME, so a real
+    // IC can have pin 1 named "G" while its net is "PUMP_EN" (report P1).
+    // Without pinNames the pin name defaults to the net name. `pins` may also
+    // be an array ['num:name:dir:side', …] (explicit spec form).
     chip(opts) {
       const o = Object.assign({}, opts);
       if (!o.id) o.id = nextRef(o.designator || 'U');
+      if (usedIds.has(o.id)) die(`duplicate part id "${o.id}" — the id is already taken (explicit id or auto-numbered)`);
       const pinsIn = o.pins || {};
+      const pinNames = o.pinNames || null;
       let pinList;
-      if (Array.isArray(pinsIn)) pinList = pinsIn.map((s) => String(s));
-      else pinList = Object.entries(pinsIn).map(([num, name]) => `${num}:${name}`);
+      let netMap;
+      if (Array.isArray(pinsIn)) {
+        pinList = pinsIn.map((s) => String(s));
+        netMap = Object.fromEntries(pinsIn.map((s) => {
+          const t = String(s).split(':');
+          return [t[0], t[1] || t[0]];
+        }));
+      } else {
+        pinList = Object.entries(pinsIn).map(([num, net]) => `${num}:${(pinNames && pinNames[num]) || net}`);
+        netMap = Object.assign({}, pinsIn);
+      }
       const symbol = {
         name: o.symbolName || `${o.name || o.id}_SYM`,
         designator: o.designator || 'U',
@@ -130,10 +155,7 @@ function createAuthoring() {
         footprint: o.footprint,
         value: o.value,
         name: o.name,
-        pins: Array.isArray(pinsIn) ? Object.fromEntries(pinsIn.map((s) => {
-          const t = String(s).split(':');
-          return [t[0], t[1] || t[0]];
-        })) : Object.assign({}, pinsIn)
+        pins: netMap
       };
       if (o.autoNC !== false) p.autoNC = true;
       if (o.pinoutSource) p.pinoutSource = o.pinoutSource;

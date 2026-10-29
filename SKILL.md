@@ -94,18 +94,22 @@ node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式含预�
 ```
 
 助手 API：`A.cap/res/ind/led/diode`（自动位号）、`A.ic`（IC 条目，autoNC
-默认开）、`A.chip`（内联符号+封装）、`A.conn`（连接器，W003 豁免）、
+默认开）、`A.chip`（内联符号+封装；`pinNames` 让引脚名与网络名分开：
+`{ pins: {1:'PUMP_EN'}, pinNames: {1:'G'} }`）、`A.conn`（连接器，W003 豁免）、
 `A.block`（模块 + 功能描述）、`A.place/power/net/pair/expect/frame`。
-完整列表见 [scripts/lib/authoring.js](scripts/lib/authoring.js)。
-助手 API：（自动位号）、（IC 条目，autoNC
-默认开）、（内联符号+封装）、（连接器，W003 豁免）、
-（模块 + 功能描述）、。
+位号：自动编号与显式 id 共用计数器，重复 id 在调用处立即报错。
 完整列表见 [scripts/lib/authoring.js](scripts/lib/authoring.js)。
 
 Rebuild loops (fix → rebuild → read gates) should pass `--quiet --report
 build.json`: one summary line on stdout, the full machine-readable report
 (scores, rats, netcheck issues) in the JSON — don't re-read verbose output
-every iteration.
+every iteration. Add `--digest` to print a one-page snapshot (counts, gates,
+rats) — enough to resume a session without re-reading logs.
+
+**Context discipline (costs real tokens):** never read a whole preview SVG,
+log file or datasheet into context — grep the `viewBox`/coordinate lines you
+need, read `--report` JSON fields, and have a sub-agent extract datasheet pin
+tables (return only the table + source URL).
 
 `build.js` exits non-zero if any gate has an error, so a clean exit *is* the
 quality proof. It prints one summary line:
