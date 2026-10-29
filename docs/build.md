@@ -141,6 +141,28 @@ user against the datasheet, and declare
 real-device pinouts. Never hand-type a real chip's pins from memory without
 either step.
 
+### Typed recipes (`"bind"`)
+
+A recipe may declare that it needs a **kind** of device instead of a specific
+chip:
+
+```json
+{
+  "name": "ldo-typed",
+  "bind": { "device": { "class": "regulator.ldo", "requiredRoles": ["VIN", "VOUT", "GND"] } },
+  "ports": { "VIN": "VIN", "3V3": "VOUT", "GND": "GND" },
+  "parts": [ { "id": "U1", "$device": true }, ... ]
+}
+```
+
+`lib/select.js` picks the best IC entry of that class by role coverage
+(`node scripts/recipe.js devices [--class X]` lists what the library has);
+`recipe.js apply … --device NAME` forces one. The chosen entry's `pinRoles`
+expand into `roles: { ROLE: net }` on the part, which `design.js` turns into
+pin→net and the intent gate checks as **I008** (required roles bound, no pin in
+two roles bound to different nets). With no device in the class the build
+fails and names the missing capability — it never invents a pinout.
+
 ### Inline footprints
 
 ```json

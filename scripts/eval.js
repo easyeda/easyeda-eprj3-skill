@@ -49,6 +49,30 @@ const DEFAULTS = { minLint: 85, minDrc: 80, maxSeconds: 20 };
  * makes "省 Token" a regression number instead of a claim — the token proxy of
  * the AI-authored file now includes the requirement + generated design.
  */
+/**
+ * A recipe file is a fragment; a typed recipe even carries a `$device`
+ * placeholder. To benchmark such a case the fragment is resolved + merged into
+ * an empty design first (device chosen by class + roles), then built like any
+ * other design. Plain designs/recipes are used as-is.
+ */
+function materialise(file, name) {
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return file; }
+  if (!(raw.bind && raw.bind.device)) return file;
+  try {
+    const M = require('./lib/merge');
+    const resolved = M.resolveRecipe(raw.name || name.split('/').pop());
+    const merged = M.merge(M.ensureShape({ name: raw.name || name.split('/').pop() }), resolved.recipe, {});
+    const out = path.join(ROOT, 'eval', '.build', `${path.basename(file, '.json')}.typed.json`);
+    fs.mkdirSync(path.dirname(out), { recursive: true });
+    fs.writeFileSync(out, JSON.stringify(merged.design, null, 2), 'utf8');
+    return out;
+  } catch (e) {
+    console.error(`  ! cannot materialise typed recipe ${name}: ${e.message}`);
+    return file;
+  }
+}
+
 function cases(cfg) {
   const out = [];
   for (const dir of ['recipe', 'examples/designs']) {
@@ -58,9 +82,10 @@ function cases(cfg) {
       if (!f.endsWith('.json')) continue;
       const name = `${dir.split('/')[0]}/${f.replace(/\.json$/, '')}`;
       const over = (cfg && cfg[name]) || {};
+      const file = materialise(path.join(d, f), name);
       out.push({
         name,
-        file: path.join(d, f),
+        file,
         minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
         minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
         maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds

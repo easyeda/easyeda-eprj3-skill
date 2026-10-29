@@ -5,6 +5,62 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.27.0] - 2026-10-29
+
+Typed recipes (report §9, all five phases) and the PNG preview check (P8).
+The point: a recipe should say **what kind of circuit** it is, not which chip —
+so the same template serves an STM32 board, an RA2E1 board and a gen file.
+
+### Added
+- **Device metadata on IC entries** (§9.1 phase 1): optional `class`,
+  `pinRoles` (role → pin number(s)) and `requiredRoles`. Roles are **derived
+  from the official pin names** already inside each entry — AMS1117-3.3 gets
+  `regulator.ldo` (VIN/VOUT/GND, the tab pin included in VOUT),
+  STM32F103C8T6 `mcu` (VDD/VSS/RESET/SWDIO/SWCLK/USART1/I2C1/BOOT0),
+  MMBT5551 `transistor.npn` (C/B/E).
+- **`lib/select.js`** (§9.2 phase 2): `listDevices({class})`, `bindDevice({
+  class, roles, prefer })`. Selection is by class + role coverage; a preferred
+  device is validated (and its missing roles reported); when nothing fits the
+  error names the missing capability. `recipe.js devices [--class X]` lists
+  what the library has.
+- **Typed recipes** (`"bind": { "device": { class, requiredRoles } }` + `ports`
+  port→role + a part marked `"$device": true`): `recipe.js apply … [--device]`
+  resolves the device, expands its `pinRoles` into `roles: {ROLE: net}`, and
+  two reference recipes ship: `ldo-typed`, `npn-switch-typed`.
+- **`A.recipe(name, { device, set, net })`** (§9.4 phase 3): gen files can merge
+  a validated sub-circuit; `A.selectedDevices()` reports what the binder chose.
+- **Gate I008** (§9.4 phase 5): a role binding must be complete (every required
+  role bound) and unambiguous (no pin in two roles bound to different nets).
+  Runs whenever any part declares `roles`.
+- **`design.parts[].roles`** contract: `{ ROLE: net }` expands to pin→net via
+  the device's `pinRoles`; explicit `pins` still win.
+- **intake coverage line** (§9.4 phase 4): the plan now prints
+  `覆盖 类型化 N（recipe→device） · 固定模板 M（…） — 固定模板写死了型号…`
+- **`render.js --png [--scale N]`** (P8): rasterizes each preview through a
+  headless browser. Checked on this machine: Chrome's headless screenshot
+  produced no file; Edge produced one once and was not reproducible
+  (`--dump-dom` also returned nothing), i.e. the renderer is blocked in this
+  environment — so the command FAILS LOUDLY with the browser name and an
+  `EPRJ3_BROWSER` override hint instead of pretending. The flow itself
+  (temp ASCII workdir → relative `--screenshot` → copy back) is the part
+  verified: Edge ignores absolute output paths and both browsers refuse
+  non-ASCII `file://` URLs.
+
+### Changed
+- `eval` materialises typed recipes before building them (resolve + merge into
+  an empty design), so the two typed recipes are benchmark cases like the rest
+  (23 cases now).
+
+### Not changed (by request)
+- Official symbols keep their native pitch/geometry — no auto-scaling (P6).
+
+### Verified
+- smoke 135/135 · pipeline 67/67 (+11 typed-recipe/I008 checks) · dfm 97/97 ·
+  corpus 110/110 · depcheck 0 · eval 23/23.
+- Probes: `recipe.js apply ldo-typed` → `device: AMS1117-3.3` and a clean
+  build; `--device NOPE` rejected; unbinding VOUT fails with I008;
+  `A.recipe('ldo-typed', { net: { VIN: 'VMOT' } })` binds VIN to VMOT.
+
 ## [1.26.0] - 2026-10-29
 
 From the R7FA2E1A72DFL run report (`jlc-work-project/report/easyeda-eprj3-run-report.md`):

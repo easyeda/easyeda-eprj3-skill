@@ -18,5 +18,19 @@
     "symbol": "EasyEDA 官方库 C6186（AMS1117-3.3 器件符号：1=GND 2=VOUT 3=VIN 4=VOUT(tab)，逐字）— https://easyeda.com/api/products/C6186/components",
     "footprint": "EasyEDA 官方库 C6186 封装 SOT-223-3_L6.5-W3.4-P2.30-LS7.0-BR — 同上（{auto:SOT223} 按其坐标生成）",
     "datasheet": "https://www.advanced-monolithic.com/Pdf/ds1117.pdf"
-  }
+  },
+  "class": "regulator.ldo",
+  "pinRoles": {
+    "VIN": "3",
+    "VOUT": [
+      "2",
+      "4"
+    ],
+    "GND": "1"
+  },
+  "requiredRoles": [
+    "VIN",
+    "VOUT",
+    "GND"
+  ]
 }

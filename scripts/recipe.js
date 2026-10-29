@@ -37,6 +37,8 @@ const SCHEMA = [
   { name: 'set', desc: 'parameter overrides, comma separated: k=v,k=v' },
   { name: 'net', desc: 'net renames, comma separated: OLD=NEW,OLD=NEW' },
   { name: 'suffix', desc: 'suffix for colliding part ids (default _2)' },
+  { name: 'device', desc: 'typed recipes: bind this IC entry instead of the auto-selected one' },
+  { name: 'class', desc: 'devices: filter by device class (e.g. regulator.ldo)' },
   { name: 'json', desc: 'machine-readable output', hasValue: false }
 ];
 
@@ -45,6 +47,8 @@ function summarize(name, raw) {
   return {
     name,
     title: raw.name || name,
+    type: raw.type || null,
+    deviceClass: (raw.bind && raw.bind.device && raw.bind.device.class) || null,
     blockCount: (raw.blocks || []).length,
     blocks: (raw.blocks || []).map((b) => b.title || b.name || '(untitled)'),
     parts: parts.map((p) => p.id),
@@ -61,12 +65,25 @@ function cmdList(opts) {
     return summarize(name, raw);
   });
   if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return; }
-  console.log(`${'recipe'.padEnd(20)} ${'parts'.padStart(5)}  ${'params'.padStart(6)}  blocks`);
+  console.log(`${'recipe'.padEnd(20)} ${'parts'.padStart(5)}  ${'params'.padStart(6)}  ${'device class'.padEnd(18)} blocks`);
   for (const r of rows) {
     console.log(`${r.name.padEnd(20)} ${String(r.parts.length).padStart(5)}  `
-      + `${String(Object.keys(r.params).length).padStart(6)}  ${r.blocks.join(' | ')}`);
+      + `${String(Object.keys(r.params).length).padStart(6)}  ${String(r.deviceClass || '—').padEnd(18)} ${r.blocks.join(' | ')}`);
   }
   console.log(`\n${rows.length} recipes in recipe/`);
+}
+
+function cmdDevices(opts) {
+  // which library entries can satisfy a typed recipe's device slot
+  const S = require('./lib/select');
+  const rows = S.listDevices({ class: opts.class });
+  if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return; }
+  if (!rows.length) {
+    console.log('no device entries declare a "class" yet — add them with fetch-lcsc --class, or curate an ic entry');
+    return;
+  }
+  console.log(`${'device'.padEnd(22)} ${'class'.padEnd(20)} roles`);
+  for (const d of rows) console.log(`${d.name.padEnd(22)} ${d.class.padEnd(20)} ${d.roles.join(' ')}`);
 }
 
 function cmdShow(opts) {
@@ -101,7 +118,12 @@ function cmdApply(opts) {
   if (!fs.existsSync(target)) die(`target design not found: ${target}`);
   const overrides = parsePairs(opts.set, 'set');
   const netRenames = parsePairs(opts.net, 'net');
-  const { declared, unknown, params, recipe } = M.resolveRecipe(opts.recipe, overrides, netRenames);
+  const resolved = M.resolveRecipe(opts.recipe, overrides, netRenames, { device: opts.device });
+  const { declared, unknown, params, recipe } = resolved;
+  if (resolved.device) {
+    console.log(`  device: ${resolved.device.name} (class ${resolved.device.class}`
+      + `${resolved.device.candidates.length > 1 ? `, candidates: ${resolved.device.candidates.join(', ')}` : ''})`);
+  }
   for (const k of unknown) {
     console.error(`warning: "${k}" is not a declared param of ${opts.recipe} (declared: ${Object.keys(declared).join(', ') || 'none'})`);
   }
@@ -145,6 +167,7 @@ function main() {
   // `recipe.js show ldo-3v3` — the name may be positional or --recipe.
   if (!opts.recipe && positional.length) opts.recipe = positional[0];
   if (cmd === 'show') { cmdShow(opts); return; }
+  if (cmd === 'devices') { cmdDevices(opts); return; }
   if (cmd === 'apply') { cmdApply(opts); return; }
   die(`unknown command "${cmd}" (want: list | show | apply)`);
 }

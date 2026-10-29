@@ -1,0 +1,23 @@
+{
+  "name": "ldo-typed",
+  "type": "regulator.ldo",
+  "bind": {
+    "device": {
+      "class": "regulator.ldo",
+      "requiredRoles": ["VIN", "VOUT", "GND"]
+    }
+  },
+  "ports": {
+    "VIN": "VIN",
+    "3V3": "VOUT",
+    "GND": "GND"
+  },
+  "powers": {
+    "GND": "down"
+  },
+  "parts": [
+    { "id": "U1", "$device": true, "name": "LDO" },
+    { "id": "C1", "symbol": "CAP", "footprint": "C0603", "value": "10uF", "pins": { "1": "VIN", "2": "GND" } },
+    { "id": "C2", "symbol": "CAP", "footprint": "C0603", "value": "22uF", "pins": { "1": "3V3", "2": "GND" } }
+  ]
+}

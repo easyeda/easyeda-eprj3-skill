@@ -407,5 +407,36 @@
     "symbol": "EasyEDA 官方库 C8734（STM32F103C8T6 器件符号，pin 号/名称/列位逐字）— https://easyeda.com/api/products/C8734/components",
     "footprint": "EasyEDA 官方库 C8734 封装 LQFP-48_L7.0-W7.0-P0.50-LS9.0-BL（焊盘坐标逐字）— 同上",
     "datasheet": "https://www.st.com/resource/en/datasheet/stm32f103c8.pdf"
-  }
+  },
+  "class": "mcu",
+  "pinRoles": {
+    "VDD": [
+      "24",
+      "9",
+      "36",
+      "48"
+    ],
+    "VSS": [
+      "23",
+      "35",
+      "47"
+    ],
+    "VSSA": "8",
+    "RESET": "7",
+    "VBAT": "1",
+    "USART1_TX": "30",
+    "USART1_RX": "31",
+    "SWDIO": "34",
+    "SWCLK": "37",
+    "I2C1_SCL": "42",
+    "I2C1_SDA": "43",
+    "BOOT0": "44"
+  },
+  "requiredRoles": [
+    "VDD",
+    "VSS",
+    "RESET",
+    "SWDIO",
+    "SWCLK"
+  ]
 }

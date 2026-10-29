@@ -193,5 +193,16 @@
     "symbol": "EasyEDA 官方库 C2145（MMBT5551_C2145 器件符号，图形/引脚/属性逐字）— https://easyeda.com/api/products/C2145/components",
     "footprint": "EasyEDA 官方库 C2145 封装 SOT-23-3_L2.9-W1.3-P1.90-LS2.4-BR（焊盘/丝印逐字）— 同上",
     "datasheet": "（payload 未附 datasheet 链接）"
-  }
+  },
+  "class": "transistor.npn",
+  "pinRoles": {
+    "C": "3",
+    "B": "1",
+    "E": "2"
+  },
+  "requiredRoles": [
+    "C",
+    "B",
+    "E"
+  ]
 }

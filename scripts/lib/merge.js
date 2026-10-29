@@ -172,12 +172,57 @@ function recipeSignature(name) {
   } catch { return 'none'; }
 }
 
-function resolveRecipe(name, overrides, netRenames) {
+/**
+ * Resolve a recipe into a concrete fragment.
+ *
+ * Typed recipes (`"bind": { "device": { class, requiredRoles, optionalRoles } }`)
+ * do not name a chip: one of their parts is marked `"$device": true`, and the
+ * device is chosen here — `opts.device` (explicit) wins, otherwise
+ * select.bindDevice picks the best library entry for the class + required
+ * roles. The chosen entry's pinRoles expand into a role binding, using the
+ * recipe's `ports` map (port → role) as the net for each role.
+ */
+function resolveRecipe(name, overrides, netRenames, opts) {
   const { raw, params: declared } = loadRecipe(name);
   const unknown = Object.keys(overrides || {}).filter((k) => !(k in declared));
   const params = Object.assign({}, declared, overrides || {});
   const expanded = expand(raw, params);
-  return { raw, declared, params, unknown, recipe: renameNets(expanded, netRenames || {}) };
+  const out = renameNets(expanded, netRenames || {});
+
+  const bind = raw.bind && raw.bind.device;
+  if (!bind) return { raw, declared, params, unknown, recipe: out };
+
+  const S = require('./select');
+  const want = {
+    class: bind.class,
+    roles: (bind.requiredRoles || []).concat(bind.optionalRoles || []),
+    prefer: (opts && opts.device) || bind.prefer
+  };
+  const picked = S.bindDevice(want);
+  const entry = S.listDevices({ class: bind.class }).find((d) => d.name === picked.name);
+  const ports = raw.ports || {};
+  const roles = {};
+  for (const [port, role] of Object.entries(ports)) {
+    const net = netRenames && netRenames[port] ? netRenames[port] : port;
+    roles[role] = net;
+  }
+  const devParts = (out.parts || []).filter((p) => p.$device);
+  if (devParts.length !== 1) {
+    throw new Error(`typed recipe "${name}" must mark exactly one part with "$device": true (found ${devParts.length})`);
+  }
+  const dp = devParts[0];
+  const idx = out.parts.indexOf(dp);
+  const part = { id: dp.id, ic: picked.name, roles, autoNC: true };
+  if (dp.name) part.name = dp.name;
+  out.parts[idx] = part;
+  return {
+    raw,
+    declared,
+    params,
+    unknown,
+    recipe: out,
+    device: { name: picked.name, class: bind.class, candidates: picked.candidates }
+  };
 }
 
 module.exports = {

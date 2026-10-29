@@ -62,7 +62,7 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
 node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → netcheck → previews → build.json digest
 node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
-node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/
+node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/ (add --png for rasterized images)
 node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
 ```
 
@@ -96,9 +96,16 @@ node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式含预�
 助手 API：`A.cap/res/ind/led/diode`（自动位号）、`A.ic`（IC 条目，autoNC
 默认开）、`A.chip`（内联符号+封装；`pinNames` 让引脚名与网络名分开：
 `{ pins: {1:'PUMP_EN'}, pinNames: {1:'G'} }`）、`A.conn`（连接器，W003 豁免）、
-`A.block`（模块 + 功能描述）、`A.place/power/net/pair/expect/frame`。
+`A.block`（模块 + 功能描述）、`A.place/power/net/pair/expect/frame`、
+`A.recipe('ldo-typed', { device?, set?, net? })`（类型化 recipe：按 class+角色
+自动选型，见下）。
 位号：自动编号与显式 id 共用计数器，重复 id 在调用处立即报错。
 完整列表见 [scripts/lib/authoring.js](scripts/lib/authoring.js)。
+
+**类型化 recipe（换器件不改模板）**：`recipe/*.json` 里的 `"bind": { "device":
+{ "class": … } }` 表示“这里要一个某类器件”，具体型号由 `lib/select.js` 按
+`class + 角色` 从 IC 库挑（`node scripts/recipe.js devices` 看可用器件）。
+`--device <名称>` 可强制指定；选不到会明确报“缺哪个能力”，绝不编造引脚。
 
 Rebuild loops (fix → rebuild → read gates) should pass `--quiet --report
 build.json`: one summary line on stdout, the full machine-readable report

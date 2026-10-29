@@ -36,6 +36,7 @@ function createAuthoring() {
   const counters = {};
   let currentBlock = null;
   let expect_ = null;
+  const selectedDevices = [];   // typed recipes record what the binder chose
   // every id ever handed out (auto-numbered OR explicit) — a later explicit id
   // colliding with an auto one is a hard error at the point of use (report P3)
   const usedIds = new Set();
@@ -171,6 +172,29 @@ function createAuthoring() {
       o.bridge = 'ok';
       return A.chip(o);
     },
+
+    // ------- typed recipes: merge a validated sub-circuit into this design
+    // A.recipe('ldo-typed', { device: 'AMS1117-3.3', set: { cout: '22uF' },
+    //                         net: { VIN: 'VBAT' } })
+    // The device is chosen by class + roles unless `device` names one; ids
+    // that collide with what the generator already created are suffixed.
+    recipe(name, opts) {
+      const M = require('./merge');
+      const o = opts || {};
+      const resolved = M.resolveRecipe(name, o.set, o.net, { device: o.device });
+      const merged = M.merge(design, resolved.recipe, {
+        suffix: o.suffix,
+        params: resolved.params,
+        netRenames: o.net || {}
+      });
+      Object.assign(design, merged.design);
+      for (const p of design.parts) usedIds.add(p.id);
+      if (resolved.device) selectedDevices.push(resolved.device);
+      return A;
+    },
+
+    /** Devices the typed recipes picked (for the build log / report). */
+    selectedDevices() { return selectedDevices.slice(); },
 
     // ------- output
     design() {

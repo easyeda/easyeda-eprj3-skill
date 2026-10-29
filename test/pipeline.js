@@ -185,6 +185,36 @@ function main() {
   run('scripts/netcheck.js', ['--dir', badDir], 1);
   ok(true, 'netcheck CLI exits 1 on a tampered pad net');
 
+  // -------------------------------------------- typed recipes (class + roles)
+  // A recipe that names a device CLASS must resolve a real library entry by
+  // role coverage, expand roles into pins, and fail loudly when the class has
+  // no capable device (report §9).
+  const devs = JSON.parse(run('scripts/recipe.js', ['devices', '--json']));
+  ok(devs.some((d) => d.name === 'AMS1117-3.3' && d.class === 'regulator.ldo'),
+    'recipe devices lists the regulator class', JSON.stringify(devs.map((d) => `${d.name}:${d.class}`)));
+  const tgt = path.join(TMP, 'typed-base.json');
+  fs.writeFileSync(tgt, JSON.stringify({
+    name: 'typed-base', powers: { GND: 'down' },
+    parts: [{ id: 'C9', symbol: 'CAP', footprint: 'C0603', value: '100nF', pins: { 1: '3V3', 2: 'GND' } }]
+  }, null, 2), 'utf8');
+  const applyOut = run('scripts/recipe.js', ['apply', 'ldo-typed', '--to', tgt]);
+  ok(/device: AMS1117-3\.3/.test(applyOut), 'typed recipe binds a device by class', applyOut);
+  const typedDesign = JSON.parse(fs.readFileSync(tgt, 'utf8'));
+  const bound = typedDesign.parts.find((p) => p.ic);
+  ok(bound && bound.roles && bound.roles.VOUT === '3V3', 'typed binding expands roles', JSON.stringify(bound && bound.roles));
+  const tdir = path.join(TMP, 'typed-proj');
+  const tb = run('scripts/build.js', ['--design', tgt, '--dir', tdir, '--force', '--quiet']);
+  ok(/eprj3 at/.test(tb), 'typed design builds', tb);
+  const badDev = run('scripts/recipe.js', ['apply', 'ldo-typed', '--to', tgt, '--device', 'NOPE'], 1);
+  ok(/not in class/.test(badDev), 'unknown preferred device is rejected by name', badDev);
+  // gate I008: unbinding a required role must fail the intent gate
+  const badRoles = JSON.parse(fs.readFileSync(tgt, 'utf8'));
+  delete badRoles.parts.find((p) => p.ic).roles.VOUT;
+  const badRolesFile = path.join(TMP, 'typed-bad-roles.json');
+  fs.writeFileSync(badRolesFile, JSON.stringify(badRoles, null, 2), 'utf8');
+  const i8 = run('scripts/intent.js', ['--design', badRolesFile], 1);
+  ok(/I008/.test(i8), 'I008 catches an unbound required role', i8);
+
   // --------------------------------------------------- error handling path
   const bad = path.join(TMP, 'bad.json');
   fs.writeFileSync(bad, JSON.stringify({

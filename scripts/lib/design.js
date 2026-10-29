@@ -102,10 +102,16 @@ function resolveIcPart(p) {
   const symbolSpec = entry.rawSymbol
     ? { name: entry.name, designator: entry.designator || 'U', raw: true, pins: entry.rawSymbol.pins, graphics: entry.rawSymbol.graphics }
     : { name: entry.name, designator: entry.designator || 'U', pitch: entry.pitch || 30, pins: entry.symbol.pins };
-  return Object.assign({}, p, {
+  const out = Object.assign({}, p, {
     symbol: symbolSpec,
     footprint: entry.footprint
   });
+  // device metadata (optional, used by the role binder and gate I008): the
+  // entry declares its class and which pins play which role
+  if (entry.class) out.deviceClass = entry.class;
+  if (entry.pinRoles) out.pinRoles = entry.pinRoles;
+  if (entry.requiredRoles) out.requiredRoles = entry.requiredRoles;
+  return out;
 }
 
 /** Apply defaults and resolve the shorthand forms into one canonical shape. */
@@ -176,6 +182,20 @@ function normalize(raw, file) {
         if (num && net) pins[num.trim()] = net.trim();
       }
     }
+    // role binding (typed recipes): `roles: { VDD: '3V3', SDA: 'I2C_SDA' }`
+    // expands to pin→net through the device entry's pinRoles. Explicit
+    // parts[].pins win when both are given.
+    const roleNets = {};
+    if (p.roles && typeof p.roles === 'object' && p.pinRoles) {
+      for (const [role, net] of Object.entries(p.roles)) {
+        const nums = p.pinRoles[role];
+        if (nums === undefined) fail(`part "${id}": role "${role}" does not exist on ${p.ic || 'the device'} (roles: ${Object.keys(p.pinRoles).join(', ')})`);
+        for (const num of [].concat(nums)) {
+          if (pins[String(num)] === undefined) pins[String(num)] = String(net);
+          roleNets[role] = String(net);
+        }
+      }
+    }
     const rot = Number(p.rotation || p.rot || 0);
     // autoNC: unmapped pins of inline/IC symbols default to NC (the IC entry
     // or inline spec defines the pin numbers, so this is evidence-based)
@@ -221,6 +241,11 @@ function normalize(raw, file) {
       // pin definitions source note (datasheet URL / 官方库出处) — required by
       // I007 for multi-pin inline symbols that look like real devices
       pinoutSource: p.pinoutSource === undefined ? null : String(p.pinoutSource),
+      // device metadata + role binding (typed recipes; gate I008)
+      deviceClass: p.deviceClass || null,
+      pinRoles: p.pinRoles || null,
+      requiredRoles: p.requiredRoles || null,
+      roles: Object.keys(roleNets).length ? roleNets : null,
       rotation: rot,
       // the author chose this rotation — sch-tidy must not move it
       rotationExplicit: p.rotation !== undefined || p.rot !== undefined,

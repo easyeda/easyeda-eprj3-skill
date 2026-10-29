@@ -66,7 +66,8 @@ easyeda-eprj3-skill/
 | `node scripts/eval.js` | 回归基准（`--diff` 对比历史、`--design` 度量新设计；逐案记录 ~tokens 与秒数） |
 | `node scripts/depcheck.js` | 自研合规扫描：全部 require/import 必须是 Node 内置或本仓库相对路径（`npm run depcheck`） |
 | `node scripts/cleanup.js` | 清理临时生成的库文件 |
-| `node scripts/open.js` | 在 EasyEDA Pro 客户端打开工程 |
+| `node scripts/render.js --dir <p> [--png]` | 预览：每个原理图页 + PCB 各一张 SVG；`--png [--scale 2]` 再栅格化成 PNG（无头浏览器：Windows 默认 Edge，`EPRJ3_BROWSER` 可覆盖。**注意**：某些机器上无头浏览器能启动却不产图，脚本会明确报错并提示手工打开 SVG） |
+| `node scripts/open.js` | 打开工程：默认交给系统文件关联（等价双击 `.eprj3`），`--client` 可指定 exe |
 
 ## 脚本用法示例
 

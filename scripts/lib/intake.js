@@ -318,7 +318,16 @@ function resolve(req, opts) {
       onPowerConflict: (net, kept, wanted) => derivedNotes.push(`网络 "${net}" 电源属性冲突：保留 ${kept}，忽略 ${wanted}（${f.recipe}）`)
     });
     design = merged.design;
-    used.push({ recipe: f.recipe, fromCache: !!hit, params: resolved.params, parts: merged.summary.addedParts });
+    used.push({
+      recipe: f.recipe,
+      fromCache: !!hit,
+      params: resolved.params,
+      parts: merged.summary.addedParts,
+      // typed recipes resolve their device by class + roles; fixed-model ones
+      // bake a specific chip in (report §9) — the plan reports which is which
+      deviceClass: (resolved.device && resolved.device.class) || null,
+      device: (resolved.device && resolved.device.name) || null
+    });
   }
   if (cache) cache.save();
 
@@ -373,7 +382,7 @@ function resolve(req, opts) {
     board: design.board || 'auto-grow',
     layers: getPath(req, 'board.layers') || 2,
     package: getPath(req, 'package') || '0603',
-    recipes: used.map((u) => ({ recipe: u.recipe, parts: u.parts.length, fromCache: u.fromCache })),
+    recipes: used.map((u) => ({ recipe: u.recipe, parts: u.parts.length, fromCache: u.fromCache, deviceClass: u.deviceClass, device: u.device })),
     parts: design.parts.length,
     railWidth: width,
     rules: design.pcb && design.pcb.rules ? design.pcb.rules : null,
@@ -459,6 +468,15 @@ function renderPlan(plan) {
   L.push(`  电源  输入 ${plan.input} → 轨 ${(plan.rails || []).join(' / ') || '—'}（${plan.current_mA} mA）`);
   L.push(`  板框  ${typeof plan.board === 'string' ? plan.board : `${plan.board.width}×${plan.board.height} mil`} · ${plan.layers} 层 · 封装 ${plan.package} · 只布局（布线/铺铜在客户端完成）`);
   L.push(`  模块  ${plan.recipes.map((r) => `${r.recipe}(${r.parts})${r.fromCache ? '*' : ''}`).join(' + ') || '无匹配 recipe — 需手写 design'}`);
+  // coverage (report §9 P4): typed recipes pick their part by class + roles;
+  // fixed-model ones still bake a specific chip in
+  const typed = plan.recipes.filter((r) => r.deviceClass);
+  const fixed = plan.recipes.filter((r) => !r.deviceClass);
+  if (plan.recipes.length) {
+    L.push(`  覆盖  类型化 ${typed.length}（${typed.map((r) => `${r.recipe}→${r.device}`).join(', ') || '无'}）`
+      + ` · 固定模板 ${fixed.length}（${fixed.map((r) => r.recipe).join(', ') || '无'}）`
+      + `${fixed.length ? ' — 固定模板写死了型号，换型请改用类型化 recipe 或 board.gen.js' : ''}`);
+  }
   L.push(`  规模  ${plan.parts} parts · ${plan.nets.length} nets`);
   if (plan.rules || plan.railWidth) {
     L.push(`  注记  电源轨 ${plan.railWidth} mil（供客户端布线参考的电流注记）${plan.rules ? ` · DRC 规则 ${Object.entries(plan.rules).map(([k, v]) => `${k}=${v}`).join(' / ')}` : ''}`);

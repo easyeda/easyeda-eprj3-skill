@@ -29,7 +29,8 @@ const I_RULES = {
   I004: { level: 'error', weight: 8, text: 'part value outside its declared range' },
   I005: { level: 'error', weight: 10, text: 'divider wiring or ratio wrong' },
   I006: { level: 'warn', weight: 2, text: 'declared pair is not routed as a pair' },
-  I007: { level: 'error', weight: 12, text: 'real-chip pin definitions hand-authored without a source' }
+  I007: { level: 'error', weight: 12, text: 'real-chip pin definitions hand-authored without a source' },
+  I008: { level: 'error', weight: 10, text: 'device role binding incomplete, duplicated or conflicting' }
 };
 
 /** "10k" → 10000, "330R" → 330, "100nF" → 1e-7, "4.7uF" → 4.7e-6, "1MΩ" → 1e6. */
@@ -119,6 +120,43 @@ function runIntent(d, opts) {
     });
   }
   if (pinoutsChecked) checks.push({ id: 'pinoutSource', parts: pinoutsChecked });
+
+  // ---- I008: role binding integrity (typed recipes / explicit role maps).
+  // A part that declares `roles: { ROLE: net }` binds a device role to a net;
+  // this gate proves the binding is complete and unambiguous:
+  //   - every required role of the device is bound;
+  //   - every declared role exists on the device (design.js also rejects it);
+  //   - no pin ends up in two roles bound to DIFFERENT nets (a real conflict —
+  //     distinct roles sharing a net is a legitimate tie, e.g. GND + VSS).
+  let rolesChecked = 0;
+  for (const p of d.parts) {
+    if (!p.roles || !p.pinRoles) continue;
+    rolesChecked += 1;
+    const missing = (p.requiredRoles || []).filter((r) => p.roles[r] === undefined);
+    if (missing.length) {
+      add('I008', `part ${p.id} (${p.deviceClass || 'device'}): required role(s) ${missing.join(', ')} are not bound`, {
+        ref: p.id,
+        fix: `bind them in parts[].roles — e.g. "roles": { ${missing.map((r) => `"${r}": "<net>"`).join(', ')} }`
+      });
+    }
+    const pinNet = new Map();
+    for (const [role, net] of Object.entries(p.roles)) {
+      const pins = p.pinRoles[role];
+      if (pins === undefined) continue;                 // reported by design.js
+      for (const num of [].concat(pins)) {
+        const prev = pinNet.get(String(num));
+        if (prev && prev.net !== net) {
+          add('I008', `part ${p.id}: pin ${num} is bound to both "${prev.role}" (${prev.net}) and "${role}" (${net})`, {
+            ref: p.id, pin: String(num),
+            fix: `give pin ${num} one role only, or bind both roles to the same net`
+          });
+        } else if (!prev) {
+          pinNet.set(String(num), { role, net });
+        }
+      }
+    }
+  }
+  if (rolesChecked) checks.push({ id: 'roles', parts: rolesChecked });
 
   // ---- decoupling: every supply net needs a capacitor to a ground net.
   if (expect.decoupling) {

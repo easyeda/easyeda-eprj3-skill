@@ -1,0 +1,30 @@
+{
+  "name": "npn-switch-typed",
+  "type": "switch.low_side",
+  "bind": {
+    "device": {
+      "class": "transistor.npn",
+      "requiredRoles": ["C", "B", "E"]
+    }
+  },
+  "ports": {
+    "LOAD": "C",
+    "CTRL": "B",
+    "GND": "E"
+  },
+  "powers": {
+    "GND": "down"
+  },
+  "parts": [
+    { "id": "Q1", "$device": true, "name": "NPN" },
+    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "10k", "pins": { "1": "CTRL", "2": "GND" } },
+    { "id": "J1",
+      "symbol": { "name": "HDR_2P_LOAD", "designator": "J", "pitch": 30, "pins": ["1:LOAD", "2:GND"] },
+      "footprint": { "name": "HDR_2P_LOAD", "designator": "J",
+        "pads": [[1, -50, 0, 60, 60], [2, 50, 0, 60, 60]],
+        "outline": [-90, -50, 90, 50] },
+      "name": "LOAD_PORT",
+      "value": "LOAD",
+      "pins": { "1": "LOAD", "2": "GND" } }
+  ]
+}

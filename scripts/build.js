@@ -683,7 +683,7 @@ function main() {
   // marks are checked even without an `expect` block — that is the promise in
   // docs/build.md, and the one gate that catches a reversed LED/diode.
   let intent = null;
-  if (design.expect || design.parts.some((p) => p.polarity)) {
+  if (design.expect || design.parts.some((p) => p.polarity || p.roles)) {
     const { runIntent } = require('./lib/intent');
     intent = runIntent(design, { placedOnly: true });
     report.intent = intent;
