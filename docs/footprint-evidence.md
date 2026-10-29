@@ -1,10 +1,10 @@
 # 封装 / 符号证据表（land-pattern & symbol evidence）
 
-> **网络边界：** 构建/校验/渲染读取的是随仓库提交的固化数据（本表是出处
-> 引用，不是抓取指令）。唯一的联网动作是**用户发起的按器件抓取**：
+> **网络边界：** 构建/校验/渲染只读磁盘上的数据（通用预设 + 本地 IC 缓存），
+> 不在构建时联网。唯一的联网动作是**用户发起的按器件抓取**：
 > `node scripts/fetch-lcsc.js --id C<LCSC> --install`（EasyEDA 官方库，许可
-> 归属嘉立创EDA）——遇到库里没有的器件先抓官方库，抓不到再自建符号/封装
-> 并声明 pinoutSource。批量校准/新增家族仍是维护会话流程，见
+> 归属嘉立创EDA）——带型号的器件一律这样做，抓不到再自建符号/封装并声明
+> pinoutSource。封装家族（`fp-auto.js`）的批量校准仍是维护会话流程，见
 > [docs/development.md](development.md)。
 
 要求：库数据必须**可溯源到外部来源**——不能是"照抄自家 recipe"（那种自证
@@ -69,7 +69,7 @@ Pin Type 属性取值：客户端实测样例中只出现过 `IN` 与 `Undefined
 使用的电气方向存放在 design 上下文（`"num:name:dir"` 引脚 spec / IC 条目），
 **不写入记录**——没有真机样例前不得发明新的 Pin Type 枚举值。
 
-## IC 引脚库（`templates/library/ic/`）
+## IC 引脚库（本地缓存，不入库）
 
 人工维护的数据（不是生成的）——每条必须注明来源：
 
@@ -78,7 +78,7 @@ Pin Type 属性取值：客户端实测样例中只出现过 `IN` 与 `Undefined
 | `STM32F103C8T6` | 48（24 L / 24 R，符号 pitch 100 mil；封装为官方 LQFP-48 焊盘逐字坐标） | 符号+封装：EasyEDA 官方库 C8734（`https://easyeda.com/api/products/C8734/components`，pin 号/名称/列位与焊盘坐标逐字；电源类引脚名按确定性命名规则标 W 方向）；datasheet：[ST STM32F103C8](https://www.st.com/resource/en/datasheet/stm32f103c8.pdf) |
 | `AMS1117-3.3` | 4（1=GND 2=VOUT 3=VIN 4=VOUT/tab，官方符号逐字；封装 `{auto:SOT223}` 按官方 SOT-223 坐标生成） | EasyEDA 官方库 C6186（`https://easyeda.com/api/products/C6186/components`）；datasheet：[AMS1117](https://www.advanced-monolithic.com/Pdf/ds1117.pdf) |
 
-新增条目：先 `node scripts/fetch-lcsc.js --id C<LCSC> --install` 抓官方库
+**带型号的条目一律不入库**，放本地缓存（`~/.easyeda-eprj3/ic`，见 docs/development.md）。新增条目：先 `node scripts/fetch-lcsc.js --id C<LCSC> --install` 抓官方库
 （输出即条目格式）；官方库没有的器件再按 datasheet 自建并由用户确认引脚
 （流程见 [docs/development.md](development.md)）。
 

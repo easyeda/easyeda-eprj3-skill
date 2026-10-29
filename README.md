@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.27.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.28.0** · [Changelog](CHANGELOG.md)
 
 ---
 

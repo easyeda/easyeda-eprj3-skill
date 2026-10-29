@@ -58,7 +58,7 @@ cells for large inline symbols so blocks keep their gutters.
 | --- | --- | --- |
 | `id` | yes | reference designator and part key; unique |
 | `symbol` | yes | preset entry name, or `{ name, designator, pins:[…] }` |
-| `ic` | no | name of an evidence-sourced IC entry (`templates/library/ic/`) — replaces `symbol`+`footprint`; see below |
+| `ic` | no | name of a cached IC entry, fetched from the official library (`scripts/fetch-lcsc.js --install`) — replaces `symbol`+`footprint`; see below |
 | `footprint` | yes unless `pcb:false` | preset name, `{ auto: "LQFP48" }`, or `{ name, designator, pads, outline }` |
 | `pins` | yes | `{ "1": "NET", … }` or `["1:NET","2:NET"]`; `"NC"` marks an intentional no-connect |
 | `polarity` | no | `{ "1": "+", "2": "-" }` — the intent gate flags a "+" pin on a ground net (a reversed LED / electrolytic) |
@@ -125,18 +125,27 @@ AI-authored schematics:
   "pins": { "1": "3V3", "23": "GND", "24": "3V3", "34": "SWDIO", "37": "SWCLK" } }
 ```
 
-The entry (under [`templates/library/ic/`](../templates/library/ic)) ships the
+The entry is **fetched from the EasyEDA official library into a local cache**
+— model-specific parts are deliberately NOT shipped with the skill
+(`templates/library/` holds only generic, non-model entries: passives, diodes,
+LEDs, test points, power flags and net ports):
+
+```bash
+node scripts/fetch-lcsc.js --id C8734 --install   # → ~/.easyeda-eprj3/ic/
+```
+
+The entry ships the
 evidence-sourced symbol pin list (`num:name:dir:side` — pin numbers, names,
 electrical directions and column layout) and the footprint spec, each with a
 citable `evidence` block (symbol source, footprint source, datasheet URL).
 Map only the pins the design actually uses; everything else becomes `"NC"`.
 An IC entry replaces `symbol` + `footprint` — give one or the other, never
-both. Entries are curated, committed data. For a part NOT in the library, in
-order: ① `node scripts/fetch-lcsc.js --id C<LCSC> --install` — pulls the
-official EasyEDA symbol + footprint verbatim (the one sanctioned network call,
-user-initiated per part); ② if the fetch fails, self-build the inline symbol
-(functional pin grouping) + an `{auto}` footprint, CONFIRM the pinout with the
-user against the datasheet, and declare
+both. Entries are cached locally, never committed with the skill. For a part
+NOT in the cache, in order: ① `node scripts/fetch-lcsc.js --id C<LCSC>
+--install` — pulls the official EasyEDA symbol + footprint verbatim (the one
+sanctioned network call, user-initiated per part); ② if the fetch fails,
+self-build the inline symbol (functional pin grouping) + an `{auto}`
+footprint, CONFIRM the pinout with the user against the datasheet, and declare
 `pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails undeclared
 real-device pinouts. Never hand-type a real chip's pins from memory without
 either step.

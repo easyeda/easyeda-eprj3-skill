@@ -68,8 +68,10 @@ function materialise(file, name) {
     fs.writeFileSync(out, JSON.stringify(merged.design, null, 2), 'utf8');
     return out;
   } catch (e) {
-    console.error(`  ! cannot materialise typed recipe ${name}: ${e.message}`);
-    return file;
+    // model-specific devices live in the local cache (fetch-lcsc); a clean
+    // checkout cannot build a typed recipe, so the case is skipped, not failed
+    console.log(`  note: skipping typed recipe ${name} — ${e.message.split('—')[0].trim()}`);
+    return null;
   }
 }
 
@@ -83,6 +85,7 @@ function cases(cfg) {
       const name = `${dir.split('/')[0]}/${f.replace(/\.json$/, '')}`;
       const over = (cfg && cfg[name]) || {};
       const file = materialise(path.join(d, f), name);
+      if (!file) continue;                    // typed recipe with no cached device
       out.push({
         name,
         file,

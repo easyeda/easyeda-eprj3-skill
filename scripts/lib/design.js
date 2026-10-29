@@ -63,25 +63,31 @@ function readDesign(file) {
 }
 
 // ------------------------------------------------------------ IC pinout library
-// templates/library/ic/<name>.json carries an evidence-sourced symbol pin list
-// (num:name:dir:side) and a footprint spec, so a real IC is referenced by name
-// instead of the agent hand-writing 48 pin definitions from memory:
+// Model-specific parts are NOT committed with the skill (library policy: only
+// generic, non-model entries live in templates/library/). A real IC entry is
+// fetched from the EasyEDA official library into a local cache and referenced
+// by name:
 //
+//   node scripts/fetch-lcsc.js --id C8734 --install   # → ~/.easyeda-eprj3/ic/
 //   { "id": "U1", "ic": "STM32F103C8T6", "pins": { "1": "3V3", ... } }
 //
 // resolveIcPart injects the entry's symbol/footprint into the part BEFORE the
 // normal inline paths run — everything downstream (validation, layout, ERC)
 // sees an ordinary inline part, and `part.ic` only records the provenance.
-const IC_DIR = path.join(__dirname, '..', '..', 'templates', 'library', 'ic');
 const icCache = new Map();
 
 function loadIcEntry(name) {
   if (icCache.has(name)) return icCache.get(name);
-  const file = path.join(IC_DIR, `${name}.json`);
-  if (!fs.existsSync(file)) fail(`part references unknown ic "${name}" — no templates/library/ic/${name}.json (runtime is offline: pick a listed entry via load-library.js, hand-write an inline symbol, or curate a new entry per docs/development.md)`);
+  const I = require('./icdirs');
+  const hit = I.icFiles(null).find((f) => path.basename(f, '.json') === name);
+  if (!hit) {
+    fail(`part references ic "${name}", but no cached entry exists — fetch it from the official library: `
+      + `node scripts/fetch-lcsc.js --id C<LCSC> --install (cache: ${I.USER_CACHE}); `
+      + 'model-specific parts are never shipped with the skill');
+  }
   let entry;
   try {
-    entry = parseJsonText(readJsonText(file));
+    entry = parseJsonText(readJsonText(hit));
   } catch (e) {
     fail(`ic entry "${name}" is not valid JSON: ${e.message}`);
   }

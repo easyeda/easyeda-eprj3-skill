@@ -30,7 +30,8 @@ easyeda-eprj3-skill/
 │   ├── cleanup.js
 │   ├── open.js
 │   └── lib/               ← 共享读写模块
-├── templates/library/     ← 内置预设符号/封装库
+├── templates/library/     ← 通用预设（符号/封装，无型号）
+├── .cache/ic/             ← 本地 IC 缓存（gitignored，fetch-lcsc 写入）
 ├── examples/              ← 示例工程
 ├── docs/                  ← 格式说明
 └── test/                  ← 回归测试
@@ -186,17 +187,26 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 | 构建前想给用户过目？ | `build.js --plan`：真实预演（lint/drc 分数是真的），目标目录零写入 |
 | 怎么证明零第三方依赖？ | `node scripts/depcheck.js`（`npm run depcheck`，已串进 `npm test`） |
 
-## 库数据维护（需联网，仅限维护会话）
+## 库数据维护（抓取按需，构建不联网）
 
-> **运行时（build/validate/render 等一切使用场景）零联网**——skill 只读随仓
-> 库提交的固化数据。本章节是**维护者新增/校准库数据**的流程，由维护会话执行，
-> 不属于 skill 的日常使用。
+> **库策略（用户规定）：** `templates/library/` 只放通用、高频、**无型号**的条目
+> （电阻/电容/电感/二极管/LED/测试点/电源标志/网络端口/常见封装）。任何带具体
+> 型号的器件都不作为文件入库，一律用官方接口抓取后放本地缓存。
+>
+> 构建只读本地缓存，不在构建时联网；抓取是**按器件、用户发起**的动作
+> （`fetch-lcsc.js`），也是唯一的联网路径。
 
-新增 IC 条目（`templates/library/ic/`）优先用现成脚本抓取并转换（输出即条目
-格式，evidence 三来源自动填写）：
+| 位置 | 用途 |
+|---|---|
+| `<项目>/.tmp/library/ic` | 工程内暂存（构建结束清理） |
+| `<skill>/.cache/ic` | 仓库本地缓存（gitignored，开发/CI 预置） |
+| `~/.easyeda-eprj3/ic` | 用户缓存，`fetch-lcsc --install` 默认写入 |
+
+新增 IC 条目优先用现成脚本抓取并转换（输出即条目格式，evidence 三来源自动填写）：
 
 ```bash
-node scripts/fetch-lcsc.js --id C8734 --install   # 官方库逐字 → IC 条目
+node scripts/fetch-lcsc.js --id C8734 --install        # 官方库逐字 → 用户缓存
+node scripts/fetch-lcsc.js --id C8734 --install-local  # 写入仓库 .cache/ic（开发用）
 node scripts/fetch-lcsc.js --id C8734             # 仅打印转换结果
 ```
 

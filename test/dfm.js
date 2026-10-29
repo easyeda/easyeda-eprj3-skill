@@ -395,17 +395,30 @@ function main() {
   ok(Math.abs(rsPad[1] + 106.5) < 0.01 && Math.abs(rsPad[3] - 76.8) < 0.01,
     'rs485 SOIC_8P pads 76.8×22.4 at ±106.5 (official LM358 geometry)', JSON.stringify(rsPad));
 
-  // IC pinout entries: verbatim official data + mandatory evidence URLs
+  // IC pinout entries live in the local cache (fetch-lcsc), NOT in the shipped
+  // templates — the library policy keeps model-specific parts out of the repo.
+  // When the cache is empty (clean CI checkout) these are skipped, not failed.
   {
-    const stm = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/ic', 'STM32F103C8T6.json'), 'utf8'));
-    ok(stm.symbol && stm.symbol.pins.length === 48, 'STM32F103C8T6 IC entry carries 48 official pins', stm.symbol && stm.symbol.pins.length);
-    ok(stm.footprint && Array.isArray(stm.footprint.pads) && stm.footprint.pads.length === 48,
-      'STM32F103C8T6 ships 48 verbatim official pads', stm.footprint && stm.footprint.pads && stm.footprint.pads.length);
-    ok(stm.evidence && /easyeda\.com\/api\/products\/C8734/.test(stm.evidence.symbol) && !!stm.evidence.datasheet,
-      'STM32 IC entry cites the EasyEDA official-library API + datasheet', JSON.stringify(stm.evidence));
-    const ams = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/ic', 'AMS1117-3.3.json'), 'utf8'));
-    ok(ams.symbol && ams.symbol.pins.length === 4 && /easyeda\.com\/api\/products\/C6186/.test(ams.evidence.symbol),
-      'AMS1117-3.3 IC entry: 4 official pins with EasyEDA evidence', ams.symbol && ams.symbol.pins.length);
+    const I = require(path.join(ROOT, 'scripts/lib/icdirs.js'));
+    const cached = new Map(I.icFiles(null).map((f) => [path.basename(f, '.json'), f]));
+    if (!cached.size) {
+      console.log('  note: no cached IC entries — fetch with scripts/fetch-lcsc.js --install (skipping IC assertions)');
+    }
+    if (cached.has('STM32F103C8T6')) {
+      const stm = JSON.parse(fs.readFileSync(cached.get('STM32F103C8T6'), 'utf8'));
+      const pins = stm.rawSymbol ? stm.rawSymbol.pins : (stm.symbol && stm.symbol.pins) || [];
+      ok(pins.length === 48, 'STM32F103C8T6 cached entry carries 48 official pins', pins.length);
+      ok(stm.footprint && Array.isArray(stm.footprint.pads) && stm.footprint.pads.length === 48,
+        'STM32F103C8T6 ships 48 verbatim official pads', stm.footprint && stm.footprint.pads && stm.footprint.pads.length);
+      ok(stm.evidence && /easyeda\.com\/api\/products\/C8734/.test(stm.evidence.symbol) && !!stm.evidence.datasheet,
+        'STM32 IC entry cites the EasyEDA official-library API + datasheet', JSON.stringify(stm.evidence));
+    }
+    if (cached.has('AMS1117-3.3')) {
+      const ams = JSON.parse(fs.readFileSync(cached.get('AMS1117-3.3'), 'utf8'));
+      const pins = ams.rawSymbol ? ams.rawSymbol.pins : (ams.symbol && ams.symbol.pins) || [];
+      ok(pins.length === 4 && /easyeda\.com\/api\/products\/C6186/.test(ams.evidence.symbol),
+        'AMS1117-3.3 cached entry: 4 official pins with EasyEDA evidence', pins.length);
+    }
   }
 
   fs.rmSync(TMP, { recursive: true, force: true });

@@ -320,18 +320,21 @@ parts, keep these invariants:
 ## Library tiers
 
 Presets ship with the skill (`templates/library/{symbol,footprint}/`) and resolve
-first — the set is FROZEN at the common parts (passives, diodes, LED, test
-point, the common power flags, net ports): new device types do NOT grow the
-base library, they arrive as evidence-cited IC entries or on-demand inline
-generation. Presets resolve first; **IC pinout entries** (`templates/library/ic/`, referenced by
-`"ic": "STM32F103C8T6"`) carry evidence-cited symbol pinouts + footprints for
-real parts; generated/inline entries are staged under `<project>/.tmp/library/`
-during authoring and removed by `build.js` or `cleanup.js`. `load-library.js
-list|show|remove` inspects both tiers. Inline entries are staged as `SYM_*` /
-`FP_*` so a symbol and footprint sharing a display name cannot collide. The
-library is **committed data — the skill never queries the network at runtime**
-(no live library lookup; curating new entries is a maintainer task, see
-[`docs/development.md`](docs/development.md)).
+first — **only generic, non-model entries live there**: passives, diodes, LEDs,
+test points, power flags, net ports and common packages. Parts with a real
+part number are **not shipped**; they come from the official library on demand
+and are referenced by name (`"ic": "STM32F103C8T6"`):
+
+```bash
+node scripts/fetch-lcsc.js --id C8734 --install    # → ~/.easyeda-eprj3/ic/ (cache)
+```
+
+Generated/inline entries are staged under `<project>/.tmp/library/` during
+authoring and removed by `build.js` or `cleanup.js`; `load-library.js
+list|show|remove` inspects that tier, and `recipe.js devices` lists what the IC
+cache can supply. Inline entries are staged as `SYM_*` / `FP_*` so a symbol and
+footprint sharing a display name cannot collide. Building reads the cache from
+disk — `fetch-lcsc.js` is the only network path, and only on request.
 
 ## Where to read next
 

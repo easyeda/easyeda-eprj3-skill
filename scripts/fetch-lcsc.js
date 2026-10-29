@@ -6,7 +6,7 @@
  *
  *   node scripts/fetch-lcsc.js --id C8734                 # print the IC entry JSON
  *   node scripts/fetch-lcsc.js --id C6186 --out <file>    # write the entry to a file
- *   node scripts/fetch-lcsc.js --id C6186 --install       # write into templates/library/ic/
+ *   node scripts/fetch-lcsc.js --id C6186 --install       # cache it (~/.easyeda-eprj3/ic)
  *   node scripts/fetch-lcsc.js --id C6186 --raw           # dump the raw API JSON
  *
  * Source: https://easyeda.com/api/products/{LCSC}/components — the official
@@ -26,7 +26,8 @@ const { parseArgs, printHelp, die } = require('./lib/utils');
 const SCHEMA = [
   { name: 'id', desc: 'LCSC part number, e.g. C8734', required: true },
   { name: 'out', desc: 'write the converted IC entry JSON to this file' },
-  { name: 'install', desc: 'write the entry into templates/library/ic/ (maintainer use)', hasValue: false },
+  { name: 'install', desc: 'write the entry into the local IC cache (~/.easyeda-eprj3/ic)', hasValue: false },
+  { name: 'install-local', desc: 'write into the repo cache (<skill>/.cache/ic, gitignored; dev/CI)', hasValue: false },
   { name: 'raw', desc: 'dump the raw API JSON instead of converting', hasValue: false }
 ];
 
@@ -237,12 +238,17 @@ async function main() {
   const pinCountNote = `  note: ${pinCount} pins, ${footprint.pads ? footprint.pads.length : "?"} pads, ${silks.length} silk path(s)`;
   const json = JSON.stringify(entry, null, 2) + '\n';
   console.error(pinCountNote);
-  if (opts.install) {
-    const dir = path.join(__dirname, '..', 'templates', 'library', 'ic');
+  if (opts.install || opts['install-local']) {
+    // model-specific entries are never committed with the skill: they go to a
+    // local cache (per-user by default; --install-local seeds the repo cache
+    // for development / CI, which is gitignored)
+    const I = require('./lib/icdirs');
+    const dir = opts['install-local'] ? I.SKILL_CACHE : I.defaultInstallDir();
+    fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, `${entry.name}.json`);
     fs.writeFileSync(file, json, 'utf8');
     console.log(`installed IC entry: ${file}`);
-    console.log(`next: rebuild (build.js picks it up), and add a pin-count assert in test/dfm.js`);
+    console.log('next: reference it as "ic": "' + entry.name + '" in the design, then rebuild');
     return;
   }
   if (opts.out) {

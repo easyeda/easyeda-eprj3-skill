@@ -4,7 +4,7 @@
  *
  * A typed recipe says what it needs ("an I2C sensor with VDD/VSS/SDA/SCL"),
  * not which chip to use. This module answers that question from the IC
- * library: every `templates/library/ic/*.json` entry may declare
+ * cache: every cached IC entry (see lib/icdirs.js) may declare
  *
  *   "class": "sensor.i2c",
  *   "pinRoles": { "VDD": "5", "VSS": "8", "SDA": "1", "SCL": "4" },   // pin(s)
@@ -20,14 +20,14 @@
 const fs = require('fs');
 const path = require('path');
 
-const IC_DIR = path.join(__dirname, '..', '..', 'templates', 'library', 'ic');
+const I = require('./icdirs');
 
 function loadEntries() {
-  if (!fs.existsSync(IC_DIR)) return [];
-  return fs.readdirSync(IC_DIR)
-    .filter((f) => f.endsWith('.json'))
+  // model-specific entries live in the local cache (fetch-lcsc), never in the
+  // shipped templates — see icdirs.js for the search order
+  return I.icFiles(null)
     .map((f) => {
-      try { return JSON.parse(fs.readFileSync(path.join(IC_DIR, f), 'utf8')); } catch { return null; }
+      try { return JSON.parse(require('fs').readFileSync(f, 'utf8')); } catch { return null; }
     })
     .filter(Boolean);
 }
@@ -88,4 +88,4 @@ function bindDevice(want) {
   return { name: best.d.name, candidates: scored.map((s) => s.d.name), missing: [], binding: best.d };
 }
 
-module.exports = { listDevices, deviceNames, bindDevice, IC_DIR };
+module.exports = { listDevices, deviceNames, bindDevice };

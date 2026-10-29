@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.28.0] - 2026-10-29
+
+**Library policy, enforced in the repo layout** (user decision):
+`templates/library/` holds ONLY generic, non-model entries — resistances,
+capacitances, inductors, diodes, LEDs, test points, power flags, net ports and
+common packages. Anything with a real part number is never committed: it is
+fetched from the official library on demand and cached locally.
+
+### Changed
+- `templates/library/ic/` **removed from the repository** (STM32F103C8T6,
+  AMS1117-3.3, MMBTT5551 entries deleted). Model-specific entries now live in a
+  local cache, searched in order by [`lib/icdirs.js`](scripts/lib/icdirs.js):
+  `<project>/.tmp/library/ic` → `<skill>/.cache/ic` (gitignored dev/CI seed) →
+  `~/.easyeda-eprj3/ic` (per-user, written by `fetch-lcsc --install`).
+- `fetch-lcsc.js --install` now writes the per-user cache;
+  `--install-local` seeds the repo cache for development. A missing entry
+  fails with the exact command to fetch it instead of pointing at a shipped
+  file.
+- `lib/select.js` (typed-recipe device matching) scans the same cache, so the
+  class/role binder picks up whatever has been fetched.
+- Tests degrade gracefully on a clean checkout (no cache): the typed-recipe
+  pipeline block, the IC-entry dfm assertions and the two typed eval cases are
+  **skipped with a note**, not failed. With the cache seeded: pipeline
+  67/67, dfm 97/97, eval 23/23; without it: 57/57, 93/93, 21/21.
+
+### Verified
+- smoke 135/135 · corpus 110/110 · depcheck 0 (both with and without a cache).
+- Docs (SKILL, build.md, development.md, footprint-evidence.md) rewritten for
+  the policy, including the search-order table and the "build never fetches"
+  boundary.
+
 ## [1.27.0] - 2026-10-29
 
 Typed recipes (report §9, all five phases) and the PNG preview check (P8).
