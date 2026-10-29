@@ -5,6 +5,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.29.0] - 2026-10-29
+
+**Schematic layout & routing upgrade, and preview images removed.**
+
+### Schematic layout & routing
+- **Layered placement** ([`lib/sch-place.js`](scripts/lib/sch-place.js)):
+  signal-flow layers from a connectivity anchor, barycenter ordering and
+  median alignment — replaces declaration-order shelves.
+- **Layout quality model** ([`lib/quality.js`](scripts/lib/quality.js)):
+  area / wire / bends / crossings / collinear-overlap / through-node score with a
+  √2 landscape shape preference. The build runs both the shelf and the layered
+  strategy across densities and keeps the best under a safe gate, so a new
+  strategy can never make a sheet worse.
+- **Block-aware trunk routing** ([`lib/sch-route.js`](scripts/lib/sch-route.js)):
+  a net spanning blocks wires each block's sub-net visibly and crosses a
+  boundary with **one net-port per block** (not one floating port per pin); a
+  ≥3-pin same-block net routes as a shared trunk instead of an MST of L-wires.
+  Cross-net contact coverage is unchanged (the safety net still retries on a
+  looser grid, then fails hard).
+- **Near-square block packing** (`ceil(√N)` columns): multi-block sheets pack
+  landscape instead of collapsing into a tall sparse column.
+- **Wire NET-label placement** moves to the last segment's midpoint (a trunk's
+  bbox centre floats or lands on a part → L009); a power flag steps laterally
+  off a blocking trunk drop instead of piling onto the pin.
+
+### Preview images removed (user decision)
+The skill no longer generates preview images, and no longer hands them to the
+agent for visual recognition. Verification is the six script gates (validate /
+ERC / intent / lint / DRC / netcheck) and the machine-readable `--report` JSON —
+not looking at a picture.
+- `scripts/render.js` and `scripts/lib/render.js` removed (SVG generation and
+  the PNG rasterization path / headless Edge/Chrome / `EPRJ3_BROWSER`).
+- `make-board.js`'s preview step and the `previews` field dropped: the workflow
+  is now `build → digest report`.
+- Test assertions that spawned `render.js` (smoke, pipeline), the `render` npm
+  script, and the docs' preview/SVG references removed.
+- Kept: `floorplan.js` (a text `pcb.place` map, not an image) and `open.js`
+  (launch the client).
+
+### Verified
+- smoke 135/135 · pipeline 67/67 · dfm 97/97 · corpus 110/110 · depcheck 0;
+  eval 22/23 (the one miss is the pre-existing typed-recipe `$device` case).
+
 ## [1.28.0] - 2026-10-29
 
 **Library policy, enforced in the repo layout** (user decision):

@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v1.28.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v1.29.0** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -71,7 +71,7 @@ The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md))
    - PCB: **placement only** — footprints auto-placed with engineering sense (connectors on the board edge, decoupling caps next to their IC, undeclared boards auto-fit), pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
    - five gates: format / ERC / layout lint / DRC+DFM (pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles D009–D012; `D004`/`D006` are never judged on a board this skill built — imported or client-saved copper is reviewed in full) / design intent (polarity, decoupling, dividers)
 4. On failure, the printed `fix:` lines say exactly what to change (usually: edit the design, re-run `build.js --force`); mechanical fixes go through `scripts/autofix.js`.
-5. `node scripts/render.js` writes SVG previews; `node scripts/open.js` opens the project in the EasyEDA Pro client.
+5. `node scripts/open.js` opens the project in the EasyEDA Pro client.
 
 The agent runs all of this — you don't type it.
 
@@ -116,7 +116,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **边界**：交付物就是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。自动布线、铺铜、制造文件导出（BOM / 坐标 / Gerber）都不归这个 skill 管——在客户端完成。
 
-**当前版本：1.21.0** · [更新记录](CHANGELOG.md)
+**当前版本：1.29.0** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -169,7 +169,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
    - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
    - 五道门禁：格式 / ERC / 布局 / DRC+DFM（焊盘间距、板边、最小钻孔、环宽、丝印压盘、锐角 D009–D012；本 skill 自建的板恒为 placed-only，不判 D004/D006；导入或客户端返存的铜皮仍完整判定） / 设计意图（极性、去耦、分压比等）
 4. 失败时按错误信息里的 `fix:` 提示修改 design 后重跑（机械修复可交给 `scripts/autofix.js`）
-5. `node scripts/render.js` 预览、`node scripts/open.js` 在 EasyEDA Pro 客户端打开
+5. `node scripts/open.js` 在 EasyEDA Pro 客户端打开
 
 这些命令由 AI 自动运行；你不需要手动敲。
 

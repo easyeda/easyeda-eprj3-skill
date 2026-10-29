@@ -421,48 +421,104 @@ function main() {
   }
 
   // ------------------------------------------------------------ schematic
-  // Two-pass layout: pass 1 places everything, sch-tidy decides each symbol's
-  // rotation from the net geometry (the human way — AI supplies rough
-  // positions, the algorithm finishes orientation), pass 2 re-lays-out with
-  // the improved rotations. --no-tidy keeps the declared rotations.
+  // PLACEMENT CANDIDATES (idea absorbed from the reference implementation,
+  // report §4/§7): two layout strategies — the declaration-order shelf and a
+  // signal-flow LAYERED layout — are each laid out, tidied, routed and scored
+  // with one quality model; the best wins under a safe gate, so a new strategy
+  // can never make a sheet worse than the baseline.
   //
-  // Robustness loop (report P2): at tight grid densities two different nets'
-  // stubs can meet, and the client would merge them. Density is not a guess we
-  // are allowed to get wrong, so routing is verified and, if any cross-net
-  // contact exists, the layout is redone on a looser grid before giving up.
-  let placements;
-  let blocks;
-  let routed;
-  let layoutScale = 1;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const knobs = layoutScale === 1 ? design.layout : {
-      cols: design.layout.cols,
-      cellW: Math.round(design.layout.cellW * layoutScale),
-      cellH: Math.round(design.layout.cellH * layoutScale),
-      blockGapX: Math.round(design.layout.blockGapX * layoutScale),
-      blockGapY: Math.round(design.layout.blockGapY * layoutScale),
-      margin: design.layout.margin
-    };
-    const passDesign = layoutScale === 1 ? design : Object.assign({}, design, { layout: knobs });
-    ({ placements, blocks } = D.layoutSchematic(passDesign, lib));
+  // Robustness: at tight densities two nets' stubs can meet (the client merges
+  // them), so every candidate is verified for cross-net contacts and retried on
+  // a looser grid before it may be selected.
+  const T = require('./lib/sch-tidy');
+  const Q = require('./lib/quality');
+  const SP = require('./lib/sch-place');
+  const baseRotations = new Map(design.parts.map((p) => [p.id, {
+    r: p.rotation, e: p.rotationExplicit, t: p.rotationTidied
+  }]));
+  const restoreRotations = () => {
+    for (const p of design.parts) {
+      const b = baseRotations.get(p.id);
+      p.rotation = b.r;
+      p.rotationExplicit = b.e;
+      p.rotationTidied = b.t;
+    }
+  };
+  const layoutFor = (kind, passDesign) => (kind === 'layered'
+    ? SP.layoutLayered(passDesign, lib)
+    : D.layoutSchematic(passDesign, lib));
+
+  function makeCandidate(kind, scale, rotatedNote) {
+    const passDesign = scale === 1 ? design : Object.assign({}, design, {
+      layout: {
+        cols: design.layout.cols,
+        cellW: Math.round(design.layout.cellW * scale),
+        cellH: Math.round(design.layout.cellH * scale),
+        blockGapX: Math.round(design.layout.blockGapX * scale),
+        blockGapY: Math.round(design.layout.blockGapY * scale),
+        margin: design.layout.margin
+      }
+    });
+    let { placements, blocks } = layoutFor(kind, passDesign);
     if (!opts['no-tidy']) {
-      const T = require('./lib/sch-tidy');
       const tidy = T.tidyRotations(design, lib, placements);
       if (tidy.rotated.length) {
-        ({ placements, blocks } = D.layoutSchematic(passDesign, lib));
-        if (attempt === 0) log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
+        ({ placements, blocks } = layoutFor(kind, passDesign));
+        if (rotatedNote && tidy.rotated.length) {
+          log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
+        }
       }
     }
-    routed = R.routeSchematic(design, placements);
+    const routed = R.routeSchematic(design, placements);
     const contacts = R.countCrossNetContacts(routed);
-    if (contacts === 0) break;
-    if (attempt === 2) {
-      die(`schematic routing still produces ${contacts} cross-net contact(s) at the loosest grid — `
-        + 'two nets would be merged in the client. Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
-    }
-    layoutScale *= 1.7;
-    log(`layout: ${contacts} cross-net contact(s) at this density — retrying on a ${Math.round(layoutScale * 100)}% looser grid`);
+    const bodyOf = (pl) => {
+      const bb = pl.sym && pl.sym.bbox;
+      if (!bb) return pl.extent;
+      const pts = [[bb.x1, bb.y1], [bb.x2, bb.y1], [bb.x2, bb.y2], [bb.x1, bb.y2]].map(([x, y]) => {
+        const r = G.rotate(x, y, pl.rotation || 0);
+        return { x: pl.x + r.x, y: pl.y + r.y };
+      });
+      return G.bboxOfPoints(pts);
+    };
+    const quality = Q.evaluate({
+      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p) })),
+      wires: routed.wires,
+      blocks
+    });
+    return { kind, scale, placements, blocks, routed, contacts, quality };
   }
+
+  const candidates = [];
+  const kinds = process.env.EPRJ3_NO_LAYERED === '1' ? ['shelf'] : ['shelf', 'layered'];
+  for (const kind of kinds) {
+    for (const scale of [1, 1.7, 2.9]) {
+      restoreRotations();
+      const c = makeCandidate(kind, scale, candidates.length === 0);
+      candidates.push(c);
+      if (c.contacts === 0) break;
+      log(`layout(${kind}): ${c.contacts} cross-net contact(s) at this density — retrying on a ${Math.round(scale * 1.7 * 100)}% looser grid`);
+    }
+  }
+  restoreRotations();
+  const usable = candidates.filter((c) => c.contacts === 0 && c.quality.valid);
+  if (!usable.length) {
+    const worst = candidates.reduce((a, b) => (a.contacts <= b.contacts ? a : b));
+    die(`schematic layout failed: ${worst.contacts} cross-net contact(s) and/or overlapping parts remain at every density — `
+      + 'two nets would be merged in the client. Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
+  }
+  const baseline = usable.find((c) => c.kind === 'shelf') || usable[0];
+  let best = baseline;
+  for (const c of usable) {
+    if (Q.safelyImproves(c.quality, baseline.quality) && c.quality.score < best.quality.score) best = c;
+  }
+  if (usable.length > 1) {
+    log(`layout: ${best.kind}${best.scale > 1 ? ` ×${best.scale}` : ''} chosen — score ${best.quality.score.toFixed(2)}`
+      + ` (shelf baseline ${baseline.quality.score.toFixed(2)}; ${usable.length} candidate(s), `
+      + `${best.quality.wires.bends} bends, ${best.quality.wires.crossings} crossings)`);
+  }
+  const placements = best.placements;
+  const blocks = best.blocks;
+  const routed = best.routed;
   const sheetFrames = new Map();
   // per-sheet frame: sized around what the packing produced, 明细表 off by
   // default (design.frame.titleBlock opts back in)
@@ -640,7 +696,21 @@ function main() {
     schematic: {
       parts: placements.length,
       blocks: blocks.map((b) => b.title),
-      ...routed.stats
+      ...routed.stats,
+      layout: {
+        strategy: best.kind,
+        scale: best.scale,
+        quality: {
+          score: +best.quality.score.toFixed(3),
+          areaNorm: +best.quality.areaNorm.toFixed(3),
+          wireNorm: +best.quality.wireNorm.toFixed(3),
+          bendNorm: +best.quality.bendNorm.toFixed(3),
+          crossings: best.quality.wires.crossings,
+          bends: best.quality.wires.bends,
+          wireLength: Math.round(best.quality.wires.length),
+          box: best.quality.box
+        }
+      }
     },
     pcb: { parts: pcbParts.length, mode: doPcb ? 'placed-only' : null, rats: ratNets.length },
     elapsed_ms: Date.now() - t0,
@@ -755,7 +825,7 @@ function main() {
   }
   if (opts.digest) {
     // one-page snapshot: enough to resume a session (or hand off) without
-    // re-reading build logs, the SVG previews or the docs
+    // re-reading build logs or the docs
     const signalNets = new Set();
     for (const p of design.parts) for (const n of Object.values(p.pins)) if (!/^(NC|DNC\d*)$/i.test(n)) signalNets.add(n);
     const pins = placements.reduce((n, pl) => n + pl.sym.pins.length, 0);

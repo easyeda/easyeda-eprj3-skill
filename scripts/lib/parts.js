@@ -90,7 +90,7 @@ function parseSymbolEntry(entry) {
     bbox = G.bboxOfPoints(pts);
   }
   // Symbol artwork (what the client draws): open POLY strokes, closed POLY
-  // fills and RECTs. The SVG preview renders these instead of a plain body
+  // fills and RECTs. The client renders these instead of a plain body
   // box, so a diode looks like a diode and an LED like an LED.
   const graphics = [];
   for (const r of recs) {

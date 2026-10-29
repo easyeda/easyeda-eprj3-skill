@@ -470,27 +470,17 @@ function unionRect(a, b) {
  */
 function layoutSchematic(d, lib) {
   const L = d.layout;
-  const A4_W = 11700;           // maximum sheet width (lint.js FRAME.x2)
-  // 紧凑插空目标宽: one region sized ~1.15× the square root of the total
-  // block area, clamped so even the widest block fits — the frame is then
+  // Pack blocks into a near-square (√N × √N) grid, not a width-clamped ribbon:
+  // for N blocks a grid of ceil(√N) columns keeps the sheet landscape-ish and
+  // avoids the tall sparse column that a too-small wrap width produced (the
+  // report's §7.2 shape model penalises a tall sheet ~10× harder than a wide
+  // one, so blocks that fit side by side should). The drawing frame is still
   // auto-sized around whatever the packing produced.
-  let totalArea = 0;
-  let maxBlockW = 0;
-  for (const block of d.blocks) {
-    const n = block.parts.length;
-    const cols = Math.max(1, Math.min(L.cols, Math.ceil(Math.sqrt(n)) || 1));
-    const rows = Math.ceil(n / cols) || 1;
-    const w = L.margin * 2 + cols * L.cellW;
-    const h = rows * L.cellH + L.margin + 60;
-    totalArea += w * h;
-    maxBlockW = Math.max(maxBlockW, w);
-  }
-  const targetW = Math.max(maxBlockW + 300, Math.min(A4_W - 300,
-    Math.ceil(1.15 * Math.sqrt(totalArea) / 10) * 10));
-  const WRAP_LIMIT = targetW;
+  const colsPerRow = Math.max(1, Math.ceil(Math.sqrt(d.blocks.length)));
   const placements = [];
   const blocks = [];
   let cursorX = 0;
+  let colInRow = 0;
   let rowBaseY = 100;           // y of the current block row top (y-down: increases)
   let rowMaxH = 0;              // tallest block frame in the current row
   let currentSheet = 0;         // sheet the cursors belong to (reset on change)
@@ -503,6 +493,7 @@ function layoutSchematic(d, lib) {
       cursorX = 0;
       rowBaseY = 0;
       rowMaxH = 0;
+      colInRow = 0;
     }
     const members = block.parts
       .map((id) => d.parts.find((p) => p.id === id))
@@ -544,14 +535,14 @@ function layoutSchematic(d, lib) {
     const colShift = colBack.map((b) => Math.max(0, -b));
     const colPitch = colBack.map((b, c) => grid(Math.max(L.cellW, colShift[c] + colFwd[c] + 30)));
     const rowPitch = rowBack.map((b, r) => grid(Math.max(L.cellH, (rowFwd[r] - b) + 30)));
-    const blockW = L.margin * 2 + colPitch.reduce((a, b) => a + b, 0);
 
-    // wrap before placing: a block wider than the whole frame goes on its own
-    // row either way
-    if (cursorX > 0 && cursorX + blockW > WRAP_LIMIT) {
+    // wrap after colsPerRow blocks — the √N grid keeps the sheet landscape
+    // instead of a tall sparse column
+    if (colInRow >= colsPerRow) {
       rowBaseY += rowMaxH + L.blockGapY;
       cursorX = 0;
       rowMaxH = 0;
+      colInRow = 0;
     }
 
     let box = null;
@@ -582,6 +573,7 @@ function layoutSchematic(d, lib) {
     blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: ordered.map((p) => p.id) });
     cursorX = rect.x2 + L.blockGapX;
     rowMaxH = Math.max(rowMaxH, rect.y2 - rect.y1);
+    colInRow += 1;
   }
   return { placements, blocks };
 }

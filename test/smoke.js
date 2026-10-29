@@ -622,14 +622,6 @@ function main() {
       assert(/R1\.2/.test(rWire.stdout) && /D2\.1/.test(rWire.stdout),
         'add-wire resolves pin references instead of raw coordinates', rWire.stdout.trim());
 
-      const rRender = run([SCRIPTS + '/render.js', '--dir', built]);
-      const svg = path.join(built, 'preview', 'Schematic1_P1.svg');
-      assert(fs.existsSync(svg), 'render.js writes an SVG preview', rRender.stdout.trim());
-      if (fs.existsSync(svg)) {
-        const text = fs.readFileSync(svg, 'utf8');
-        assert(/^<svg /.test(text) && /<\/svg>\s*$/.test(text), 'the SVG preview is well formed');
-      }
-
       const rDry = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'dry'), '--dry-run', '--quiet']);
       assert(/dry run/.test(rDry.stdout), 'build --dry-run says so', rDry.stdout.trim());
       assert(!fs.existsSync(path.join(tmp, 'dry')), 'build --dry-run leaves no directory behind');

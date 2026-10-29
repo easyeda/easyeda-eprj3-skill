@@ -355,6 +355,228 @@ function commitSegs(segs, net, usedPoints, committedSegs) {
   }
 }
 
+/** Group a net's nodes by their block title (deterministic order). */
+function groupByBlock(nodes) {
+  const groups = new Map();
+  for (const node of nodes) {
+    const b = node.block || '';
+    if (!groups.has(b)) groups.set(b, []);
+    groups.get(b).push(node);
+  }
+  return [...groups.values()].sort((a, b) => (a[0].block || '').localeCompare(b[0].block || ''));
+}
+
+/**
+ * N-node trunk polyline: every pin escapes to its stub point, then drops onto
+ * one shared horizontal spine at `busY`. Returns {stubs, main} (same shape as
+ * stubRoute) so scoreOf/flatten see it unchanged.
+ */
+function trunkNetPathH(nodes, busY) {
+  const stubs = [];
+  const main = [];
+  const xs = [];
+  for (const node of nodes) {
+    const p = stubPoint(node);
+    if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
+      stubs.push({ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y });
+    }
+    if (Math.abs(p.y - busY) > G.EPS) main.push({ x1: p.x, y1: p.y, x2: p.x, y2: busY });
+    xs.push(p.x);
+  }
+  if (xs.length) {
+    const lo = Math.min(...xs);
+    const hi = Math.max(...xs);
+    if (hi - lo > G.EPS) main.push({ x1: lo, y1: busY, x2: hi, y2: busY });
+  }
+  return { stubs: stubs.filter((s) => G.segLen(s) > G.EPS), main: main.filter((s) => G.segLen(s) > G.EPS) };
+}
+
+/** N-node trunk polyline onto one shared vertical spine at `busX`. */
+function trunkNetPathV(nodes, busX) {
+  const stubs = [];
+  const main = [];
+  const ys = [];
+  for (const node of nodes) {
+    const p = stubPoint(node);
+    if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
+      stubs.push({ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y });
+    }
+    if (Math.abs(p.x - busX) > G.EPS) main.push({ x1: p.x, y1: p.y, x2: busX, y2: p.y });
+    ys.push(p.y);
+  }
+  if (ys.length) {
+    const lo = Math.min(...ys);
+    const hi = Math.max(...ys);
+    if (hi - lo > G.EPS) main.push({ x1: busX, y1: lo, x2: busX, y2: hi });
+  }
+  return { stubs: stubs.filter((s) => G.segLen(s) > G.EPS), main: main.filter((s) => G.segLen(s) > G.EPS) };
+}
+
+/**
+ * Best clean trunk for a ≥3-pin group: enumerate horizontal spines above/below
+ * every obstacle and vertical spines left/right of them, score each by the same
+ * cost model as bestRoute, and return the cheapest (caller still checks the
+ * blocked/shared/crossNet flags — a trunk may simply not fit).
+ */
+function bestTrunkRoute(nodes, net, ctx) {
+  const obstacles = ctx.obstacles;
+  const used = ctx.usedPoints;
+  const committed = ctx.committedSegs;
+  const candidates = [];
+  // LOCAL candidates first: a trunk near the net's own nodes keeps the drops
+  // short. A whole-sheet edge trunk forces a long vertical drop that sweeps
+  // across other pins/flags (the crystal XIN-vs-GND collinear contact).
+  const nys = nodes.map((n) => n.tip.y);
+  const nxs = nodes.map((n) => n.tip.x);
+  const yTop = Math.min(...nys);
+  const yBot = Math.max(...nys);
+  const xLft = Math.min(...nxs);
+  const xRgt = Math.max(...nxs);
+  for (const busY of [yTop - 30, yBot + 30, Math.round((yTop + yBot) / 2), yTop - 60, yBot + 60]) {
+    candidates.push(trunkNetPathH(nodes, busY));
+  }
+  for (const busX of [xLft - 30, xRgt + 30, Math.round((xLft + xRgt) / 2), xLft - 60, xRgt + 60]) {
+    candidates.push(trunkNetPathV(nodes, busX));
+  }
+  // sheet-edge trunks as a fallback (clear of every part, at the cost of long
+  // drops) — still useful when the local channels are all blocked.
+  const ys = obstacles.map((o) => [o.rect.y1, o.rect.y2]);
+  if (ys.length) {
+    const top = Math.max(...ys.map((y) => y[1])) + TRUNK_OFFSET;
+    const bottom = Math.min(...ys.map((y) => y[0])) - TRUNK_OFFSET;
+    for (let k = 0; k < 3; k += 1) {
+      for (const busY of [top + k * 24, bottom - k * 24]) candidates.push(trunkNetPathH(nodes, busY));
+    }
+  }
+  const xs = obstacles.map((o) => [o.rect.x1, o.rect.x2]);
+  if (xs.length) {
+    const right = Math.max(...xs.map((x) => x[1])) + TRUNK_OFFSET;
+    const left = Math.min(...xs.map((x) => x[0])) - TRUNK_OFFSET;
+    for (let k = 0; k < 3; k += 1) {
+      for (const busX of [right + k * 24, left - k * 24]) candidates.push(trunkNetPathV(nodes, busX));
+    }
+  }
+  let best = null;
+  for (const route of candidates) {
+    if (!flatten(route).length) continue;
+    const s = scoreOf(route, obstacles, used, committed, net);
+    if (!best || s.score < best.score) best = Object.assign({ route }, s);
+  }
+  return best;
+}
+
+/**
+ * Route one block's sub-net (same block, same sheet). ≥3 pins try a shared
+ * trunk first; fall back to an MST of per-edge bestRoute, then to stub+label.
+ * Commits every emitted segment so the cross-net contact safety net sees it.
+ */
+function routeGroup(nodes, net, ctx, issues) {
+  const out = { wires: [], labels: [] };
+  const obstacles = ctx.obstacles;
+  const used = ctx.usedPoints;
+  const committed = ctx.committedSegs;
+  let segs = null;
+  if (nodes.length >= 3) {
+    // Trunk only for HORIZONTAL-dominant nets: a vertical stack of pins needs a
+    // long vertical spine that sweeps across other pins/flags (the crystal
+    // XIN-vs-GND collinear contact). Vertical-dominant nets keep the MST of
+    // short per-edge L/Z routes instead.
+    const nxs = nodes.map((n) => n.tip.x);
+    const nys = nodes.map((n) => n.tip.y);
+    const xSpan = Math.max(...nxs) - Math.min(...nxs);
+    const ySpan = Math.max(...nys) - Math.min(...nys);
+    if (xSpan >= ySpan) {
+      const tr = bestTrunkRoute(nodes, net, ctx);
+      if (tr && tr.blocked === 0 && tr.shared === 0 && tr.crossNet === 0) segs = flatten(tr.route);
+    }
+  }
+  if (segs && segs.length) {
+    commitSegs(segs, net, used, committed);
+    out.wires.push(segs);
+    return out;
+  }
+  const edges = manhattanMst(nodes);
+  for (const [a, b] of edges) {
+    const best = bestRoute(a, b, obstacles, used, committed);
+    if (!best || best.blocked > 0 || best.shared > 0 || best.crossNet > 0) {
+      const enc = labelEncoding([a, b], net, issues,
+        `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`, ctx);
+      enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+      out.wires.push(...enc.wires);
+      out.labels.push(...enc.labels);
+      continue;
+    }
+    const fs = flatten(best.route);
+    commitSegs(fs, net, used, committed);
+    out.wires.push(fs);
+  }
+  return out;
+}
+
+/** Adaptive stub + net-port for a lone node (mirrors the old connector path). */
+function placeNodePort(node, net, ctx) {
+  const committed = ctx.committedSegs;
+  const used = ctx.usedPoints;
+  const foreign = committed.filter((c) => c.net !== net);
+  let chosen = null;
+  for (const len of [STUB, 30, 20, 10]) {
+    const seg = {
+      x1: node.tip.x, y1: node.tip.y,
+      x2: G.round(node.tip.x + node.dir.x * len),
+      y2: G.round(node.tip.y + node.dir.y * len)
+    };
+    const pos = { x: seg.x2, y: seg.y2 };
+    const box = G.rect(pos.x - 14, pos.y - 12, pos.x + 14, pos.y + 12);
+    const wireHit = foreign.some((c) => G.segsIntersect(seg, c.seg, true))
+      || (used && segPointKeys(seg).some((key) => used.has(key)));
+    const portHit = (ctx.portPoints || []).some((f) => f.net !== net
+      && (Math.hypot(f.x - pos.x, f.y - pos.y) < 34 || G.segsIntersect(seg, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
+    const partHit = overlapsAny(box, ctx.obstacles, new Set([node.part]));
+    if (!wireHit && !portHit && !partHit) { chosen = seg; break; }
+  }
+  if (!chosen) chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+  const wire = (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) ? [chosen] : [];
+  return { wire, port: { net, x: chosen.x2, y: chosen.y2 } };
+}
+
+/**
+ * Route a non-power, non-NC signal net with ≥2 nodes, block-aware (report
+ * §5.2/§5.3/§8.2): same-block pins are wired with a visible trunk, and a net
+ * spanning multiple blocks crosses each boundary with ONE net-port per block.
+ * Returns { wires:[[segs]], labels:[], ports:[], issues:[] }.
+ */
+function routeSignalNet(net, nodes, ctx) {
+  const wires = [];
+  const labels = [];
+  const ports = [];
+  const issues = [];
+  const used = ctx.usedPoints;
+  const committed = ctx.committedSegs;
+  const groups = groupByBlock(nodes);
+  const multiBlock = groups.length > 1;
+
+  for (const G of groups) {
+    if (G.length === 1) {
+      if (multiBlock) {
+        const pr = placeNodePort(G[0], net, ctx);
+        if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
+        ports.push(pr.port);
+      }
+      continue; // lone node on a single-block net is handled by the caller
+    }
+    const segs = routeGroup(G, net, ctx, issues);
+    wires.push(...segs.wires);
+    labels.push(...segs.labels);
+    if (multiBlock) {
+      // one port per block, anchored on the group's first stub (already on the
+      // trunk for ≥2 pins) — the netlist merges ports by name across blocks
+      const p = stubPoint(G[0]);
+      ports.push({ net, x: p.x, y: p.y });
+    }
+  }
+  return { wires, flags: [], labels, ports, issues };
+}
+
 /**
  * Route one net. Returns { wires:[[segs]], flags:[], labels:[], issues:[] }.
  */
@@ -399,17 +621,32 @@ function routeNet(net, nodes, ctx) {
         }
       }
       if (!placed) {
-        // jog: 10 along the pin, then 20 perpendicular, flag at the corner end
+        // jog: 10 along the pin, then lateral (perpendicular) up to 20/40 on
+        // either side — a long trunk drop blocks the straight exit, so the flag
+        // must step off that column (crystal XIN-vs-GND collinear contact).
         const first = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + node.dir.x * 10), y2: G.round(node.tip.y + node.dir.y * 10) };
-        const second = { x1: first.x2, y1: first.y2, x2: first.x2, y2: first.y2 + 20 };
-        const pos = { x: second.x2, y: second.y2 };
-        const box = G.rect(pos.x - 12, pos.y - 22, pos.x + 12, pos.y + 22);
-        const jogClash = wireClash(first) || wireClash(second) || flagClash(pos) || overlapsAny(box, obstacles, ignore);
+        const perps = [{ x: node.dir.y, y: -node.dir.x }, { x: -node.dir.y, y: node.dir.x }];
+        let second = null;
+        let pos = null;
+        let clean = false;
+        for (const pd of perps) {
+          for (const len of [20, 40]) {
+            const seg2 = { x1: first.x2, y1: first.y2, x2: G.round(first.x2 + pd.x * len), y2: G.round(first.y2 + pd.y * len) };
+            const p2 = { x: seg2.x2, y: seg2.y2 };
+            const box = G.rect(p2.x - 12, p2.y - 22, p2.x + 12, p2.y + 22);
+            if (!wireClash(first) && !wireClash(seg2) && !flagClash(p2) && !overlapsAny(box, obstacles, ignore)) {
+              second = seg2; pos = p2; clean = true;
+              break;
+            }
+            if (!second) { second = seg2; pos = p2; }
+          }
+          if (clean) break;
+        }
         placed = pos;
         wire = first;
         wires.push([second]);
         commitSegs([second], net, used, committed);
-        if (jogClash) issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
+        if (!clean) issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
       }
       flags.push({ net, x: placed.x, y: placed.y, style });
       (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
@@ -421,91 +658,23 @@ function routeNet(net, nodes, ctx) {
     return { wires, flags, labels, ports, issues };
   }
 
-  // ------------------------------------------------- connector encoding
-  // The human pattern (hand-drawn esp32-s31 sample): signals that cross module
-  // boundaries are NEVER routed as long wires — every pin gets a short stub +
-  // a named net-port connector, and the netlist merges by name. Long wires are
-  // the source of every 弯绕/交叉 problem; only SHORT local same-block nets
-  // deserve visible wires.
-  const blocksOf = new Set(nodes.map((n) => n.block));
-  const xs = nodes.map((n) => n.tip.x), ys = nodes.map((n) => n.tip.y);
-  const span = (Math.max(...xs) - Math.min(...xs)) + (Math.max(...ys) - Math.min(...ys));
-  if (blocksOf.size > 1 || span > 500) {
-    for (const node of nodes) {
-      const foreign = committed.filter((c) => c.net !== net);
-      let chosen = null;
-      for (const len of [STUB, 30, 20, 10]) {
-        const seg = {
-          x1: node.tip.x, y1: node.tip.y,
-          x2: G.round(node.tip.x + node.dir.x * len),
-          y2: G.round(node.tip.y + node.dir.y * len)
-        };
-        const pos = { x: seg.x2, y: seg.y2 };
-        const box = G.rect(pos.x - 14, pos.y - 12, pos.x + 14, pos.y + 12);
-        const wireHit = foreign.some((c) => G.segsIntersect(seg, c.seg, true))
-          || (used && segPointKeys(seg).some((key) => used.has(key)));
-        const portHit = (ctx.portPoints || []).some((f) => f.net !== net
-          && (Math.hypot(f.x - pos.x, f.y - pos.y) < 34 || G.segsIntersect(seg, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
-        const partHit = overlapsAny(box, ctx.obstacles, new Set([node.part]));
-        if (!wireHit && !portHit && !partHit) { chosen = seg; break; }
-      }
-      if (!chosen) {
-        // last resort: the port sits directly ON the hotspot — the netlist
-        // unions co-located pins, so this stays electrically clean without a
-        // wire that could touch a foreign net
-        chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
-      }
-      if (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) {
-        wires.push([chosen]);
-        commitSegs([chosen], net, used, committed);
-      }
-      ports.push({ net, x: chosen.x2, y: chosen.y2, sheet: node.sheet || 1 });
-    }
-    return { wires, flags, labels, ports, issues };
-  }
-
-    if (nodes.length === 1) {
-    // NC/DNC nets are the deliberate no-connect convention — encode silently.
-    const isNC = /^(NC|DNC\d*)$/i.test(net);
-    const enc = labelEncoding(nodes, net, issues, isNC ? null : null, ctx);
-    enc.wires.forEach((w) => commitSegs(w, net, used, committed));
-    return { wires: enc.wires, flags, labels: enc.labels, ports, issues };
-  }
-
+  // ------------------------------------------------- signal routing
+  // NC nets are the deliberate no-connect convention: several pins may share
+  // the name but must NOT be wired together — each gets its own stub + label.
   if (/^(NC|DNC\d*)$/i.test(net)) {
-    // Several pins may share the NC name; they are NOT connected to each
-    // other — wiring them (MST) would short every no-connected pin together.
-    // Each pin gets its own stub + NC label instead.
-    const enc = labelEncoding(nodes, net, issues, null);
+    const enc = labelEncoding(nodes, net, issues, null, ctx);
     enc.wires.forEach((w) => commitSegs(w, net, used, committed));
     return { wires: enc.wires, flags, labels: enc.labels, ports, issues };
   }
 
-  const edges = manhattanMst(nodes);
-  for (const [a, b] of edges) {
-    const ignore = new Set([a.part, b.part]);
-    const manhattan = Math.abs(a.tip.x - b.tip.x) + Math.abs(a.tip.y - b.tip.y);
-    if (a.block !== b.block && manhattan > LABEL_DISTANCE) {
-      const enc = labelEncoding([a, b], net, issues, null, ctx);
-      enc.wires.forEach((w) => commitSegs(w, net, used, committed));
-      wires.push(...enc.wires);
-      labels.push(...enc.labels);
-      continue;
-    }
-    const best = bestRoute(a, b, obstacles, used, committed);
-    if (!best || best.blocked > 0 || best.shared > 0 || best.crossNet > 0) {
-      const enc = labelEncoding([a, b], net, issues,
-        `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`, ctx);
-      enc.wires.forEach((w) => commitSegs(w, net, used, committed));
-      wires.push(...enc.wires);
-      labels.push(...enc.labels);
-      continue;
-    }
-    const segs = flatten(best.route);
-    wires.push(segs);
-    commitSegs(segs, net, used, committed);
+  if (nodes.length === 1) {
+    const enc = labelEncoding(nodes, net, issues, null, ctx);
+    enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+    return { wires: enc.wires, flags, labels: enc.labels, ports, issues };
   }
-  return { wires, flags, labels, ports, issues };
+
+  const sig = routeSignalNet(net, nodes, ctx);
+  return { wires: sig.wires, flags, labels: sig.labels, ports: sig.ports, issues: sig.issues };
 }
 
 /**

@@ -5,10 +5,9 @@
  *
  *   node scripts/make-board.js --design <design.json> --dir <project> [--report build.json] [--force]
  *
- * Pipeline: build (schematic + placement + 5 gates + netcheck) → netcheck
- * verdict → SVG previews → a brief JSON/one-line digest. The AI writes only
- * the design file and reads back the report — no temp scripts, no verbose
- * build logs on every iteration.
+ * Pipeline: build (schematic + placement + 5 gates + netcheck) → a brief
+ * JSON/one-line digest. The AI writes only the design file and reads back the
+ * report — no temp scripts, no verbose build logs on every iteration.
  */
 const fs = require('fs');
 const path = require('path');
@@ -28,7 +27,7 @@ function main() {
   const argv = process.argv.slice(2);
   if (!argv.length || argv[0] === '-h' || argv[0] === '--help') {
     printHelp('make-board.js [options]', SCHEMA,
-      'One-shot board workflow: build → netcheck → previews → digest report.');
+      'One-shot board workflow: build → digest report.');
     return;
   }
   const { opts } = parseArgs(argv, SCHEMA);
@@ -44,14 +43,7 @@ function main() {
     process.stderr.write(build.stderr || '');
   }
 
-  // 2. previews (2 files: every schematic sheet + the PCB)
-  let previews = [];
-  if (build.status === 0) {
-    const render = spawnCaptured(process.execPath, [path.join(__dirname, 'render.js'), '--dir', dir, '--json'], { encoding: 'utf8' });
-    try { previews = JSON.parse(render.stdout || '[]'); } catch { previews = []; }
-  }
-
-  // 3. digest: the few things an AI actually needs
+  // 2. digest: the few things an AI actually needs
   let report = null;
   try { report = JSON.parse(fs.readFileSync(reportFile, 'utf8')); } catch { /* build failed earlier */ }
   const actions = [];
@@ -80,7 +72,6 @@ function main() {
     } : null,
     summary: (build.stdout || '').split('\n').filter((l) => /\.eprj3 at|dry run|plan only/.test(l)).pop() || null,
     rats: report && report.pcb ? report.pcb.rats : null,
-    previews,
     actions
   };
   fs.writeFileSync(reportFile, JSON.stringify(digest, null, 2) + '\n', 'utf8');

@@ -83,6 +83,7 @@ function tidyRotations(design, lib, placements) {
     if (bestR !== (pl.rotation || 0)) {
       pl.rotation = bestR;
       part.rotation = bestR;
+      part.rotationTidied = true;
       rotated.push(part.id);
     }
   }

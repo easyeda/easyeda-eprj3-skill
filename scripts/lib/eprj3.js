@@ -594,7 +594,7 @@ function buildFootprintDoc(spec) {
     // drill hole, ellipse pad. SMD pads stay on TOP_COPPER with a RECT pad.
     // Pads arrive as {width,height} from the CLI or {w,h} from inline specs —
     // accept both, otherwise the PAD record silently loses its dimensions and
-    // every downstream consumer (DRC, previews) falls back to a 20 mil pad.
+    // every downstream consumer (DRC) falls back to a 20 mil pad.
     const width = p.width === undefined ? p.w : p.width;
     const height = p.height === undefined ? p.h : p.height;
     const hole = p.hole ? { holeType: 'ROUND', width: p.hole, height: p.hole } : null;
@@ -992,11 +992,13 @@ function specialComponentBlock(v) {
 function wireBlock(v) {
   // v: {segs:[{startX,startY,endX,endY}], net?, zIndex, ticketBase}
   const wireId = randId();
-  const xs = [], ys = [];
-  for (const s of v.segs) { xs.push(s.startX, s.endX); ys.push(s.startY, s.endY); }
-  const midX = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const vertical = v.segs.length === 1 && v.segs[0].startX === v.segs[0].endX;
+  // NET label goes on the LAST segment's midpoint (report §10.4), not the bbox
+  // centre — a multi-segment trunk's bbox centre floats in space or lands on a
+  // part (L009), while the last segment is always on the wire.
+  const last = v.segs[v.segs.length - 1];
+  const midX = (last.startX + last.endX) / 2;
+  const midY = (last.startY + last.endY) / 2;
+  const vertical = last.startX === last.endX;
   const lines = [];
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));

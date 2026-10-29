@@ -60,9 +60,8 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    placement: connectors (J…) line the bottom edge, decoupling caps sit next
 #    to their IC, an undeclared board auto-fits the parts
 node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
-node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → netcheck → previews → build.json digest
+node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → build.json digest
 node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
-node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/ (add --png for rasterized images)
 node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
 ```
 
@@ -90,7 +89,7 @@ module.exports = (A) => {
 
 ```bash
 node scripts/build.js --gen board.gen.js --dir <proj> --force --report build.json
-node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式含预览
+node scripts/make-board.js --gen board.gen.js --dir <proj>   # 一站式：build + digest
 ```
 
 助手 API：`A.cap/res/ind/led/diode`（自动位号）、`A.ic`（IC 条目，autoNC
@@ -113,10 +112,9 @@ build.json`: one summary line on stdout, the full machine-readable report
 every iteration. Add `--digest` to print a one-page snapshot (counts, gates,
 rats) — enough to resume a session without re-reading logs.
 
-**Context discipline (costs real tokens):** never read a whole preview SVG,
-log file or datasheet into context — grep the `viewBox`/coordinate lines you
-need, read `--report` JSON fields, and have a sub-agent extract datasheet pin
-tables (return only the table + source URL).
+**Context discipline (costs real tokens):** never read a whole log file or
+datasheet into context — read `--report` JSON fields, and have a sub-agent
+extract datasheet pin tables (return only the table + source URL).
 
 `build.js` exits non-zero if any gate has an error, so a clean exit *is* the
 quality proof. It prints one summary line:
