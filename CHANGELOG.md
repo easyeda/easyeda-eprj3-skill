@@ -7,273 +7,100 @@ Versioning convention: every change that lands in a commit must bump `package.js
 
 ## [1.30.0] - 2026-10-29
 
-**Netlist audit — an independent reviewer for every generated netlist.**
+**One day, merged:** an independent netlist audit, a schematic layout/routing
+upgrade, typed recipes, the library policy, client-fidelity fixes — and the
+preview pipeline removed.
 
-The build's own `E003` compares the recovered netlist with design.json, but the
-agent that wrote the design is the agent reading that verdict: a mistake shared
-by both sides is invisible. Every build now ends by handing the netlist to a
-reviewer that has **none of the author's context**.
-
-### Added
-- [`lib/audit.js`](scripts/lib/audit.js) +
-  `scripts/netlist.js --design <design.json> --audit <out.json>` (or
-  `--gen <board.gen.js>` for generator-authored designs, via the new
-  `design.readSource`): a self-contained package
-  (`schema: eprj3-netlist-audit/1`) with the two views side by side — `spec`
-  (pin→net declared in design.json) and `built` (netlist recovered from the
-  schematic) — plus `mechanical` (net-by-net diff, pins on two nets, vanished
-  pins, NC violations, netcheck verdict, advisory suspicions), the `rubric` the
-  reviewer must run, and the `verdictSchema` it must return. Always exits 0 —
-  it reports, it does not judge.
-- `make-board.js` writes that package automatically and puts
-  `audit: {ok, file}` in the digest, so the one-shot path ends with the exact
-  file to hand the reviewer.
-- SKILL.md **Netlist audit** step: the copy-paste task for a fresh sub-agent,
-  the 3-round repair loop (apply `fix:` → rebuild → regenerate → **new**
-  reviewer; never follow up with the old one), and the fallback when the host
-  has no sub-agent capability.
-- `netlist.js --design` without `--audit` prints the spec↔built diff as a table
-  (fast debugging of "which pin ended up on the wrong net").
-- `test/pipeline.js`: clean package, a skewed design fails and names the moved
-  pin, a package built without `--design` still audits built + netcheck, and a
-  two-sheet build (per-page split + cross-sheet merge + netcheck).
-
-### Fixed
-- **Multi-sheet builds** (`sheets: N`) died on every design — blink on two
-  pages included — with "cross-net contact(s) … at every density", and the
-  no-contact case still failed because the layout was judged `invalid`. Sheets
-  are independent coordinate spaces (separate `.esch2` documents), but three
-  places compared objects globally:
-  - `countCrossNetContacts` paired segments, ports and flags across pages →
-    phantom contacts that no density retry could remove (4 for layered, 8 for
-    shelf, identical at every scale).
-  - `quality.evaluate` paired parts↔wires across pages → phantom `through`
-    hits flipped every candidate to `valid: false`; the error then printed
-    "0 cross-net contact(s)" and failed anyway.
-  - the cross-sheet port branch tested a **per-sheet** node set, so
-    `onSheets.size > 1` could never be true: cross-sheet pins fell through to
-    single-sheet routing and got labels instead of net ports.
-  Fix: contacts and quality only pair objects on the same `sheet` (the parts
-  handed to `evaluate` now carry it); cross-sheet detection collects nodes over
-  the whole design, while power nets keep their flags on every page. Single-sheet
-  layouts are unaffected: every object is on sheet 1, so the pairings are
-  identical.
-
-### Verified
-- smoke 133/133 · pipeline 83/83 · dfm 97/97 · corpus 110/110 · depcheck 0.
-
-## [1.29.0] - 2026-10-29
-
-**Schematic layout & routing upgrade, and preview images removed.**
+### Netlist audit — a fresh reviewer, not you
+The build's own `E003` compares the recovered netlist with design.json *inside
+the build*, but the agent that wrote the design is the agent reading that
+verdict — a mistake shared by both sides is invisible. Every build now ends
+with an independent read:
+- [`lib/audit.js`](scripts/lib/audit.js) + `scripts/netlist.js --design
+  <design.json> --audit <out.json>` (or `--gen` for generator-authored designs,
+  via `design.readSource`): a self-contained package
+  (`schema: eprj3-netlist-audit/1`) holding `spec` (pin→net declared in
+  design.json), `built` (netlist recovered from the schematic), `mechanical`
+  (net-by-net diff, pins on two nets, vanished pins, NC violations, netcheck
+  verdict, advisory suspicions), the `rubric` the reviewer must run and the
+  `verdictSchema` it must return. Exits 0 — it reports, it does not judge.
+- `make-board.js` writes that package automatically and exposes
+  `audit: {ok, file}` in the digest.
+- SKILL.md makes the review mandatory: a **fresh** sub-agent per round (no
+  inherited context, 3-round cap, `mechanical.ok` as the hard floor, a new
+  reviewer after every rebuild), with the no-sub-agent fallback.
+- `--design` without `--audit` prints the spec↔built diff as a table.
 
 ### Schematic layout & routing
 - **Layered placement** ([`lib/sch-place.js`](scripts/lib/sch-place.js)):
-  signal-flow layers from a connectivity anchor, barycenter ordering and
-  median alignment — replaces declaration-order shelves.
-- **Layout quality model** ([`lib/quality.js`](scripts/lib/quality.js)):
-  area / wire / bends / crossings / collinear-overlap / through-node score with a
-  √2 landscape shape preference. The build runs both the shelf and the layered
-  strategy across densities and keeps the best under a safe gate, so a new
-  strategy can never make a sheet worse.
+  signal-flow layers from a connectivity anchor, barycenter ordering and median
+  alignment — replaces declaration-order shelves.
+- **Quality model** ([`lib/quality.js`](scripts/lib/quality.js)): area / wire /
+  bends / crossings / collinear overlap / through-node, with a √2 landscape
+  shape preference. The build runs shelf and layered across densities and keeps
+  the best under a safe gate, so a new strategy can never make a sheet worse.
 - **Block-aware trunk routing** ([`lib/sch-route.js`](scripts/lib/sch-route.js)):
-  a net spanning blocks wires each block's sub-net visibly and crosses a
-  boundary with **one net-port per block** (not one floating port per pin); a
-  ≥3-pin same-block net routes as a shared trunk instead of an MST of L-wires.
-  Cross-net contact coverage is unchanged (the safety net still retries on a
-  looser grid, then fails hard).
-- **Near-square block packing** (`ceil(√N)` columns): multi-block sheets pack
-  landscape instead of collapsing into a tall sparse column.
-- **Wire NET-label placement** moves to the last segment's midpoint (a trunk's
-  bbox centre floats or lands on a part → L009); a power flag steps laterally
-  off a blocking trunk drop instead of piling onto the pin.
+  a ≥3-pin same-block net routes as a shared trunk; a cross-block net wires each
+  block's sub-net and crosses the boundary with one net port per block.
+- **Near-square block packing** (`ceil(√N)` columns) instead of a tall sparse
+  column.
+- **NET labels on the last segment's midpoint** (a trunk's bbox centre floats or
+  lands on a part → L009); a power flag steps laterally off a blocking trunk
+  drop.
+
+### Typed recipes & library policy
+- IC entries carry `class`, `pinRoles` and `requiredRoles`; `lib/select.js`
+  binds a device by class + role coverage and names the missing capability when
+  nothing fits (`recipe.js devices` lists the cache).
+- Recipes declare `"bind": { "device": { class } }`; `recipe.js apply` expands
+  the chosen device's roles into `roles: {ROLE: net}`, and `A.recipe()` merges
+  one from a gen file. Shipped: `ldo-typed`, `npn-switch-typed`; gate **I008**
+  rejects incomplete or ambiguous role bindings.
+- **Library policy:** `templates/library/` holds only generic, non-model
+  entries. Real part numbers are fetched on demand and cached —
+  `<project>/.tmp/library/ic` → `<skill>/.cache/ic` → `~/.easyeda-eprj3/ic`;
+  `fetch-lcsc.js --install` writes the per-user cache. On a clean checkout the
+  typed tests are skipped with a note, not failed.
+- intake prints the typed/fixed recipe coverage split.
+
+### Client fidelity
+- **Schematic coordinates are the client's native Y-down**: blocks lay out
+  downward from y=0, block titles sit on the top edge, the frame height is
+  `y2 + margin`, lint's `FRAME` is y-down.
+- **`open.js open` uses the OS file association** (`cmd /c start` on Windows,
+  `open` / `xdg-open` elsewhere) — identical to double-clicking the `.eprj3`.
+- `A.chip` accepts `pinNames`, so a pin's name and its net are independent.
+- Refdes collisions are impossible by construction (one registry, checked at
+  the call site); fixed `pcb.place` parts act as keepouts for the auto placer.
+- `DFN<n>` / `LGA<n>` auto footprints (IPC-7351B-derived, no thermal pad).
 
 ### Preview images removed (user decision)
 The skill no longer generates preview images, and no longer hands them to the
-agent for visual recognition. Verification is the six script gates (validate /
-ERC / intent / lint / DRC / netcheck) and the machine-readable `--report` JSON —
-not looking at a picture.
-- `scripts/render.js` and `scripts/lib/render.js` removed (SVG generation and
-  the PNG rasterization path / headless Edge/Chrome / `EPRJ3_BROWSER`).
-- `make-board.js`'s preview step and the `previews` field dropped: the workflow
-  is now `build → digest report`.
-- Test assertions that spawned `render.js` (smoke, pipeline), the `render` npm
-  script, and the docs' preview/SVG references removed.
-- Kept: `floorplan.js` (a text `pcb.place` map, not an image) and `open.js`
-  (launch the client).
-
-### Verified
-- smoke 135/135 · pipeline 67/67 · dfm 97/97 · corpus 110/110 · depcheck 0;
-  eval 22/23 (the one miss is the pre-existing typed-recipe `$device` case).
-
-## [1.28.0] - 2026-10-29
-
-**Library policy, enforced in the repo layout** (user decision):
-`templates/library/` holds ONLY generic, non-model entries — resistances,
-capacitances, inductors, diodes, LEDs, test points, power flags, net ports and
-common packages. Anything with a real part number is never committed: it is
-fetched from the official library on demand and cached locally.
-
-### Changed
-- `templates/library/ic/` **removed from the repository** (STM32F103C8T6,
-  AMS1117-3.3, MMBTT5551 entries deleted). Model-specific entries now live in a
-  local cache, searched in order by [`lib/icdirs.js`](scripts/lib/icdirs.js):
-  `<project>/.tmp/library/ic` → `<skill>/.cache/ic` (gitignored dev/CI seed) →
-  `~/.easyeda-eprj3/ic` (per-user, written by `fetch-lcsc --install`).
-- `fetch-lcsc.js --install` now writes the per-user cache;
-  `--install-local` seeds the repo cache for development. A missing entry
-  fails with the exact command to fetch it instead of pointing at a shipped
-  file.
-- `lib/select.js` (typed-recipe device matching) scans the same cache, so the
-  class/role binder picks up whatever has been fetched.
-- Tests degrade gracefully on a clean checkout (no cache): the typed-recipe
-  pipeline block, the IC-entry dfm assertions and the two typed eval cases are
-  **skipped with a note**, not failed. With the cache seeded: pipeline
-  67/67, dfm 97/97, eval 23/23; without it: 57/57, 93/93, 21/21.
-
-### Verified
-- smoke 135/135 · corpus 110/110 · depcheck 0 (both with and without a cache).
-- Docs (SKILL, build.md, development.md, footprint-evidence.md) rewritten for
-  the policy, including the search-order table and the "build never fetches"
-  boundary.
-
-## [1.27.0] - 2026-10-29
-
-Typed recipes (report §9, all five phases) and the PNG preview check (P8).
-The point: a recipe should say **what kind of circuit** it is, not which chip —
-so the same template serves an STM32 board, an RA2E1 board and a gen file.
-
-### Added
-- **Device metadata on IC entries** (§9.1 phase 1): optional `class`,
-  `pinRoles` (role → pin number(s)) and `requiredRoles`. Roles are **derived
-  from the official pin names** already inside each entry — AMS1117-3.3 gets
-  `regulator.ldo` (VIN/VOUT/GND, the tab pin included in VOUT),
-  STM32F103C8T6 `mcu` (VDD/VSS/RESET/SWDIO/SWCLK/USART1/I2C1/BOOT0),
-  MMBT5551 `transistor.npn` (C/B/E).
-- **`lib/select.js`** (§9.2 phase 2): `listDevices({class})`, `bindDevice({
-  class, roles, prefer })`. Selection is by class + role coverage; a preferred
-  device is validated (and its missing roles reported); when nothing fits the
-  error names the missing capability. `recipe.js devices [--class X]` lists
-  what the library has.
-- **Typed recipes** (`"bind": { "device": { class, requiredRoles } }` + `ports`
-  port→role + a part marked `"$device": true`): `recipe.js apply … [--device]`
-  resolves the device, expands its `pinRoles` into `roles: {ROLE: net}`, and
-  two reference recipes ship: `ldo-typed`, `npn-switch-typed`.
-- **`A.recipe(name, { device, set, net })`** (§9.4 phase 3): gen files can merge
-  a validated sub-circuit; `A.selectedDevices()` reports what the binder chose.
-- **Gate I008** (§9.4 phase 5): a role binding must be complete (every required
-  role bound) and unambiguous (no pin in two roles bound to different nets).
-  Runs whenever any part declares `roles`.
-- **`design.parts[].roles`** contract: `{ ROLE: net }` expands to pin→net via
-  the device's `pinRoles`; explicit `pins` still win.
-- **intake coverage line** (§9.4 phase 4): the plan now prints
-  `覆盖 类型化 N（recipe→device） · 固定模板 M（…） — 固定模板写死了型号…`
-- **`render.js --png [--scale N]`** (P8): rasterizes each preview through a
-  headless browser. Checked on this machine: Chrome's headless screenshot
-  produced no file; Edge produced one once and was not reproducible
-  (`--dump-dom` also returned nothing), i.e. the renderer is blocked in this
-  environment — so the command FAILS LOUDLY with the browser name and an
-  `EPRJ3_BROWSER` override hint instead of pretending. The flow itself
-  (temp ASCII workdir → relative `--screenshot` → copy back) is the part
-  verified: Edge ignores absolute output paths and both browsers refuse
-  non-ASCII `file://` URLs.
-
-### Changed
-- `eval` materialises typed recipes before building them (resolve + merge into
-  an empty design), so the two typed recipes are benchmark cases like the rest
-  (23 cases now).
-
-### Not changed (by request)
-- Official symbols keep their native pitch/geometry — no auto-scaling (P6).
-
-### Verified
-- smoke 135/135 · pipeline 67/67 (+11 typed-recipe/I008 checks) · dfm 97/97 ·
-  corpus 110/110 · depcheck 0 · eval 23/23.
-- Probes: `recipe.js apply ldo-typed` → `device: AMS1117-3.3` and a clean
-  build; `--device NOPE` rejected; unbinding VOUT fails with I008;
-  `A.recipe('ldo-typed', { net: { VIN: 'VMOT' } })` binds VIN to VMOT.
-
-## [1.26.0] - 2026-10-29
-
-From the R7FA2E1A72DFL run report (`jlc-work-project/report/easyeda-eprj3-run-report.md`):
-an 83-part board delivered green, but with ten friction points. This round fixes
-the seven that are skill-side.
+agent for visual recognition. Verification is the script gates and the
+machine-readable `--report` JSON — not looking at a picture.
+- `scripts/render.js` and `scripts/lib/render.js` deleted (SVG generation and
+  the headless-browser PNG path / `EPRJ3_BROWSER`); the `render` npm script,
+  the test assertions and the docs' preview references removed.
+- `make-board.js`'s preview step and the `previews` digest field dropped.
+- Kept: `floorplan.js` (a text `pcb.place` map) and `open.js`.
 
 ### Fixed
-- **`A.chip` no longer binds pin names to net names** (P1, high): a real IC
-  can have pin 1 named `G` on net `PUMP_EN` — pass
-  `{ pins: {1:'PUMP_EN'}, pinNames: {1:'G'} }`. Without `pinNames` the old
-  behaviour (pin name = net) is unchanged.
-- **Layout density can no longer short nets** (P2, high — the report's most
-  dangerous finding: tight cells merged `CHG_PROG` into `STDBY_ANODE`).
-  `build.js` now verifies every routed sheet with `countCrossNetContacts`
-  (wires/ports/flags of different nets touching, where the client merges
-  them); on a hit it re-lays-out on a 170 % looser grid (up to twice) and, if
-  contacts remain, **fails the build with the fix** instead of shipping a
-  shorted sheet.
-- **Refdes collisions are impossible by construction** (P3): auto-numbering
-  and explicit ids share one registry, checked at the call site
-  (`duplicate part id "D2"` fires where the second `D2` is created), and
-  `A.part` without an id takes its prefix from the symbol's designator
-  (diodes no longer come out as `U8`).
-- **Fixed `pcb.place` parts are keepouts** (P5): the auto placer slides past
-  them instead of dropping a resistor onto a mounting hole (D001 0-mil clash).
-- **`--plan` net count uses the report's wording** (P7): `N 信号网络 (+ M NC)`
-  instead of a single ambiguous number.
-- **Informational notes aggregate** (P9): "flag placed on the pin" joins the
-  stub+label fallback count line; the full list stays in `report.issues`.
-
-### Added
-- **`DFN<n>` / `LGA<n>` auto footprint families** (P4): the sensor class
-  (SHT30 / BMP280, 0.65 mm pitch) no longer needs hand-written pads —
-  IPC-7351B-derived, evidence-table row marked "derived, official sample
-  pending", dfm assertions added. No thermal pad modelled.
-- **`--digest`** (report §8.3): one-page snapshot (counts, gate scores, rats)
-  for resuming a session without re-reading logs.
-- **SKILL.md context discipline**: never read whole SVG/log/PDF into context;
-  grep the `viewBox`, read `--report` JSON, hand datasheet extraction to a
-  sub-agent.
-
-### Deferred (report items needing a design decision or data)
-Recipe typing (`class` + `pinRoles` + `select.js`, report §9 — a 5-phase
-migration), `render.js --png` (headless Chrome failed in the field),
-auto pitch scaling for large official symbols (P6, needs a real-client check
-that a 50-mil symbol renders acceptably).
+- **Multi-sheet builds** (`sheets: N`) died on every design — blink on two
+  pages included — with "cross-net contact(s) … at every density". Sheets are
+  independent coordinate spaces, but `countCrossNetContacts` and
+  `quality.evaluate` paired objects across pages (phantom contacts, phantom
+  `through` hits), and the cross-sheet port branch tested a per-sheet node set,
+  so it never fired. Contacts and quality now pair only same-sheet objects,
+  cross-sheet detection runs over the whole design, and power nets keep their
+  flags on every page.
+- Layout density can no longer short nets: every candidate is verified for
+  cross-net contacts, retried on a 170 % looser grid, then failed loudly with
+  the fix.
+- `--plan` prints `N 信号网络 (+ M NC)`; `--digest` prints a one-page resume
+  snapshot.
 
 ### Verified
-- smoke 135/135 · pipeline 56/56 · dfm 97/97 (+2 DFN/LGA assertions) ·
-  corpus 110/110 · depcheck 0 · eval 21/21.
-- Probes: fixed mounting hole + 8 caps → 0 D001, drc 100; `--digest` prints
-  the one-page snapshot; `A.chip` with `pinNames` builds and netchecks clean.
-
-## [1.25.0] - 2026-10-29
-
-Two field reports from opening a generated project in the client: the preview
-and the client showed the schematic **mirrored vertically**, and
-`open.js open --dir` did not reach the client while double-clicking the
-`.eprj3` did.
-
-### Fixed
-- **Schematic coordinate space is now the client's native Y-down.**
-  `layoutSchematic` lays blocks out downward from y = 0 (positive y, like the
-  hand-drawn `examples/esp32-s31` sheets) instead of y-up negative space, so
-  what the builder computes is what the client draws. Block titles/descriptions
-  moved to the top edge of the block (y-down); the auto-sized drawing frame is
-  computed as `height = y2 + margin`, and lint's `FRAME` is y-down
-  (`0..h*10`). The SVG preview flips the collected y once on input, so the
-  preview and the client now agree instead of one being upside down.
-- **`open.js open` uses the OS file association.** Default behaviour is
-  `cmd /c start <project>.eprj3` (identical to double-clicking the file); a
-  client-path search plus `--client` direct launch remains for the
-  "not registered" case. macOS/Linux use `open` / `xdg-open`.
-- Corpus variant `schematic-part-moved-off-its-net` expectation re-probed
-  (still caught by E001/E002/E003 + L008; the old L004 no longer fires for that
-  mutation under the new layout).
-
-### Verified
-- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
-  eval 21/21 (lint 100 on blink, mcu-min netcheck 28 pins).
-- Preview SVG coordinates now match record coordinates 1:1 (checked: wire at
-  y=80 renders at y=80).
+- smoke 133/133 · pipeline 83/83 · dfm 97/97 · corpus 110/110 · depcheck 0.
 
 ## [1.24.0] - 2026-10-28
 
