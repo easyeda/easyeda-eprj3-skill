@@ -88,6 +88,15 @@ function renderSheet(file, opts) {
   const o = opts || {};
   const { comps, rects, texts, wires } = collect(file);
 
+  // Sheets are stored y-down (the client's native space); this sketch is
+  // drawn in y-up and negates for SVG. Flip the collected geometry once here
+  // so both conventions agree — without this the preview showed the sheet
+  // mirrored vertically relative to the client.
+  for (const c of comps) c.y = -c.y;
+  for (const r of rects) { const t = r.y1; r.y1 = -r.y2; r.y2 = -t; }
+  for (const t of texts) t.y = -t.y;
+  for (const w of wires) { w.y1 = -w.y1; w.y2 = -w.y2; }
+
   const pts = [];
   for (const c of comps) {
     pts.push({ x: c.x, y: c.y });

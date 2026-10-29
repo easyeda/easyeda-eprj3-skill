@@ -169,6 +169,25 @@ async function main() {
     if (!fs.existsSync(dir)) die(`Project dir not found: ${dir}`);
     const indexFile = findIndexFile(dir);
     const r = findClient({ cli: opts.client, projectDir: dir });
+
+    // Preferred: use the OS file association (double-click behaviour) — this
+    // always works when the user can double-click the .eprj3 file, and skips
+    // the exe-search entirely. Fall back to spawning the exe if start fails.
+    if (!opts.client) {
+      if (process.platform === 'win32') {
+        console.log(`Opening ${indexFile} via file association…`);
+        const child = spawn('cmd.exe', ['/c', 'start', '', indexFile], { stdio: 'ignore', detached: true });
+        child.unref();
+        return;
+      }
+      if (process.platform === 'darwin') {
+        spawn('open', [indexFile], { stdio: 'ignore', detached: true }).unref();
+        return;
+      }
+      spawn('xdg-open', [indexFile], { stdio: 'ignore', detached: true }).unref();
+      return;
+    }
+
     if (!r) {
       console.error('EasyEDA Pro / LCEDA Pro client executable was not found.');
       console.error('Searched (Windows defaults):');

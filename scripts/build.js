@@ -440,10 +440,12 @@ function main() {
     let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
     for (const bl of sheetBlocks) { x1 = Math.min(x1, bl.rect.x1); y1 = Math.min(y1, bl.rect.y1); x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
     for (const p of sheetPls) { const e = p.extent; x1 = Math.min(x1, e.x1); y1 = Math.min(y1, e.y1); x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
-    if (x1 > x2) { x1 = 0; x2 = 1000; y1 = -600; y2 = 0; }
+    // y-down sheet space: content occupies y1..y2 (both positive), so the
+    // frame must reach past y2 (bottom) and keep a title strip at the top
+    if (x1 > x2) { x1 = 0; x2 = 1000; y1 = 0; y2 = 600; }
     const M = 250;
     const fw = Math.ceil((x2 - x1 + 2 * M) / 10);
-    const fh = Math.ceil((0 - y1 + M + 100) / 10);
+    const fh = Math.ceil((y2 + M + 100) / 10);
     const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
     const fit = stds.find(([, w, h]) => fw <= w && fh <= h);
     const frame = {
@@ -470,13 +472,13 @@ function main() {
     // no module RECT frames — the human style groups by whitespace and the
     // title line, boxes read as clutter
     em.addLines([E.schTextLine({
-      x: b.rect.x1 + 10, y: b.rect.y2 - 30,
+      x: b.rect.x1 + 10, y: b.rect.y1 + 30,
       value: b.title, fontSize: 14,
       zIndex: em.nextZ(), ticketBase: em.nextTicket()
     })]);
     if (b.desc) {
       em.addLines([E.schTextLine({
-        x: b.rect.x1 + 10, y: b.rect.y2 - 48,
+        x: b.rect.x1 + 10, y: b.rect.y1 + 48,
         value: b.desc, fontSize: 9,
         zIndex: em.nextZ(), ticketBase: em.nextTicket()
       })]);

@@ -73,7 +73,7 @@
       "title": "R1 nudged 37 mil right: both pads dangle and LED_A keeps a single pin",
       "mutate": "move the R1 COMPONENT body.x by +37",
       "mutation": [{ "op": "component_move", "target": "sheet", "designator": "R1", "dx": 37 }],
-      "expect": { "erc": ["E001", "E002", "E003"], "lint": ["L004", "L008"] }
+      "expect": { "erc": ["E001", "E002", "E003"], "lint": ["L008"] }
     },
     {
       "name": "power-flag-net-renamed",

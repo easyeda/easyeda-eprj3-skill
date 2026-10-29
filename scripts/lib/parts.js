@@ -307,6 +307,61 @@ function normalizePinSpec(spec, pitch) {
  * of each other); 1–2 pin symbols keep the tight 10 mil default.
  */
 function buildInlineSymbolEntry(spec, ctx) {
+  // RAW mode (fetched official symbols): explicit pin geometry + graphics are
+  // carried through VERBATIM — no auto layout, no re-drawing
+  if (spec.raw) {
+    const uuid = E.uuid16();
+    const rawPins = (spec.pins || []).map((p) => ({
+      num: String(p.num), name: p.name || p.num,
+      x: p.x, y: p.y, rotation: p.rotation || 0,
+      length: p.length !== undefined ? p.length : 100
+    }));
+    const xs = rawPins.map((p) => p.x), ys = rawPins.map((p) => p.y);
+    const graphics = (spec.graphics || []).map((g) => Object.assign({}, g));
+    // BBOX = the BODY graphics extent (NOT the pin-tip span) — lint L004
+    // judges wire-crossing against this, and pins legitimately extend outward
+    let gx1 = 1e9, gy1 = 1e9, gx2 = -1e9, gy2 = -1e9;
+    for (const g of graphics) {
+      for (const p of (g.body.points || [])) {
+        gx1 = Math.min(gx1, p.x); gx2 = Math.max(gx2, p.x);
+        gy1 = Math.min(gy1, p.y); gy2 = Math.max(gy2, p.y);
+      }
+      if (g.body.x !== undefined) {
+        gx1 = Math.min(gx1, g.body.x); gx2 = Math.max(gx2, g.body.x2 || g.body.x);
+        gy1 = Math.min(gy1, g.body.y); gy2 = Math.max(gy2, g.body.y2 || g.body.y);
+      }
+      if (g.body.cx !== undefined) {
+        gx1 = Math.min(gx1, g.body.cx - g.body.r); gx2 = Math.max(gx2, g.body.cx + g.body.r);
+        gy1 = Math.min(gy1, g.body.cy - g.body.r); gy2 = Math.max(gy2, g.body.cy + g.body.r);
+      }
+    }
+    if (gx1 > gx2) { gx1 = Math.min(...xs) - 10; gy1 = Math.min(...ys) - 10; gx2 = Math.max(...xs) + 10; gy2 = Math.max(...ys) + 10; }
+    const doc = E.buildSymbolDoc({
+      uuid,
+      title: spec.name,
+      description: spec.description || '',
+      tags: [],
+      source: E.makeSource(E.uuid32(), ctx.ownerUuid),
+      client: ctx.client,
+      ms: ctx.ms,
+      name: spec.name,
+      designator: spec.designator || 'U?',
+      bbox: [gx1, gy1, gx2, gy2],
+      graphics: graphics.map((g) => ({ type: g.type, body: Object.assign({}, g.body, { partId: 'PART_ID' }) })),
+      pins: rawPins
+    });
+    return {
+      name: spec.name,
+      kind: 'symbol',
+      title: spec.name,
+      designator: spec.designator || 'U?',
+      description: spec.description || '',
+      symbolUuid: uuid,
+      symbolDoc: doc,
+      placement: { nameZ: 10, designatorZ: 11, symbolZ: 12 },
+      raw: true
+    };
+  }
   const nPins = (spec.pins || []).length;
   const pitch = spec.pitch || (nPins >= 3 ? 30 : 10);
   // parse once, lay out once — the doc's pin records and the body box must

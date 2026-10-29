@@ -77,7 +77,7 @@ node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
 
 `--footprint` pairs the symbol with a footprint entry (preset or temp) and the DEVICE doc is composed on the fly — there is no device staging. Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
 
-Coordinates: Y-up mil, everything on the 10 mil grid (component origins on 100 multiples). A wire touches a pin only at **exact coordinate equality** — the pin record's `(x, y)` IS the connection point (the client's hotspot; proven against the client-authored sample): RES/CAP/DIODE/LED presets connect at `(±20, 0)` rotated by the placement rotation; power flags/ports at their origin. The pin's drawn line runs from the hotspot inward toward the body. Read exact tips with `pins.js` or `load-library show`. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
+Coordinates: sheet records are the client's native **Y-down** mil (y grows downward; the builder lays blocks downward from y=0), PCB is Y-up — both on the 10 mil grid. A wire touches a pin only at **exact coordinate equality** — the pin record's `(x, y)` IS the connection point (the client's hotspot; proven against the client-authored sample): RES/CAP/DIODE/LED presets connect at `(±20, 0)` rotated by the placement rotation; power flags/ports at their origin. The pin's drawn line runs from the hotspot inward toward the body. Read exact tips with `pins.js` or `load-library show`. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
 
 ## 5. Annotate (text & graphics)
 
@@ -183,9 +183,14 @@ Deletes `<dir>/.tmp/` — the temp library entries staged during authoring. The 
 node scripts/open.js open --dir <dir>
 ```
 
-If `open.js` cannot find the client, the script lists every location it searched. The user can either:
+By default this hands the `.eprj3` file to the **OS file association** — exactly
+what double-clicking the project file does, so it works whenever the client is
+installed and registered. No client-path search is involved.
 
-- Pass `--client <path-to-easyeda-pro.exe|lceda-pro.exe>` for a one-shot override, or
+To launch a specific executable instead (skipping the association), the user can:
+
+- Pass `--client <path-to-easyeda-pro.exe|lceda-pro.exe>` (when given, the
+  script launches that exe directly and reports the search list if it is missing), or
 - `node scripts/open.js set --client <path> --dir <dir>` to persist the path in `<dir>/.easyeda-pro-client.json`, or
 - Set `EASYEDA_PRO_CLIENT` env var (user-wide).
 

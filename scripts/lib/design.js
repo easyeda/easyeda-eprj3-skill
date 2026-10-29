@@ -85,8 +85,10 @@ function loadIcEntry(name) {
   } catch (e) {
     fail(`ic entry "${name}" is not valid JSON: ${e.message}`);
   }
-  if (!entry || entry.name !== name || !Array.isArray(entry.symbol && entry.symbol.pins)) {
-    fail(`ic entry "${name}" is malformed (needs name + symbol.pins[])`);
+  const pinsOk = entry && entry.name === name &&
+    (Array.isArray(entry.symbol && entry.symbol.pins) || Array.isArray(entry.rawSymbol && entry.rawSymbol.pins));
+  if (!pinsOk) {
+    fail(`ic entry "${name}" is malformed (needs name + symbol.pins[] or rawSymbol.pins[])`);
   }
   icCache.set(name, entry);
   return entry;
@@ -97,13 +99,11 @@ function resolveIcPart(p) {
   const entry = loadIcEntry(String(p.ic));
   if (p.symbol) fail(`part "${p.id}": give "ic" OR "symbol", not both`);
   if (p.footprint) fail(`part "${p.id}": give "ic" OR "footprint", not both (the IC entry ships one)`);
+  const symbolSpec = entry.rawSymbol
+    ? { name: entry.name, designator: entry.designator || 'U', raw: true, pins: entry.rawSymbol.pins, graphics: entry.rawSymbol.graphics }
+    : { name: entry.name, designator: entry.designator || 'U', pitch: entry.pitch || 30, pins: entry.symbol.pins };
   return Object.assign({}, p, {
-    symbol: {
-      name: entry.name,
-      designator: entry.designator || 'U',
-      pitch: entry.pitch || 30,
-      pins: entry.symbol.pins
-    },
+    symbol: symbolSpec,
     footprint: entry.footprint
   });
 }
@@ -187,7 +187,9 @@ function normalize(raw, file) {
       } else if (p.ic) {
         try {
           const entry = loadIcEntry(String(p.ic));
-          symNums = entry.symbol.pins.map((s) => String(s.split(':')[0]));
+          symNums = entry.rawSymbol
+            ? entry.rawSymbol.pins.map((s) => String(s.num))
+            : entry.symbol.pins.map((s) => String(s.split(':')[0]));
         } catch { symNums = null; }
       }
       if (symNums) {
@@ -458,7 +460,7 @@ function layoutSchematic(d, lib) {
   const placements = [];
   const blocks = [];
   let cursorX = 0;
-  let rowBaseY = 0;             // top edge of the current block row (≤ 0)
+  let rowBaseY = 100;           // y of the current block row top (y-down: increases)
   let rowMaxH = 0;              // tallest block frame in the current row
   let currentSheet = 0;         // sheet the cursors belong to (reset on change)
 
@@ -516,7 +518,7 @@ function layoutSchematic(d, lib) {
     // wrap before placing: a block wider than the whole frame goes on its own
     // row either way
     if (cursorX > 0 && cursorX + blockW > WRAP_LIMIT) {
-      rowBaseY -= rowMaxH + L.blockGapY;
+      rowBaseY += rowMaxH + L.blockGapY;
       cursorX = 0;
       rowMaxH = 0;
     }
@@ -525,14 +527,13 @@ function layoutSchematic(d, lib) {
     rels.forEach((r, i) => {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      // Y-up: rows march downward from the block's top, columns left→right.
+      // Y-down: rows march downward from the block's top (y increases),
+      // columns left→right. The part's extent TOP (smallest y) anchors to the
+      // row top line.
       const colStart = colPitch.slice(0, col).reduce((a, b) => a + b, 0) + colShift[col];
-      const rowTop = -(L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0));
+      const rowTop = L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0);
       const px = grid(cursorX + L.margin + colStart);
-      // anchor the part's extent TOP to the row top — a large IC symbol is
-      // centred on its origin, so placing by the origin alone pushed half of
-      // it above the drawing frame (L007)
-      const py = grid(rowBaseY + rowTop - r.rel.y2);
+      const py = grid(rowBaseY + rowTop - r.rel.y1);
       const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block, sheet: currentSheet };
       pl.extent = partExtent(r.sym, px, py, r.rot);
       placements.push(pl);
@@ -540,11 +541,12 @@ function layoutSchematic(d, lib) {
     });
 
     const pad = 36;
+    // y-down: title space ABOVE the parts (smaller y = closer to the top edge)
     const rect = {
       x1: grid(box.x1 - pad),
-      y1: grid(box.y1 - pad),
+      y1: grid(box.y1 - pad - BLOCK_TITLE_H),
       x2: grid(box.x2 + pad),
-      y2: grid(box.y2 + pad + BLOCK_TITLE_H)
+      y2: grid(box.y2 + pad)
     };
     blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: ordered.map((p) => p.id) });
     cursorX = rect.x2 + L.blockGapX;

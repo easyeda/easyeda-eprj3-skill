@@ -5,6 +5,87 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.25.0] - 2026-10-29
+
+Two field reports from opening a generated project in the client: the preview
+and the client showed the schematic **mirrored vertically**, and
+`open.js open --dir` did not reach the client while double-clicking the
+`.eprj3` did.
+
+### Fixed
+- **Schematic coordinate space is now the client's native Y-down.**
+  `layoutSchematic` lays blocks out downward from y = 0 (positive y, like the
+  hand-drawn `examples/esp32-s31` sheets) instead of y-up negative space, so
+  what the builder computes is what the client draws. Block titles/descriptions
+  moved to the top edge of the block (y-down); the auto-sized drawing frame is
+  computed as `height = y2 + margin`, and lint's `FRAME` is y-down
+  (`0..h*10`). The SVG preview flips the collected y once on input, so the
+  preview and the client now agree instead of one being upside down.
+- **`open.js open` uses the OS file association.** Default behaviour is
+  `cmd /c start <project>.eprj3` (identical to double-clicking the file); a
+  client-path search plus `--client` direct launch remains for the
+  "not registered" case. macOS/Linux use `open` / `xdg-open`.
+- Corpus variant `schematic-part-moved-off-its-net` expectation re-probed
+  (still caught by E001/E002/E003 + L008; the old L004 no longer fires for that
+  mutation under the new layout).
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21 (lint 100 on blink, mcu-min netcheck 28 pins).
+- Preview SVG coordinates now match record coordinates 1:1 (checked: wire at
+  y=80 renders at y=80).
+
+## [1.24.0] - 2026-10-28
+
+**Fetched symbols are used AS-IS** — the official symbol's graphics, pin
+geometry, device attributes and footprint silkscreen are carried through
+verbatim instead of being re-drawn as a two-column auto layout (user report:
+「下载后的符号库放置在原理图里面和原官方库的样式都不一样了；原始符号的器件
+属性参数都没有了」). Plus the report-driven fixes from four ESP32-S31 sessions.
+
+### Added
+- **`fetch-lcsc.js` verbatim mode**: decodes the official EasyEDA symbol's
+  shapes (P/PL/PG/R/E — pins with connection points + rotation, polylines,
+  polygons, rects, ellipses) into rawSymbol entries carrying graphics + pin
+  geometry + device attrs (c_para: Manufacturer/Package/Supplier Part/…);
+  footprint silk TRACK paths decoded from layer 3. `parts.buildInlineSymbolEntry`
+  gains a raw mode that writes the official graphics + pin geometry without
+  re-drawing. Verified live: C2145 (MMBT5551, 3 pins + 4 POLY + 3 silks),
+  C8734 (STM32F103C8T6, 48 pins + 2 graphics + 48 verbatim pads).
+- **`autoNC`** (deepseek/mimo reports): unmapped pins of inline/IC symbols
+  default to `"NC"` per part (`autoNC: true`) or design-wide (`A.autoNC()`).
+  IC entries default to it.
+- **`A.chip` / `A.conn`** authoring helpers (report 5.3): inline symbol +
+  footprint via a single call, connector W003-exempt.
+- **Partial-place notice** (glm §5.1): a `pcb.place` covering only some parts
+  logs which parts remain auto-placed.
+- **Aspect guard on auto-fit** (qwen §5.5): undeclared boards clamp to
+  aspect 1:2.5.
+- **DRC findings carry coordinates** (glm §5.4): D001/D003 include `[x,y]`.
+- **`--report` gains `elapsed_ms` / `generatedAt`** (mimo §7.11).
+
+### Fixed
+- **W003 false positives** (all four reports): legal same-part bridges
+  (USB-C A6/B6 dual contacts, connector 3V3 pairs, module jumpers) no longer
+  warn. Exempt: power nets, designator `J`, parts with ≥6 pins, or
+  `bridge: "ok"` on the part.
+- **I006 no longer fires on placed-only boards** (mimo §7.7).
+- **`.tmp` cleanup EPERM/EBUSY no longer fails a finished build** (mimo §3):
+  cleanup degrades to a note.
+- **Output noise** (mimo §7.6, glm §5.7): stub+label fallback notes aggregate
+  into one count line; details stay in the report JSON.
+- **`--force` into a directory that only holds the gen file** no longer dies
+  (the --gen workflow writes the gen file next to the project).
+- **Lint L004 body rect for raw symbols** uses the graphics extent (not the
+  pin-tip span) so wires to the pins don't false-fire.
+- **lint L007 reads each sheet's frame size** from its embedded frame device
+  doc instead of a hardcoded A4 (auto-sized frames).
+
+### Verified
+- smoke 135/135 · pipeline 56/56 · dfm 95/95 · corpus 110/110 · depcheck 0 ·
+  eval 21/21. Raw symbol end-to-end: MMBT5551 built with 10 POLY graphics +
+  netcheck OK + lint 100.
+
 ## [1.23.0] - 2026-10-28
 
 Seventh round, from four real ESP32-S31 board sessions (`jlc-work-project/report/*`):

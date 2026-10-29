@@ -63,7 +63,7 @@ node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff
 node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → netcheck → previews → build.json digest
 node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
 node scripts/render.js --dir <project dir>      # SVG previews → <project>/preview/
-node scripts/open.js open --dir <project dir>   # launch the offline client
+node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
 ```
 
 ## 大型设计：写 gen 生成器，不手写 JSON
@@ -126,7 +126,9 @@ AI only supplies rough positions).
 
 ## design.json — the whole contract
 
-All lengths are **mil** (1000 mil = 1 inch), Y up. Only `parts` is required.
+All lengths are **mil** (1000 mil = 1 inch). Schematic sheet coordinates are the
+client's native **Y-down** (the builder lays blocks out downward from y=0, like
+hand-drawn sheets); PCB coordinates are Y-up. Only `parts` is required.
 
 ```json
 {
@@ -283,7 +285,8 @@ node scripts/cleanup.js --dir <p>                    # drop .tmp staging (build 
 `add-wire --from/--to` (or `--link "R1.2>C1.1;R1.1>U1.3"`) resolves them and
 routes orthogonally. Hand arithmetic is how a schematic silently loses a net.
 
-Coordinates are mil, Y up, 10 mil grid. Connectivity is exact coordinate equality
+Coordinates are mil, 10 mil grid; schematic records are Y-down (client native,
+blocks laid out downward from y=0), PCB is Y-up. Connectivity is exact coordinate equality
 on the pin tip; that is why the helpers above exist.
 
 ## Layout rules the builder already enforces

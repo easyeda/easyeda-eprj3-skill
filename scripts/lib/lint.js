@@ -37,7 +37,7 @@ const RULES = {
 // Drawing frame extent in mil. The generated frame's size is per-sheet (read
 // from the frame device doc's Width/Height attributes, units of 10 mil);
 // FRAME_A4 is the fallback for sheets without a recognised frame.
-const FRAME_A4 = { x1: 0, y1: -8250, x2: 11700, y2: 0 };
+const FRAME_A4 = { x1: 0, y1: 0, x2: 11700, y2: 8250 };
 const FRAME = FRAME_A4;
 const GRID = 10;
 
@@ -103,7 +103,7 @@ function frameOf(file) {
     const a = meta.body.attributes || {};
     const w = Number(a.Width), h = Number(a.Height);
     if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
-      return { x1: 0, y1: -h * 10, x2: w * 10, y2: 0 };
+      return { x1: 0, y1: 0, x2: w * 10, y2: h * 10 };
     }
   }
   return FRAME_A4;

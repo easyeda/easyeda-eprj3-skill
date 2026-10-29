@@ -181,6 +181,11 @@ function bends(segs) {
   return n;
 }
 
+/** Mirror a box across the y=0 axis (y-up ↔ y-down). */
+function mirrorY(b) {
+  return { x1: b.x1, y1: -b.y1, x2: b.x2, y2: -b.y2 };
+}
+
 /** Translate a box by (dx, dy). */
 function translateBox(b, dx, dy) {
   return { x1: b.x1 + dx, y1: b.y1 + dy, x2: b.x2 + dx, y2: b.y2 + dy };
@@ -204,5 +209,6 @@ module.exports = {
   pointSegDist,
   orthoPath,
   bends,
-  translateBox
+  translateBox,
+  mirrorY
 };
