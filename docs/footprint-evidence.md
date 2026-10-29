@@ -16,7 +16,7 @@ pitch 标准）。已提交数据的来源按以下优先级记录：
    到本 skill 的 mil/Y-up）。各表行中的 LCSC 编号即出处引用。
 2. **JEDEC / IPC-7351B 标准推导**：无官方样例时按标准公式计算，并在表中标注
    "推导、官方样例待补"。
-3. **随仓库提交的客户端实测工程**（`examples/easyeda-eprj3-project`，官方
+3. **随仓库提交的客户端实测工程**（`examples/eprj3-example`，官方
    quick-start + H610 真机保存）作为格式基准。
 
 规则：修改 [fp-auto.js](../scripts/lib/fp-auto.js) 家族尺寸或新增 IC 条目时，

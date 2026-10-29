@@ -725,7 +725,7 @@ The scope release: **the skill no longer touches copper at all.** Since 1.11 rou
 
 ## [1.12.1] - 2026-10-27
 
-Ground truth arrived: `examples/blink` and `examples/easyeda-eprj3-project`
+Ground truth arrived: `examples/blink` and `examples/eprj3-example`
 were opened and **re-saved in the real client (4.1.84)** (user commit
 `77e2680`). The gates accept both round-tripped samples (validate 0 errors —
 the aggregated foreign-client warnings are the point, not a problem), and the
@@ -802,7 +802,7 @@ writer".
   assertions pin the V4 output shapes (ticketed head line, 2-record ecfg).
 - corpus: `ticket-regression` became a by-design `leak` entry (documents why
   nothing may reject it); `ecfg-fifth-record` expects the new 2-or-4 message.
-- `examples/blink` regenerated through the V4 writer; `examples/easyeda-eprj3-project`
+- `examples/blink` regenerated through the V4 writer; `examples/eprj3-example`
   stays as the V3 witness — the validator reads both. The 1.10 "closed blind
   spots" table in docs/corpus.md was re-marked for the two deleted rules.
 - Docs: format-reference grammar section rewritten for V4 (ticketed/bare heads,

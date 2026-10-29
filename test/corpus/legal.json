@@ -42,9 +42,9 @@
       "note": "the shipped sample: format-clean; it is hand-curated, so its ERC is informational only"
     },
     {
-      "name": "committed/easyeda-eprj3-project",
+      "name": "committed/eprj3-example",
       "key": "client",
-      "dir": "examples/easyeda-eprj3-project",
+      "dir": "examples/eprj3-example",
       "formatOnly": true,
       "note": "a real client-generated project (2 sheets, a panel): foreign authoring must pass the format gate"
     }

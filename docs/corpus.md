@@ -45,8 +45,8 @@ in which case `scripts/build.js` produces it into a temp dir and the run asserts
 the build exits 0 with a clean format and electrical report — or committed:
 
 ```json
-{ "name": "committed/easyeda-eprj3-project", "key": "client",
-  "dir": "examples/easyeda-eprj3-project", "formatOnly": true }
+{ "name": "committed/eprj3-example", "key": "client",
+  "dir": "examples/eprj3-example", "formatOnly": true }
 ```
 
 `formatOnly` marks a project this skill did not author. The **format** gate must
@@ -194,5 +194,5 @@ Everything else the corpus once had to record as blind is **closed** in
 
 The warning-vs-error choice is empirical, not taste: the calibration set is
 the two real client-saved projects on the maintainers' disk (quick-start,
-H610) plus `examples/easyeda-eprj3-project` — **all must validate with 0
+H610) plus `examples/eprj3-example` — **all must validate with 0
 errors** — and every error-level rule above stays silent on all of them.
