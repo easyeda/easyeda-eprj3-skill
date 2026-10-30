@@ -489,13 +489,11 @@ function unionRect(a, b) {
  */
 function layoutSchematic(d, lib) {
   const L = d.layout;
-  // Pack blocks into a near-square (√N × √N) grid, not a width-clamped ribbon:
-  // for N blocks a grid of ceil(√N) columns keeps the sheet landscape-ish and
-  // avoids the tall sparse column that a too-small wrap width produced (the
-  // report's §7.2 shape model penalises a tall sheet ~10× harder than a wide
-  // one, so blocks that fit side by side should). The drawing frame is still
-  // auto-sized around whatever the packing produced.
-  const colsPerRow = Math.max(1, Math.ceil(Math.sqrt(d.blocks.length)));
+  // Pack blocks into a near-square (√N × √N) grid — N is the count of blocks
+  // ON THIS SHEET, not the whole design (the design-wide count spread a
+  // 9-block sheet across a 31-inch row of 8 columns).
+  const blocksPerSheet = new Map();
+  for (const b of d.blocks) blocksPerSheet.set(b.sheet, (blocksPerSheet.get(b.sheet) || 0) + 1);
   const placements = [];
   const blocks = [];
   let cursorX = 0;
@@ -503,12 +501,14 @@ function layoutSchematic(d, lib) {
   let rowBaseY = 100;           // y of the current block row top (y-down: increases)
   let rowMaxH = 0;              // tallest block frame in the current row
   let currentSheet = 0;         // sheet the cursors belong to (reset on change)
+  let colsPerRow = 1;
 
   for (const block of d.blocks) {
     // a new sheet starts a fresh cursor: blocks on sheet 2+ are laid out
     // independently (multi-sheet = the intake's 单页/多页 answer)
     if (block.sheet !== currentSheet) {
       currentSheet = block.sheet;
+      colsPerRow = Math.max(1, Math.ceil(Math.sqrt(blocksPerSheet.get(block.sheet) || 1)));
       cursorX = 0;
       rowBaseY = 0;
       rowMaxH = 0;

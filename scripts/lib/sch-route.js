@@ -115,7 +115,32 @@ function countShared(segs, usedPoints) {
   return n;
 }
 
-function scoreOf(route, obstacles, usedPoints, committedSegs, net) {
+/** Other nets' flag/port/pin points that a route must not touch. */
+function foreignContacts(segs, ctx, net) {
+  let n = 0;
+  const flags = ctx.flagPoints || [];
+  const ports = ctx.portPoints || [];
+  const pins = ctx.pinPoints || [];
+  // exact contact only — matching countCrossNetContacts (the client merges two
+  // nets only when a wire touches a flag/port/pin point). A wider threshold here
+  // over-rejects routes that merely pass NEAR a flag and needlessly degrades
+  // every short net into stub+label.
+  for (const f of flags) {
+    if (f.net === net) continue;
+    for (const s of segs) if (G.pointSegDist({ x: f.x, y: f.y }, s) < 0.01) n += 1;
+  }
+  for (const p of ports) {
+    if (p.net === net) continue;
+    for (const s of segs) if (G.pointSegDist({ x: p.x, y: p.y }, s) < 0.01) n += 1;
+  }
+  for (const p of pins) {
+    if (p.net === net) continue;
+    for (const s of segs) if (G.pointSegDist({ x: p.x, y: p.y }, s) < 0.01) n += 1;
+  }
+  return n;
+}
+
+function scoreOf(route, obstacles, usedPoints, committedSegs, net, ctx) {
   // Only the MIDDLE of a route may be checked against part extents: the stubs
   // necessarily start right at their own symbol's pins. Everything else is a
   // bug waiting to short two nets together.
@@ -138,13 +163,16 @@ function scoreOf(route, obstacles, usedPoints, committedSegs, net) {
       }
     }
   }
+  // Foreign flags/ports/pins: a trunk drawn THROUGH another net's power flag,
+  // net port or (not-yet-wired) pin shorts two nets, so reject-tier too.
+  const foreign = ctx ? foreignContacts(all, ctx, net) : 0;
   return {
     blocked,
     shared,
     len,
     bends: G.bends(all),
-    crossNet,
-    score: blocked * 1000000 + shared * 2000000 + crossNet * 2000000 + len + G.bends(all) * 40
+    crossNet: crossNet + foreign,
+    score: blocked * 1000000 + shared * 2000000 + (crossNet + foreign) * 2000000 + len + G.bends(all) * 40
   };
 }
 
@@ -214,7 +242,7 @@ function zPath(pa, pb, midY) {
 }
 
 /** All candidate routes between two nodes, cheapest first. */
-function bestRoute(a, b, obstacles, usedPoints, committedSegs) {
+function bestRoute(a, b, obstacles, usedPoints, committedSegs, ctx) {
   const makers = [
     (pa, pb) => straight(pa, pb),
     lPath,
@@ -258,7 +286,7 @@ function bestRoute(a, b, obstacles, usedPoints, committedSegs) {
     // and silently leave the net in two pieces. Accept it only when the two
     // stub points are literally the same point.
     if (!route.main.length && !coincident) continue;
-    const s = scoreOf(route, obstacles, usedPoints, committedSegs, a.net);
+    const s = scoreOf(route, obstacles, usedPoints, committedSegs, a.net, ctx);
     if (!best || s.score < best.score) best = Object.assign({ route }, s);
   }
   return best;
@@ -459,7 +487,7 @@ function bestTrunkRoute(nodes, net, ctx) {
   let best = null;
   for (const route of candidates) {
     if (!flatten(route).length) continue;
-    const s = scoreOf(route, obstacles, used, committed, net);
+    const s = scoreOf(route, obstacles, used, committed, net, ctx);
     if (!best || s.score < best.score) best = Object.assign({ route }, s);
   }
   return best;
@@ -497,7 +525,7 @@ function routeGroup(nodes, net, ctx, issues) {
   }
   const edges = manhattanMst(nodes);
   for (const [a, b] of edges) {
-    const best = bestRoute(a, b, obstacles, used, committed);
+    const best = bestRoute(a, b, obstacles, used, committed, ctx);
     if (!best || best.blocked > 0 || best.shared > 0 || best.crossNet > 0) {
       const enc = labelEncoding([a, b], net, issues,
         `net "${net}": ${a.part}.${a.pin} → ${b.part}.${b.pin} has no clear route → encoded as stub+label`, ctx);
@@ -638,15 +666,22 @@ function routeNet(net, nodes, ctx) {
               second = seg2; pos = p2; clean = true;
               break;
             }
-            if (!second) { second = seg2; pos = p2; }
           }
           if (clean) break;
         }
-        placed = pos;
-        wire = first;
-        wires.push([second]);
-        commitSegs([second], net, used, committed);
-        if (!clean) issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
+        if (clean) {
+          placed = pos;
+          wire = first;
+          wires.push([second]);
+          commitSegs([second], net, used, committed);
+        } else {
+          // no clean exit: the flag sits directly ON the pin — co-located, so the
+          // netlist unions it as a connection. Never emit a clashing lateral stub
+          // (that would short the pin to a foreign net).
+          placed = { x: node.tip.x, y: node.tip.y };
+          wire = null;
+          issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
+        }
       }
       flags.push({ net, x: placed.x, y: placed.y, style });
       (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
@@ -700,15 +735,23 @@ function routeSchematic(d, placements) {
   let totalNets = 0;
   for (const sheet of sheets) {
     const pls = placements.filter((p) => (p.sheet || 1) === sheet);
+    const nets = collectNodes(d, pls);
+    totalNets += nets.size;
+    // every pin tip on this sheet (with its net) — the router must not draw a
+    // trunk THROUGH another net's not-yet-wired pin (a later stub would cross it)
+    const pinPoints = [];
+    for (const [net, nodes] of nets) {
+      for (const n of nodes) pinPoints.push({ net, x: n.tip.x, y: n.tip.y });
+    }
     const ctx = {
       obstacles: pls.map((pl) => ({ part: pl.part.id, rect: pl.extent })),
       usedPoints: new Set(),
       committedSegs: [],
       flagPoints: [],
+      portPoints: [],
+      pinPoints,
       powerStyle: (net) => d.powerNets.get(net) || null
     };
-    const nets = collectNodes(d, pls);
-    totalNets += nets.size;
     for (const [net, nodes] of nets) {
       // Power nets keep their flags on every sheet (routeNet handles them) —
       // turning GND into a port would drop the flag convention for nothing.
@@ -722,6 +765,7 @@ function routeSchematic(d, placements) {
             commitSegs(segs, net, ctx.usedPoints, ctx.committedSegs);
           }
           out.ports.push({ net, x: p.x, y: p.y, sheet });
+          ctx.portPoints.push({ net, x: p.x, y: p.y });
         }
         continue;
       }
@@ -739,6 +783,7 @@ function routeSchematic(d, placements) {
       }
       out.flags.push(...r.flags.map((f) => Object.assign({ sheet }, f)));
       out.ports.push(...r.ports.map((p) => Object.assign({ sheet }, p)));
+      for (const p of r.ports) ctx.portPoints.push({ net: p.net, x: p.x, y: p.y });
       out.labels.push(...r.labels);
       out.issues.push(...r.issues);
     }

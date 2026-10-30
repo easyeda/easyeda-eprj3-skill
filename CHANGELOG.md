@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.31.1] - 2026-10-30
+
+**Routing collision avoidance + per-sheet block density.**
+
+### Fixed
+- **`scoreOf` now rejects routes that touch a foreign power flag / net port /
+  pin tip** (exact contact, matching `countCrossNetContacts`) — a trunk used to
+  draw straight through another net's flag or not-yet-wired pin, shorting two
+  nets at tight layout density. `ctx` now tracks `pinPoints` / `portPoints`.
+- **Power-flag jog last-resort** no longer emits a clashing lateral stub: when
+  no clean exit exists the flag sits directly on the pin (co-located, so the
+  netlist unions it) instead of shorting the pin to a foreign net.
+- **Per-sheet √N block packing** (`layoutSchematic` + `layoutLayered`):
+  `colsPerRow` was computed from the WHOLE design's block count, so a 9-block
+  sheet got 8 columns and spread 31 inches wide; now it uses the block count ON
+  that sheet.
+
+### Verified
+- smoke 133/133 · pipeline 95/95 · dfm 97/97 · corpus 110/110 · depcheck 0.
+
 ## [1.31.0] - 2026-10-30
 
 **Post-build reports: `project-report.md` + `ai-report.md`.**

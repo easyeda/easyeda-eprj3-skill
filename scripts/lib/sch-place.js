@@ -208,10 +208,10 @@ function orientTwoPin(part, sym, neighbours, placementsById) {
 function layoutLayered(d, lib) {
   const L = d.layout;
   const powerNets = new Set([...(d.powerNets ? d.powerNets.keys() : [])]);
-  // Pack blocks into a near-square (√N × √N) grid: for N blocks a grid of
-  // ceil(√N) columns keeps the sheet landscape instead of a tall sparse column
-  // (the report's §7.2 shape model penalises tall ~10× harder than wide).
-  const colsPerRow = Math.max(1, Math.ceil(Math.sqrt(d.blocks.length)));
+  // Pack blocks into a near-square (√N × √N) grid — N is the count of blocks
+  // ON THIS SHEET (see layoutSchematic in design.js for the same fix).
+  const blocksPerSheet = new Map();
+  for (const b of d.blocks) blocksPerSheet.set(b.sheet, (blocksPerSheet.get(b.sheet) || 0) + 1);
 
   const placements = [];
   const blocks = [];
@@ -220,10 +220,12 @@ function layoutLayered(d, lib) {
   let rowBaseY = 100;
   let rowMaxH = 0;
   let currentSheet = 0;
+  let colsPerRow = 1;
 
   for (const block of d.blocks) {
     if (block.sheet !== currentSheet) {
       currentSheet = block.sheet;
+      colsPerRow = Math.max(1, Math.ceil(Math.sqrt(blocksPerSheet.get(block.sheet) || 1)));
       cursorX = 0;
       rowBaseY = 100;
       rowMaxH = 0;
