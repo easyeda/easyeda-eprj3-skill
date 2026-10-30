@@ -5,6 +5,41 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.31.2] - 2026-10-30
+
+**Eliminate the remaining cross-net contacts: flag/port/NC/label placement.**
+
+Completes the collision avoidance from 1.31.1. The h6 9-sheet board still
+hard-failed with 6 (shelf) / 34 (layered) cross-net contacts even at 493% grid
+loosening; every one traced to a placement that ignored a foreign pin/port/wire.
+
+### Fixed
+- **Power-flag placement now clears foreign pins and net ports**, not just other
+  flags and part boxes: a flag drawn *through* another net's port or
+  not-yet-wired pin used to short the two nets the moment that pin's stub was
+  later drawn (the `flag(GND) x <net>` / `port(X) x GND` family).
+- **Cross-sheet net-port placement checks its stub against foreign committed
+  wires and pin tips** before emitting; when no clean stub fits, the port sits
+  directly on the pin tip. This was the `port(HDMI-CEC) x DDC_CEC_EN` /
+  `port(HSCL) x HDMI-SDA` family (a port dropped onto a level-shifted net's wire).
+- **NC / DNC nets never get a net port, even cross-sheet** — they fall through to
+  the stub+label path, matching single-sheet NC semantics (a port would merge the
+  no-connect pins into one net).
+- **`placeNodePort` also avoids foreign pin tips**, closing the last port-vs-pin
+  gap.
+- **Label jog last-resort** no longer emits a shorting stub: when even the 10-mil
+  jog touches a foreign wire (two facing pins of different nets meet in the
+  middle), the stub steps *perpendicular* from the pin tip — a label alone would
+  not connect the pin (the netlist only unions a pin where a wire endpoint lands
+  on it), so the escape wire still carries the net name — the `NC x UBOOT_KEY`
+  family.
+
+### Verified
+- h6 (320 parts · 9 sheets) now builds at 100% grid density with **0** cross-net
+  contacts (was 82 → 6 → 2, requiring 170% loosening). The tighter base grid
+  keeps blocks packed closer to the reference-project look.
+- smoke 133/133 · pipeline 95/95 · dfm 97/97 · corpus 110/110 · depcheck 0.
+
 ## [1.31.1] - 2026-10-30
 
 **Routing collision avoidance + per-sheet block density.**

@@ -361,11 +361,32 @@ function labelEncoding(nodes, net, issues, why, ctx) {
       // last resort: a short jog — 10 along the pin, then 20 perpendicular
       const first = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + node.dir.x * 10), y2: G.round(node.tip.y + node.dir.y * 10) };
       const second = { x1: first.x2, y1: first.y2, x2: first.x2, y2: first.y2 + 20 };
-      const jogClash = crossClash(first) || crossClash(second);
-      chosen = second;
-      if (jogClash) issues.push(`net "${net}": stub for ${node.part}.${node.pin} could not avoid neighbouring wires — check the label placement`);
-      wires.push([first]);
-      commitSegs([first], net, used, committed);
+      if (crossClash(first)) {
+        // The pin's exit direction is blocked by a facing foreign wire (two
+        // pins of different nets meet in the middle). A label alone would not
+        // connect the pin (the netlist only unions a pin where a WIRE endpoint
+        // lands on it), so step PERPENDICULAR straight from the tip instead —
+        // any clean stub carries the net name and connects the pin.
+        let alt = null;
+        for (const pd of [{ x: node.dir.y, y: -node.dir.x }, { x: -node.dir.y, y: node.dir.x }]) {
+          for (const len of [20, 30]) {
+            const s = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + pd.x * len), y2: G.round(node.tip.y + pd.y * len) };
+            if (!crossClash(s) && !sameClash(s)) { alt = s; break; }
+          }
+          if (alt) break;
+        }
+        if (alt) {
+          chosen = alt;
+        } else {
+          chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+          issues.push(`net "${net}": pin ${node.part}.${node.pin} has no clean exit — check for neighbouring wires/flags`);
+        }
+      } else {
+        chosen = second;
+        if (crossClash(second)) issues.push(`net "${net}": stub for ${node.part}.${node.pin} could not avoid neighbouring wires — check the label placement`);
+        wires.push([first]);
+        commitSegs([first], net, used, committed);
+      }
     }
     if (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) {
       wires.push([chosen]);
@@ -559,8 +580,11 @@ function placeNodePort(node, net, ctx) {
       || (used && segPointKeys(seg).some((key) => used.has(key)));
     const portHit = (ctx.portPoints || []).some((f) => f.net !== net
       && (Math.hypot(f.x - pos.x, f.y - pos.y) < 34 || G.segsIntersect(seg, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
+    // a net port dropped onto another net's (not-yet-wired) pin tip shorts the
+    // two nets when that pin's stub is later drawn there
+    const pinHit = (ctx.pinPoints || []).some((f) => f.net !== net && G.pointSegDist({ x: f.x, y: f.y }, seg) < 0.01);
     const partHit = overlapsAny(box, ctx.obstacles, new Set([node.part]));
-    if (!wireHit && !portHit && !partHit) { chosen = seg; break; }
+    if (!wireHit && !portHit && !pinHit && !partHit) { chosen = seg; break; }
   }
   if (!chosen) chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
   const wire = (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) ? [chosen] : [];
@@ -642,7 +666,11 @@ function routeNet(net, nodes, ctx) {
         };
         const seg = { x1: node.tip.x, y1: node.tip.y, x2: pos.x, y2: pos.y };
         const box = G.rect(pos.x - 12, pos.y - 22, pos.x + 12, pos.y + 22);
-        if (!wireClash(seg) && !flagClash(pos) && !overlapsAny(box, obstacles, ignore)) {
+        // the stub must also clear every foreign pin tip and net port: a flag
+        // drawn THROUGH another net's port or (not-yet-wired) pin shorts two
+        // nets the moment that net's stub is later drawn there.
+        const foreign = foreignContacts([seg], ctx, net);
+        if (!wireClash(seg) && !flagClash(pos) && foreign === 0 && !overlapsAny(box, obstacles, ignore)) {
           placed = pos;
           wire = seg;
           break;
@@ -662,7 +690,7 @@ function routeNet(net, nodes, ctx) {
             const seg2 = { x1: first.x2, y1: first.y2, x2: G.round(first.x2 + pd.x * len), y2: G.round(first.y2 + pd.y * len) };
             const p2 = { x: seg2.x2, y: seg2.y2 };
             const box = G.rect(p2.x - 12, p2.y - 22, p2.x + 12, p2.y + 22);
-            if (!wireClash(first) && !wireClash(seg2) && !flagClash(p2) && !overlapsAny(box, obstacles, ignore)) {
+            if (!wireClash(first) && !wireClash(seg2) && !flagClash(p2) && foreignContacts([first, seg2], ctx, net) === 0 && !overlapsAny(box, obstacles, ignore)) {
               second = seg2; pos = p2; clean = true;
               break;
             }
@@ -755,17 +783,29 @@ function routeSchematic(d, placements) {
     for (const [net, nodes] of nets) {
       // Power nets keep their flags on every sheet (routeNet handles them) —
       // turning GND into a port would drop the flag convention for nothing.
-      if (crossSheet.has(net) && !ctx.powerStyle(net)) {
-        // cross-sheet: every node on THIS sheet gets its own stub + net port
+      // NC nets are the deliberate no-connect convention even across sheets:
+      // they must never get a net port (a port merges them into one net), so
+      // fall through to routeNet's labelEncoding stub+label path instead.
+      if (crossSheet.has(net) && !ctx.powerStyle(net) && !/^(NC|DNC\d*)$/i.test(net)) {
+        // cross-sheet: every node on THIS sheet gets its own stub + net port.
+        // The stub must clear foreign committed wires AND every foreign pin
+        // tip / port (a port dropped onto another net's wire shorts them); if
+        // no clean stub fits, the port sits directly on the pin tip.
         for (const node of nodes) {
           const p = stubPoint(node);
-          if (Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS) {
-            const segs = [{ x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y }];
-            out.wires.push({ net, sheet, segs });
-            commitSegs(segs, net, ctx.usedPoints, ctx.committedSegs);
+          const hasStub = Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS;
+          const seg = { x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y };
+          const wireHit = hasStub && ctx.committedSegs.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true));
+          const foreign = hasStub ? foreignContacts([seg], ctx, net) : 0;
+          if (hasStub && !wireHit && foreign === 0) {
+            out.wires.push({ net, sheet, segs: [seg] });
+            commitSegs([seg], net, ctx.usedPoints, ctx.committedSegs);
+            out.ports.push({ net, x: p.x, y: p.y, sheet });
+            ctx.portPoints.push({ net, x: p.x, y: p.y });
+          } else {
+            out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet });
+            ctx.portPoints.push({ net, x: node.tip.x, y: node.tip.y });
           }
-          out.ports.push({ net, x: p.x, y: p.y, sheet });
-          ctx.portPoints.push({ net, x: p.x, y: p.y });
         }
         continue;
       }
