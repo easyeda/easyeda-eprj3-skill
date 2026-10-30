@@ -83,10 +83,17 @@ function decodeSymbolRaw(dataStr) {
       if (pts.length < 6) { skipped++; continue; }
       graphics.push({ type: 'POLY', body: { points: pairsOf(pts), closed: true, fillColor: f[5] && f[5] !== 'none' ? f[5] : null } });
     } else if (kind === 'R') {
-      // R~x~y~w~h~…~stroke~width~dash~fill~id~locked
+      // R~x~y~radiusX~radiusY~w~h~strokeColor~strokeWidth~dash~fill~id~locked
+      // (the two numbers after x,y are the rounded-corner radii, NOT w/h — the
+      // official AXP805/connector symbols read this back as a 20×20 dot when w/h
+      // are taken from the wrong fields, dropping the whole body)
       const x = toX(parseFloat(f[1])), y = toY(parseFloat(f[2]));
-      const w = parseFloat(f[3]) * UNIT, h = parseFloat(f[4]) * UNIT;
-      graphics.push({ type: 'RECT', body: { x: x, y: y - h, x2: x + w, y2: y, fillColor: f[10] && f[10] !== 'none' ? f[10] : null } });
+      const w = parseFloat(f[5]) * UNIT, h = parseFloat(f[6]) * UNIT;
+      graphics.push({ type: 'RECT', body: {
+        x: x, y: y - h, x2: x + w, y2: y,
+        radiusX: parseFloat(f[3]) * UNIT, radiusY: parseFloat(f[4]) * UNIT,
+        fillColor: f[10] && f[10] !== 'none' ? f[10] : null
+      } });
     } else if (kind === 'E') {
       // E~cx~cy~rx~ry~stroke~width~dash~fill~id~locked
       graphics.push({ type: 'CIRCLE', body: { cx: toX(parseFloat(f[1])), cy: toY(parseFloat(f[2])), r: parseFloat(f[3]) * UNIT, fillColor: f[8] && f[8] !== 'none' ? f[8] : null } });

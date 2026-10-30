@@ -146,6 +146,16 @@ function main() {
   ok(bare.mechanical.specAvailable === false && bare.mechanical.ok === true,
     'audit: no --design still audits built + netcheck');
 
+  // ------------------------------------------------------- project report
+  const rptOut = run('scripts/report.js', ['--dir', proj, '--design', design]);
+  ok(/report: wrote/.test(rptOut) && /project-report\.md/.test(rptOut), 'report.js writes project-report.md', rptOut);
+  const rpt = fs.readFileSync(path.join(proj, 'project-report.md'), 'utf8');
+  for (const sec of ['## 工程概述', '## 功能特性', '## 信号框架图', '## 电路框架图', '## 网络概览', '## 验证结果', '## 遗留问题', '## 建议']) {
+    ok(rpt.includes(sec), `project report has ${sec}`, rpt.slice(0, 200));
+  }
+  ok(/```mermaid/.test(rpt), 'project report carries mermaid diagrams');
+  ok(/V_LED/.test(rpt), 'project report lists the nets');
+
   // ------------------------------------------------------ multi-sheet build
   // Regression: sheets are independent coordinate spaces. The contact check
   // and the quality model used to pair objects across pages, so every 2-sheet

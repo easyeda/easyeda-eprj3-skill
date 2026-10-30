@@ -5,6 +5,44 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.31.0] - 2026-10-30
+
+**Post-build reports: `project-report.md` + `ai-report.md`.**
+
+### Added
+- [`lib/report.js`](scripts/lib/report.js) + `scripts/report.js --dir <project>
+  [--design design.json | --gen gen.js] [--report build.json]` — writes
+  `project-report.md`: 工程概述 / 功能特性 / 信号框架图 / 电路（电源）框架图
+  （mermaid）/ 网络概览 / 验证结果 / 遗留问题 / 建议. Everything is computed from
+  design.json + the built project, never guessed; `--report build.json` fills the
+  gate results (lint/DRC scores, gate findings, netcheck), otherwise they read
+  "未知".
+- `make-board.js` writes `project-report.md` automatically and exposes its path
+  as `projectReport` in the digest, so the one-shot path ships both the build
+  and the report.
+- SKILL.md **Reports** section: `project-report.md` (machine-generated) and
+  `ai-report.md` (agent-written — model, tokens, agent names, start/end time and
+  a step timeline; `N/A` when the host exposes no counter). Template included.
+- `package.json` adds a `report` script.
+- SKILL.md **运行时任务进度**: the agent prints a 5-step task checklist
+  (intake → build → audit → report → open) before starting, ticks each step as
+  it completes (`✅ [i/N]`), and stops on the current step with `❌` + reason on
+  failure — so the user always sees how many tasks are left and which one is
+  running.
+
+### Fixed — 原理图外观与符号保真
+- **模块矩形框恢复**（`build.js`）: 每个功能模块重新画一圈矩形框 + 标题/说明
+  （之前误删，用户反馈「模块没有被框包裹」）。
+- **官方库符号本体丢失**（`fetch-lcsc.js`）: EasyEDA `dataStr` 的矩形格式是
+  `R~x~y~radiusX~radiusY~w~h~…`，旧解码把圆角半径（2,2）当成宽高，导致
+  AXP805 等大 IC 的 1000×2900 mil 本体被解成 20×20 mil 小点，符号只剩悬空
+  引脚、没有外壳。已按正确字段解码（含圆角），并重抓全部 18 个缓存 IC。
+- `countCrossNetContacts` 增加 `EPRJ3_DEBUG_CONTACTS` 环境变量门控的详情
+  dump（默认零影响），用于定位布线跨网接触。
+
+### Verified
+- smoke 133/133 · pipeline 95/95 · dfm 97/97 · corpus 110/110 · depcheck 0.
+
 ## [1.30.0] - 2026-10-29
 
 **One day, merged:** an independent netlist audit, a schematic layout/routing

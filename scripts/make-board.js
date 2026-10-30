@@ -44,28 +44,43 @@ function main() {
     process.stderr.write(build.stderr || '');
   }
 
-  // 2. netlist audit package — the self-contained spec↔built view a FRESH
-  //    reviewer reads (SKILL.md "Netlist audit"). Written after the build's own
-  //    .tmp cleanup so it survives until the reviewer has read it.
+  // 2. read the build report (gate results, scores) — used by the audit
+  //    package and the project report below.
+  let report = null;
+  try { report = JSON.parse(fs.readFileSync(reportFile, 'utf8')); } catch { /* build failed earlier */ }
+
+  // 3. netlist audit package + project report. Both need the design; the audit
+  //    is the self-contained spec↔built view a FRESH reviewer reads (SKILL.md
+  //    "Netlist audit"), the report is the human-readable project-report.md.
   let audit = null;
+  let projectReport = null;
   if (build.status === 0 && (opts.design || opts.gen)) {
     try {
       const D = require('./lib/design');
       const A = require('./lib/audit');
+      const R = require('./lib/report');
+      const N = require('./lib/netlist');
+      const NC = require('./lib/netcheck');
       const design = D.readSource(opts.gen || opts.design, !!opts.gen);
+
       const pkg = A.buildPackage(dir, design);
-      const file = path.join(dir, '.tmp', 'netlist-audit.json');
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
-      audit = { ok: pkg.mechanical.ok, file };
+      const auditFile = path.join(dir, '.tmp', 'netlist-audit.json');
+      fs.mkdirSync(path.dirname(auditFile), { recursive: true });
+      fs.writeFileSync(auditFile, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+      audit = { ok: pkg.mechanical.ok, file: auditFile };
+
+      const all = N.projectNetlist(dir);
+      const md = R.buildProjectReport(design, all, NC.compare(all), report);
+      const reportMd = path.join(dir, 'project-report.md');
+      fs.writeFileSync(reportMd, `${md}\n`, 'utf8');
+      projectReport = reportMd;
     } catch (e) {
       audit = { ok: null, file: null, error: e.message };
+      projectReport = null;
     }
   }
 
-  // 3. digest: the few things an AI actually needs
-  let report = null;
-  try { report = JSON.parse(fs.readFileSync(reportFile, 'utf8')); } catch { /* build failed earlier */ }
+  // 4. digest: the few things an AI actually needs
   const actions = [];
   if (report) {
     const push = (gate, list) => {
@@ -86,6 +101,7 @@ function main() {
     dir,
     report: reportFile,
     audit,
+    projectReport,
     scores: report ? {
       lint: report.lint && report.lint.score,
       drc: report.drc && report.drc.score,

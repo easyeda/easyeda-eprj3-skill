@@ -770,26 +770,36 @@ function countCrossNetContacts(routed) {
   for (const w of routed.wires || []) {
     for (const s of w.segs || []) segs.push({ net: w.net, sheet: w.sheet || 1, s });
   }
+  const hits = [];
   let n = 0;
   for (let i = 0; i < segs.length; i += 1) {
     for (let j = i + 1; j < segs.length; j += 1) {
       if (segs[i].sheet !== segs[j].sheet) continue;
       if (segs[i].net === segs[j].net) continue;
-      if (G.segsIntersect(segs[i].s, segs[j].s, true)) n += 1;
+      if (G.segsIntersect(segs[i].s, segs[j].s, true)) { n += 1; hits.push({ a: segs[i].net, b: segs[j].net, s1: segs[i].s, s2: segs[j].s, sheet: segs[i].sheet }); }
     }
   }
   for (const p of routed.ports || []) {
     for (const sg of segs) {
       if (sg.sheet !== (p.sheet || 1)) continue;
       if (sg.net === p.net) continue;
-      if (G.pointSegDist({ x: p.x, y: p.y }, sg.s) < 0.01) n += 1;
+      if (G.pointSegDist({ x: p.x, y: p.y }, sg.s) < 0.01) { n += 1; hits.push({ a: `port(${p.net})`, b: sg.net, at: { x: p.x, y: p.y }, seg: sg.s, sheet: p.sheet || 1 }); }
     }
   }
   for (const f of routed.flags || []) {
     for (const sg of segs) {
       if (sg.sheet !== (f.sheet || 1)) continue;
       if (sg.net === f.net) continue;
-      if (G.pointSegDist({ x: f.x, y: f.y }, sg.s) < 0.01) n += 1;
+      if (G.pointSegDist({ x: f.x, y: f.y }, sg.s) < 0.01) { n += 1; hits.push({ a: `flag(${f.net})`, b: sg.net, at: { x: f.x, y: f.y }, seg: sg.s, sheet: f.sheet || 1 }); }
+    }
+  }
+  if (process.env.EPRJ3_DEBUG_CONTACTS && n > 0) {
+    // debug-only: dump the offending nets + geometry so a routing collision
+    // can be traced to its cause (this is not part of normal builds)
+    process.stderr.write(`\n[CROSS-NET CONTACTS] ${n}:\n`);
+    for (const h of hits) {
+      const s = h.s1 || h.seg;
+      process.stderr.write(`  ${h.sheet}  ${h.a} x ${h.b}  ${s ? `seg(${s.x1},${s.y1})-(${s.x2},${s.y2})` : ''}${h.at ? ` at(${h.at.x},${h.at.y})` : ''}\n`);
     }
   }
   return n;

@@ -71,6 +71,7 @@ The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md))
    - PCB: **placement only** — footprints auto-placed with engineering sense (connectors on the board edge, decoupling caps next to their IC, undeclared boards auto-fit), pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
    - five gates: format / ERC / layout lint / DRC+DFM (pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles D009–D012; `D004`/`D006` are never judged on a board this skill built — imported or client-saved copper is reviewed in full) / design intent (polarity, decoupling, dividers)
    - netlist audit: `netlist.js --audit` writes a self-contained package — spec (the pin→net map in design.json) next to built (the netlist recovered from the schematic) — and a sub-agent with **no inherited context** reviews it with a fixed rubric; any mismatch goes back into the repair loop ([`SKILL.md`](SKILL.md#netlist-audit--a-fresh-reviewer-not-you))
+   - reports: `project-report.md` (auto — overview, functional blocks, signal-flow + power diagrams, net overview, gate results, limitations, suggestions) and `ai-report.md` (the agent fills model / tokens / timings)
 4. On failure, the printed `fix:` lines say exactly what to change (usually: edit the design, re-run `build.js --force`); mechanical fixes go through `scripts/autofix.js`.
 5. `node scripts/open.js` opens the project in the EasyEDA Pro client.
 
@@ -85,6 +86,7 @@ After a build the agent reports:
 - PCB: footprint + pad-net counts (placement only — no tracks, vias or pours; the build prints the `rats:` list of nets you still have to connect in the client)
 - verification: all five gates with 0 errors, e.g. `blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/100 (placed-only).`
 - netlist audit: the independent reviewer's verdict (`ok` + its one-line summary)
+- reports: `project-report.md` + `ai-report.md`, written next to the project
 - whether the client was opened
 
 A clean `build.js` exit plus a green independent netlist audit *is* the quality
@@ -172,6 +174,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
    - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
    - 五道门禁：格式 / ERC / 布局 / DRC+DFM（焊盘间距、板边、最小钻孔、环宽、丝印压盘、锐角 D009–D012；本 skill 自建的板恒为 placed-only，不判 D004/D006；导入或客户端返存的铜皮仍完整判定） / 设计意图（极性、去耦、分压比等）
    - 网表审计：`netlist.js --audit` 写出自包含审计包——「设计要求」（design.json 的引脚→网络）与「实际网表」（从原理图反解）并排——交给一个**不继承任何上下文**的子 agent 按固定清单复核；不一致就回到修复循环（[`SKILL.md`](SKILL.md#netlist-audit--a-fresh-reviewer-not-you)）
+   - 报告：`project-report.md`（自动——概述/功能/信号框架图/电源框架图/网络/门禁/遗留/建议）+ `ai-report.md`（由 agent 填写模型/token/耗时）
 4. 失败时按错误信息里的 `fix:` 提示修改 design 后重跑（机械修复可交给 `scripts/autofix.js`）
 5. `node scripts/open.js` 在 EasyEDA Pro 客户端打开
 
@@ -185,6 +188,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
 - 原理图：多少元件、网络、标注
 - PCB：多少封装与焊盘网络（只管布局；不含走线/过孔/铺铜——铜皮在客户端人工完成）
 - 验证结果：五道门禁 0 错误 + 网表独立审计通过（附审计员的一句话结论）
+- 报告：`project-report.md`（自动）+ `ai-report.md`（模型/token/耗时）
 - 是否已自动打开客户端
 
 你只需在 EasyEDA Pro 里检查、微调即可。
