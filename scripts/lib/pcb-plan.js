@@ -85,8 +85,21 @@ function planPcb(design, lib, schematicPlacements) {
     .filter(([, v]) => v === 'down').map(([n]) => n));
 
   // ---- pass 1: resolve every part's footprint and extent ------------------
+  // Multi-unit components (U34A/U34B/…) place ONE footprint per base: the
+  // first unit stands in for the whole component (id = base, pins = union of
+  // every unit), so the board never gets N overlapping copies of one BGA.
   const items = [];
-  for (const part of order) {
+  const seenBase = new Set();
+  for (const rawPart of order) {
+    let part = rawPart;
+    if (rawPart.multiUnitBase) {
+      if (seenBase.has(rawPart.multiUnitBase)) continue;
+      seenBase.add(rawPart.multiUnitBase);
+      const units = (design.parts || []).filter((q) => q.multiUnitBase === rawPart.multiUnitBase);
+      const merged = {};
+      for (const u of units) Object.assign(merged, u.pins);
+      part = Object.assign({}, rawPart, { id: rawPart.multiUnitBase, pins: merged });
+    }
     if (explicit[part.id]) {
       const [x, y, a] = explicit[part.id];
       const fp = lib.footprintOf(part);

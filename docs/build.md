@@ -97,6 +97,43 @@ ones balance-fill); directions feed the ERC output-conflict check `E008` —
 mark at least the outputs of driver parts so two outputs on one net fail the
 build instead of the board.
 
+#### Multi-part components (`A.chip({ units })`)
+
+A large hand-drawn chip (an SoC whose ball map fills a whole page) is split
+into functional **units** that share ONE footprint on the PCB. Each unit's
+symbol is a proper wide rectangle at 0.1″ (100 mil) pitch, with pins grouped by
+name and separated into captioned banks. The schematic stores the BASE
+designator on every unit (`U34`); the client renders the unit ordinal itself
+(`U34.1`, `U34.2`, …), exactly like the reference project. On the PCB the
+units are re-merged into one `U34` footprint.
+
+```js
+A.chip({
+  id: 'U34', name: 'ALLWINNER_H6', designator: 'U', pitch: 100,
+  units: [
+    { id: 'A', name: 'Power & Analog', groups: [
+        { name: 'Power', pins: { 'VDD-CPU': 'VDD-CPU', /* … */ } },
+        { name: 'Clock', pins: { 'XIN': 'XIN', /* … */ } } ] },
+    { id: 'B', name: 'LPDDR3 Data', pins: { 'SDQ0': 'SDQ0', /* … */ } },
+  ],
+  footprint: { name: 'BGA-451', designator: 'U', pads: [[/*…*/]], outline: [/*…*/] },
+  pinoutSource: '按 datasheet 手工绘制（用户已确认）'
+});
+```
+
+- Each unit is `{ id, name, pins: {pin: net} [, pinNames] [, groups] }`; `groups`
+  further splits a unit into visually separated banks (`{ name, pins }`).
+- The result is a **true EasyEDA Pro multi-part component**: one symbol doc with
+  N `PART` records (titled `<symbol>.<n>`), one device, and one schematic
+  `COMPONENT` per unit, each referencing its `partId` and carrying the base
+  designator. Pin names sit inside the body, pin numbers outside, at a
+  20-unit (200 mil) stub.
+- The netlist comparison and ERC match the units back to `U34` on both sides.
+- `pitch` and `halfW` are given in **mil** (the symbol document itself is in
+  10-mil units and the builder converts). The pitch defaults to 100 mil; the
+  body auto-widens past `halfW` (default 400 mil each side) until the longest
+  pin name fits each column.
+
 ### Auto footprints (`{ "auto": … }`)
 
 ```json

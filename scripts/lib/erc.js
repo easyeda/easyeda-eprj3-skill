@@ -29,9 +29,12 @@ const POWER_ISH = /^(VCC|VDD|VSS|GND|AGND|PGND|VBAT|VBUS|VIN|VOUT|\+?\d+V\d*|3V3
 function expectedFromDesign(design) {
   const nets = new Map();
   for (const p of design.parts) {
+    // a multi-part unit is stored on the sheet under its BASE designator
+    // (U34), so the expectation must use the same spelling
+    const ref = p.multiUnitBase || p.id;
     for (const [num, net] of Object.entries(p.pins)) {
       if (!nets.has(net)) nets.set(net, new Set());
-      nets.get(net).add(`${p.id}.${num}`);
+      nets.get(net).add(`${ref}.${num}`);
     }
   }
   return nets;
@@ -60,7 +63,28 @@ function runErc(dir, opts) {
   const errors = [];
   const warnings = [];
   const options = opts || {};
+  // multi-unit designators ("U34A") map back to their base ("U34") so the
+  // schematic↔PCB comparison matches a unit's pins to the one shared footprint
+  const baseOf = new Map();
+  if (options.design && options.design.multiUnits) {
+    for (const [base, m] of Object.entries(options.design.multiUnits)) {
+      for (const uid of m.units) baseOf.set(uid, base);
+    }
+  }
   const all = N.projectNetlist(dir);
+  // PCB component refs are the BASE designators (units are re-merged into one
+  // footprint), so a unit designator "U34A" normalizes to "U34". Exact via the
+  // design map when available; otherwise strip the trailing unit letter (safe:
+  // only multi-unit units are letter-suffixed, and the strip must land on a
+  // real PCB ref).
+  const pcbRefs = new Set();
+  for (const p of all.pcb || []) for (const pad of p.netlist.pads) pcbRefs.add(pad.ref);
+  const norm = (ref) => {
+    if (baseOf.has(ref)) return baseOf.get(ref);
+    if (pcbRefs.has(ref)) return ref;
+    const base = String(ref).replace(/[A-Z]+$/, '');
+    return base && base !== ref && pcbRefs.has(base) ? base : ref;
+  };
   if (!all.perSheet.length) {
     errors.push({ id: 'E000', msg: `no sheet documents found in ${dir}` });
     return { errors, warnings, stats: {} };
@@ -88,17 +112,20 @@ function runErc(dir, opts) {
       });
     }
 
-    // E004 — duplicate designators (power flags have no designator)
-    const seen = new Map();
-    for (const c of nl.components) {
-      if (!c.ref || c.ref === '?') continue;
-      if (!seen.has(c.ref)) seen.set(c.ref, 0);
-      seen.set(c.ref, seen.get(c.ref) + 1);
-    }
-    for (const [ref, n] of seen) {
-      if (n > 1) errors.push({
+    // E004 — duplicate designators (power flags have no designator).
+    // Units of ONE multi-part symbol legitimately share the base refdes (the
+    // client renders U34.1, U34.2 …), so they count as a single owner.
+    const owners = new Map();
+    nl.components.forEach((c, i) => {
+      if (!c.ref || c.ref === '?') return;
+      const owner = c.multipart ? `sym:${c.symbolUuid}` : `one:${i}`;
+      if (!owners.has(c.ref)) owners.set(c.ref, new Set());
+      owners.get(c.ref).add(owner);
+    });
+    for (const [ref, set] of owners) {
+      if (set.size > 1) errors.push({
         id: 'E004', sheet: label,
-        msg: `duplicate designator "${ref}" (${n}×)`,
+        msg: `duplicate designator "${ref}" (${set.size}×)`,
         fix: `give each occurrence a unique parts[].id (e.g. ${ref}A / ${ref}B)`
       });
     }
@@ -266,15 +293,15 @@ function runErc(dir, opts) {
     const schByPin = new Map();
     for (const s of all.perSheet) {
       for (const n of s.netlist.nets) {
-        for (const p of n.pins) if (p.ref !== '?') schByPin.set(`${p.ref}.${p.num}`, n.name);
+        for (const p of n.pins) if (p.ref !== '?') schByPin.set(`${norm(p.ref)}.${p.num}`, n.name);
       }
     }
     for (const p of all.pcb) {
       const pcbByPin = new Map();
       for (const pad of p.netlist.pads) {
-        if (pad.net) pcbByPin.set(`${pad.ref}.${pad.num}`, pad.net);
+        if (pad.net) pcbByPin.set(`${norm(pad.ref)}.${pad.num}`, pad.net);
       }
-      const pcbRefs = new Set(p.netlist.pads.map((x) => x.ref));
+      const pcbRefs = new Set(p.netlist.pads.map((x) => norm(x.ref)));
       for (const [pin, net] of schByPin) {
         const pcbNet = pcbByPin.get(pin);
         if (pcbNet === undefined) {

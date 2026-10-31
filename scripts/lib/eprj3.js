@@ -424,6 +424,115 @@ function buildSymbolDoc(spec) {
   return b.lines;
 }
 
+// ------------------------------------------------- multi-part symbol doc (docType 2)
+// ONE symbol doc holds N PART records — a component split into units
+// (U34A/U34B/…). Each PART owns its body RECT, its pins, and per-part
+// Symbol/Designator/Name/Multi-Part-Group attrs; the schematic places one
+// COMPONENT per PART (same symbol/device uuid, a different `partId`).
+// Pin names sit INSIDE the body, pin numbers OUTSIDE near the pin (the
+// official EasyEDA Pro layout), valueVisible true.
+// spec: {uuid,title,description,tags,source,client,ms,name,designator,
+//        parts:[{id,title,bbox,graphics,pins}]}
+//        pins: [{num,name,x,y,rotation,length,nameX,nameY,nameAlign,numX,numY,numAlign}]
+function buildMultiPartSymbolDoc(spec) {
+  const b = new DocBuilder();
+  b.lines.push(docHeadLine('SYMBOL', spec.client, spec.uuid, spec.ms));
+  b.add('META', {
+    title: spec.title,
+    description: spec.description || '',
+    tags: spec.tags || [],
+    docType: 2,
+    source: spec.source
+  }, 'META');
+  b.add('CANVAS', { originX: 0, originY: 0 }, 'CANVAS');
+
+  let z = 0;
+  const zIndex = () => ++z;
+
+  for (const part of spec.parts || []) {
+    const pid = part.id;
+    b.add('PART', {
+      title: part.title,
+      Footprints: [],
+      // an in-project PART binds to the device by name only; the reference
+      // leaves uuid/source empty (the device doc is the real link)
+      DeviceName: { name: spec.name, uuid: '', source: '' }
+    }, pid);
+    const ctx = { partId: pid, groupId: '', locked: false };
+    for (const g of part.graphics || []) {
+      b.addElem(g.type, Object.assign({}, ctx, { zIndex: zIndex() }, g.body));
+    }
+    // group captions live inside the body, in the blank band between banks
+    for (const txt of part.texts || []) {
+      b.addElem('TEXT', Object.assign({}, ctx, {
+        zIndex: zIndex(),
+        x: txt.x, y: txt.y, rotation: 0,
+        color: null, fontFamily: null,
+        fontSize: txt.fontSize !== undefined ? txt.fontSize : 8,
+        fontWeight: null, italic: null, underline: null,
+        align: txt.align !== undefined ? txt.align : 'CENTER_MIDDLE',
+        value: txt.value, fillColor: null
+      }));
+    }
+    for (const p of part.pins || []) {
+      const pinId = b.addElem('PIN', Object.assign({}, ctx, {
+        zIndex: zIndex(),
+        display: true,
+        x: p.x, y: p.y,
+        length: p.length !== undefined ? p.length : 20,
+        rotation: p.rotation || 0,
+        color: null,
+        pinShape: 'NONE'
+      }));
+      const nameAlign = p.nameAlign || (p.rotation === 180 ? 'RIGHT_BOTTOM' : 'LEFT_BOTTOM');
+      const numAlign = p.numAlign || (p.rotation === 180 ? 'LEFT_BOTTOM' : 'RIGHT_BOTTOM');
+      for (const [key, value, align, px, py] of [
+        ['Pin Name', p.name || p.num, nameAlign, p.nameX, p.nameY],
+        ['Pin Number', p.num, numAlign, p.numX, p.numY],
+        ['Pin Type', 'Undefined', 'LEFT_BOTTOM', null, null]
+      ]) {
+        b.add('ATTR', {
+          partId: pid, groupId: '', locked: false,
+          zIndex: zIndex(), parentId: pinId,
+          key, value,
+          keyVisible: false, valueVisible: true,
+          x: px === undefined ? null : px,
+          y: py === undefined ? null : py,
+          rotation: 0, color: null, fillColor: null,
+          fontFamily: null,
+          fontSize: key === 'Pin Type' ? 6.75 : 9.72222,
+          strikeout: false, underline: false, italic: false, fontWeight: false,
+          align, version: '2.0'
+        });
+      }
+    }
+    // per-part identity attrs — exactly the set the reference multi-part
+    // symbol carries (Symbol/Designator/Name/Device/Footprint/Group)
+    for (const [key, value] of [
+      ['Symbol', spec.uuid],
+      ['Designator', spec.designator || 'U?'],
+      ['Name', null],
+      ['Device', ''],
+      ['Footprint', ''],
+      ['Multi-Part Group', null]
+    ]) {
+      b.add('ATTR', {
+        partId: pid, groupId: '', locked: false,
+        zIndex: zIndex(), parentId: pid,
+        key, value,
+        keyVisible: false, valueVisible: false,
+        x: null, y: null, rotation: 0, color: null, fillColor: null,
+        fontFamily: null, fontSize: null,
+        strikeout: false, underline: false, italic: false, fontWeight: false,
+        align: null, version: '2.0'
+      });
+    }
+  }
+  // No device-wide Designator record: the reference keeps one Designator per
+  // PART, and the client derives the unit suffix (U1.1, U1.2 …) from it.
+  return b.lines;
+}
+
 // ------------------------------------------------- power symbol doc (docType 18)
 // style 'up' (VCC-like, bar above origin) or 'down' (GND-like, bars below).
 function buildPowerSymbolDoc(spec) {
@@ -791,7 +900,7 @@ function schComponentBlock(v) {
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
 
   line('COMPONENT', {
-    partId: PART_ID,
+    partId: v.partId || PART_ID,
     x: v.x, y: v.y, rotation: v.rotation || 0, isMirror: false,
     attrs: {
       Footprints: '[]',
@@ -811,6 +920,7 @@ function schComponentBlock(v) {
   line('ATTR', attrNull('Device', v.deviceUuid, -2, v.compId), randId());
   line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId), randId());
   line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId), randId());
+  line('ATTR', attrNull('Relevance', '[]', 2, v.compId), randId());
   line('ATTR', attrStyled({
     x: v.x + 10, y: v.y + 10, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: null, valueVisible: true,
@@ -1766,6 +1876,7 @@ module.exports = {
   docHeadLine,
   isDocHeadLine,
   buildSymbolDoc,
+  buildMultiPartSymbolDoc,
   buildPowerSymbolDoc,
   buildFootprintDoc,
   buildDeviceDoc,

@@ -7,15 +7,29 @@
  */
 const N = require('./netlist');
 
-/** Compare schematic and PCB netlists. Returns {match, summary, issues}. */
-function compare(all) {
+/** Compare schematic and PCB netlists. Returns {match, summary, issues}.
+ *  `baseOf` maps a multi-unit designator ("U34A") to its base ("U34") so a
+ *  unit's schematic pins match the single footprint that carries them. */
+function compare(all, baseOf) {
+  // normalize multi-unit designators: exact via `baseOf` when the design is
+  // available; otherwise strip the trailing unit letter ("U34A"→"U34") — safe
+  // because the PCB component carries the base designator and only multi-unit
+  // units are letter-suffixed.
+  const pcbRefsAll = new Set();
+  for (const pcbDoc of all.pcb || []) for (const pad of pcbDoc.netlist.pads) pcbRefsAll.add(pad.ref);
+  const norm = (ref) => {
+    if (baseOf && baseOf.has(ref)) return baseOf.get(ref);
+    if (pcbRefsAll.has(ref)) return ref;
+    const base = String(ref).replace(/[A-Z]+$/, '');
+    return base && base !== ref && pcbRefsAll.has(base) ? base : ref;
+  };
   const schByPin = new Map();   // "REF.pin" -> net
   const schNets = new Map();    // net -> Set("REF.pin")
   for (const s of all.perSheet) {
     for (const net of s.netlist.nets) {
       for (const p of net.pins) {
         if (p.ref === '?') continue;
-        const key = `${p.ref}.${p.num}`;
+        const key = `${norm(p.ref)}.${p.num}`;
         schByPin.set(key, net.name);
         if (!schNets.has(net.name)) schNets.set(net.name, new Set());
         schNets.get(net.name).add(key);
@@ -33,7 +47,7 @@ function compare(all) {
     const pcbByPin = new Map();
     const netless = [];
     for (const pad of pcbDoc.netlist.pads) {
-      const key = `${pad.ref}.${pad.num}`;
+      const key = `${norm(pad.ref)}.${pad.num}`;
       if (!pad.net) { netless.push(key); continue; }
       pcbByPin.set(key, pad.net);
     }
@@ -68,7 +82,7 @@ function compare(all) {
       }
     }
     // parts present on one side only
-    const pcbRefs = new Set(pcbDoc.netlist.pads.map((p) => p.ref));
+    const pcbRefs = new Set(pcbDoc.netlist.pads.map((p) => norm(p.ref)));
     for (const ref of schRefs) {
       if (!pcbRefs.has(ref)) {
         issues.push({ code: 'NO_FOOTPRINT', ref, pcb: pcbDoc.pcb,

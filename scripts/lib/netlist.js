@@ -103,9 +103,15 @@ function sheetNetlist(file) {
     const ref = (designator && designator.value) || (dn && dn.name) || '?';
     const sym = symAttr ? symbolByUuid.get(symAttr.body.value) : null;
 
+    // multi-part symbol: a COMPONENT references one PART by its `partId`, so it
+    // shows only that part's pins (a unit of U34A/U34B/… shows its own subset)
+    const partPins = sym && b.partId && sym.pinsByPart && sym.pinsByPart.get(b.partId)
+      ? sym.pinsByPart.get(b.partId)
+      : (sym ? sym.pins : []);
+
     const pins = [];
     if (sym) {
-      for (const pin of sym.pins) {
+      for (const pin of partPins) {
         const t = G.pinTip(pin, b.x, b.y, b.rotation || 0);
         pins.push({ num: String(pin.num), name: pin.name, x: t.x, y: t.y });
       }
@@ -114,6 +120,11 @@ function sheetNetlist(file) {
       ref,
       x: b.x, y: b.y, rotation: b.rotation || 0,
       symbolUuid: symAttr ? symAttr.body.value : null,
+      // multi-part units share one designator on purpose (the client renders
+      // U34.1, U34.2 …); `multipart` lets the rules tell that apart from a
+      // real duplicate refdes
+      partId: b.partId || null,
+      multipart: !!(sym && sym.parts && sym.parts.length > 1),
       power: globalNet ? globalNet.body.value : null,
       pins
     });

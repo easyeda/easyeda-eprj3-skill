@@ -50,7 +50,8 @@ function parseSymbolEntry(entry) {
         y: r.body.y,
         length: r.body.length === undefined ? PIN_LEN : r.body.length,
         rotation: r.body.rotation || 0,
-        elemId: r.id
+        elemId: r.id,
+        partId: r.body.partId || null
       };
       // Power flags / net ports are placed by their ORIGIN, not by the stub end:
       // the symbol body is drawn away from the connection point.
@@ -107,6 +108,15 @@ function parseSymbolEntry(entry) {
       break;
     }
   }
+  // Multi-part symbols: pins belong to a PART via `partId`. Expose the per-part
+  // grouping so a schematic COMPONENT (which references one part) shows only
+  // its own pins.
+  const pinsByPart = new Map();
+  for (const p of pins) {
+    const pid = p.partId || '';
+    if (!pinsByPart.has(pid)) pinsByPart.set(pid, []);
+    pinsByPart.get(pid).push(p);
+  }
   return {
     kind,
     docType,
@@ -116,8 +126,27 @@ function parseSymbolEntry(entry) {
     bbox,
     pins,
     graphics,
-    pinByNum: new Map(pins.map((p) => [String(p.num), p]))
+    pinByNum: new Map(pins.map((p) => [String(p.num), p])),
+    pinsByPart,
+    parts: [...pinsByPart.entries()].map(([partId, plist]) => ({ partId, pins: plist }))
   };
+}
+
+/**
+ * For a multi-part symbol, return a view holding only `partId`'s pins (a unit
+ * of U34A/U34B/… shows its own subset) with a matching bbox. Non-multi-part
+ * symbols (no pinsByPart / no partId) pass through unchanged.
+ */
+function partView(sym, partId) {
+  if (!sym || !partId || !sym.pinsByPart) return sym;
+  const pp = sym.pinsByPart.get(partId);
+  if (!pp) return sym;
+  const tips = pp.map((p) => p.tip || G.pinTip(p, 0, 0, 0)).concat(pp.map((p) => ({ x: p.x, y: p.y })));
+  return Object.assign({}, sym, {
+    pins: pp,
+    pinByNum: new Map(pp.map((p) => [String(p.num), p])),
+    bbox: G.bboxOfPoints(tips) || sym.bbox
+  });
 }
 
 /** Absolute tip of a pin on a placed component. */
@@ -291,6 +320,96 @@ function symbolBodyBox(pins, pitch) {
   };
 }
 
+// Symbol-doc coordinates are 10-mil units (the reference symbol's 400-mil
+// body is a RECT of -20..20). Design-side values (pitch, halfW) are written in
+// MIL, so they are scaled by MIL here — forgetting this makes every symbol 10×
+// oversized and no sheet size can hold it.
+const MIL = 0.1;
+const DEFAULT_BODY_HALF_W = 400;   // mil — minimum half body width (400 mil → 800 mil body)
+const GROUP_GAP = 30;              // symbol units (300 mil) of blank band between banks
+const MULTI_PIN_LEN = 20;          // symbol units (200 mil) pin stub — matches the reference
+
+/**
+ * Lay grouped pins into a two-column symbol body at `pitch`, so a large
+ * multi-function chip reads as banks of related pins instead of one
+ * undifferentiated sliver.
+ *
+ * groups: [{name?, pins:[{num,name,dir,side}]}] in top-to-bottom declaration
+ * order. Within a group the pins stay contiguous and balance across the
+ * left/right columns; a gap separates adjacent groups so the reader sees the
+ * functional split. Returns {pins, body, labels} — the body is a proper wide
+ * rectangle (`halfW` each side); pins carry the EasyEDA Pro label layout:
+ * name INSIDE the body, number OUTSIDE near the pin.
+ */
+function layoutSymbolPins(groups, pitchMil, halfWMil, pinLen) {
+  const len = pinLen === undefined ? MULTI_PIN_LEN : pinLen;
+  // design values arrive in MIL; the symbol document works in 10-mil units
+  const pitch = Math.max(4, Math.round((pitchMil === undefined ? 100 : pitchMil) * MIL));
+  let halfW = Math.max(10, Math.round((halfWMil === undefined ? DEFAULT_BODY_HALF_W : halfWMil) * MIL));
+  // widen the body until the longest pin name fits each column (text is drawn
+  // INSIDE the body, so a fixed width would clip long names)
+  const textW = (s) => Math.round(String(s).length * 5.2) + 8;
+  for (const g of groups) {
+    for (const p of g.pins) halfW = Math.max(halfW, textW(p.name || p.num));
+  }
+  const out = [];
+  const labels = [];
+  let cursor = 0;   // y of the current group's bottom row (y-up)
+  for (const g of groups) {
+    const left = [];
+    const right = [];
+    for (const p of g.pins) {
+      if (p.side === 'L') left.push(p);
+      else if (p.side === 'R') right.push(p);
+      else if (p.dir === 'I') left.push(p);
+      else if (p.dir === 'O' || p.dir === 'B' || p.dir === 'T' || p.dir === 'C') right.push(p);
+      else (left.length <= right.length ? left : right).push(p);
+    }
+    const rows = Math.max(left.length, right.length);
+    left.forEach((p, i) => {
+      const y = cursor + i * pitch;
+      out.push(Object.assign({}, p, {
+        x: -(halfW + len), rotation: 0, length: len, y,
+        nameX: -halfW + 2, nameY: y + 5, nameAlign: 'LEFT_BOTTOM',
+        numX: -(halfW + len) + 15, numY: y + 1, numAlign: 'RIGHT_BOTTOM'
+      }));
+    });
+    right.forEach((p, i) => {
+      const y = cursor + i * pitch;
+      out.push(Object.assign({}, p, {
+        x: halfW + len, rotation: 180, length: len, y,
+        nameX: halfW - 2, nameY: y + 5, nameAlign: 'RIGHT_BOTTOM',
+        numX: (halfW + len) - 15, numY: y + 1, numAlign: 'LEFT_BOTTOM'
+      }));
+    });
+    // the caption sits in the blank band ABOVE this bank, so it never
+    // collides with a pin name
+    if (g.name) labels.push({ name: g.name, y: cursor + (rows - 1) * pitch + GROUP_GAP / 2 });
+    cursor += rows * pitch + GROUP_GAP;
+  }
+  // centre the stack vertically around the body origin
+  if (out.length) {
+    const ys = out.map((p) => p.y);
+    const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+    for (const p of out) {
+      p.y = Math.round((p.y - mid) * 100) / 100;
+      p.nameY = Math.round((p.nameY - mid) * 100) / 100;
+      p.numY = Math.round((p.numY - mid) * 100) / 100;
+    }
+    for (const l of labels) l.y = Math.round((l.y - mid) * 100) / 100;
+  }
+  const ys = out.map((p) => p.y);
+  let top = (ys.length ? Math.max(...ys) : 0) + pitch / 2;
+  // headroom for the top bank's caption
+  if (labels.length) top = Math.max(top, Math.max(...labels.map((l) => l.y)) + pitch / 2);
+  const body = {
+    x1: -halfW, x2: halfW,
+    y1: (ys.length ? Math.min(...ys) : 0) - pitch / 2,
+    y2: top
+  };
+  return { pins: out, body, labels };
+}
+
 /** Pin spec: "1:VCC;2:GND" or [{num,name}] → full pin objects. */
 function normalizePinSpec(spec, pitch) {
   if (!Array.isArray(spec) || !spec.length) throw new Error('inline symbol needs a non-empty "pins" array');
@@ -362,13 +481,28 @@ function buildInlineSymbolEntry(spec, ctx) {
       raw: true
     };
   }
-  const nPins = (spec.pins || []).length;
-  const pitch = spec.pitch || (nPins >= 3 ? 30 : 10);
-  // parse once, lay out once — the doc's pin records and the body box must
-  // come from the same layout pass (side hints make column assignment
-  // non-trivial, so two independent passes could desync)
-  const pins = parseAutoPinSpec(spec.pins || []);
-  const box = symbolBodyBox(autoPinLayout(pins, pitch), pitch);
+  let pins;
+  let box;
+  if (Array.isArray(spec.groups) && spec.groups.length) {
+    // Grouped path (large multi-function chips): wide body, `pitch` (default
+    // 100 mil / 0.1"), banks separated by a gap. The doc's pin records and
+    // body box come from ONE layout pass — side hints make column assignment
+    // non-trivial, so two independent passes could desync.
+    const pitch = spec.pitch || 100;
+    const halfW = spec.halfW || DEFAULT_BODY_HALF_W;
+    const gs = spec.groups.map((g) => ({ name: g.name || '', pins: parseAutoPinSpec(g.pins || []) }));
+    const laid = layoutSymbolPins(gs, pitch, halfW);
+    pins = laid.pins;
+    box = { dotX1: laid.body.x1, dotY1: laid.body.y1, dotX2: laid.body.x2, dotY2: laid.body.y2 };
+  } else {
+    const nPins = (spec.pins || []).length;
+    const pitch = spec.pitch || (nPins >= 3 ? 30 : 10);
+    // parse once, lay out once — the doc's pin records and the body box must
+    // come from the same layout pass (side hints make column assignment
+    // non-trivial, so two independent passes could desync)
+    pins = parseAutoPinSpec(spec.pins || []);
+    box = symbolBodyBox(autoPinLayout(pins, pitch), pitch);
+  }
   const uuid = E.uuid16();
   // buildSymbolDoc needs explicit geometry, so lay the pins out first.
   const doc = E.buildSymbolDoc({
@@ -398,6 +532,64 @@ function buildInlineSymbolEntry(spec, ctx) {
     symbolUuid: uuid,
     symbolDoc: doc,
     placement: { nameZ: 10, designatorZ: 11, symbolZ: 12 }
+  };
+}
+
+/**
+ * Compose a MULTI-PART symbol entry: ONE symbol doc holding N PART records
+ * (one per unit of a split component). Each part lays its grouped pins into a
+ * wide body with the EasyEDA Pro label style (name inside, number outside).
+ * spec: {name, designator, pitch, halfW, parts:[{title, groups:[{name,pins}]}]}
+ * The entry carries `multipart` (the ordered part ids) so the build can place
+ * one schematic COMPONENT per part.
+ */
+function buildMultiPartSymbolEntry(spec, ctx) {
+  const uuid = E.uuid16();
+  const pitch = spec.pitch || 100;
+  const halfW = spec.halfW || DEFAULT_BODY_HALF_W;
+  const parts = (spec.parts || []).map((part, i) => {
+    const id = `${spec.name}.${i + 1}`;
+    const groups = (part.groups || []).map((g) => ({ name: g.name || '', pins: parseAutoPinSpec(g.pins || []) }));
+    const laid = layoutSymbolPins(groups, pitch, halfW);
+    return {
+      id,
+      // the reference names every PART "<symbol>.<n>"; the client shows the
+      // unit suffix from this title (U34.1, U34.2, …)
+      title: id,
+      graphics: [{ type: 'RECT', body: {
+        dotX1: laid.body.x1, dotY1: laid.body.y1, dotX2: laid.body.x2, dotY2: laid.body.y2,
+        radiusX: 0, radiusY: 0, rotation: 0, strokeColor: null, strokeStyle: null,
+        fillColor: null, strokeWidth: null, fillStyle: null
+      } }],
+      // bank captions ("Power", "DQ", …) drawn inside the body
+      texts: laid.labels.map((l) => ({
+        x: laid.body.x1 + 6, y: l.y, value: l.name, fontSize: 9, align: 'LEFT_BOTTOM'
+      })),
+      pins: laid.pins
+    };
+  });
+  const doc = E.buildMultiPartSymbolDoc({
+    uuid,
+    title: spec.name,
+    description: spec.description || '',
+    tags: [],
+    source: E.makeSource(E.uuid32(), ctx.ownerUuid),
+    client: ctx.client,
+    ms: ctx.ms,
+    name: spec.name,
+    designator: spec.designator || 'U?',
+    parts
+  });
+  return {
+    name: spec.name,
+    kind: 'symbol',
+    title: spec.name,
+    designator: spec.designator || 'U?',
+    description: spec.description || '',
+    symbolUuid: uuid,
+    symbolDoc: doc,
+    placement: { nameZ: 10, designatorZ: 11, symbolZ: 12 },
+    multipart: parts.map((p) => p.id)
   };
 }
 
@@ -462,8 +654,12 @@ function parsePinRef(ref) {
 
 module.exports = {
   PIN_LEN,
+  DEFAULT_BODY_HALF_W,
+  GROUP_GAP,
+  MULTI_PIN_LEN,
   parseSymbolEntry,
   parseFootprintEntry,
+  partView,
   placedTip,
   placedPins,
   placedPads,
@@ -471,8 +667,10 @@ module.exports = {
   parseAutoPinSpec,
   normalizePinSpec,
   buildInlineSymbolEntry,
+  buildMultiPartSymbolEntry,
   buildInlineFootprintEntry,
   parsePinRef,
   symbolBodyBox,
-  autoPinLayout
+  autoPinLayout,
+  layoutSymbolPins
 };

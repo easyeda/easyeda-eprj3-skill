@@ -126,10 +126,58 @@ function createAuthoring() {
     // IC can have pin 1 named "G" while its net is "PUMP_EN" (report P1).
     // Without pinNames the pin name defaults to the net name. `pins` may also
     // be an array ['num:name:dir:side', …] (explicit spec form).
+    //
+    // `units` turns the chip into a MULTI-PART component (one footprint, one
+    // designator, N schematic symbols — U34A / U34B / …). Each unit is
+    //   { id:'A', name:'HDMI', pins:{A19:'HTX0P', …} [, pinNames] [, groups] }
+    // where `groups` further splits a unit into visually separated banks:
+    //   groups:[{ name:'DQ', pins:{…} }, { name:'DQS', pins:{…} }].
+    // The part carries the merged pin→net map so validation and the PCB pad
+    // binding see ONE component; design.js expands units into schematic parts.
     chip(opts) {
       const o = Object.assign({}, opts);
       if (!o.id) o.id = nextRef(o.designator || 'U');
       if (usedIds.has(o.id)) die(`duplicate part id "${o.id}" — the id is already taken (explicit id or auto-numbered)`);
+      if (Array.isArray(o.units) && o.units.length) {
+        const merged = {};
+        const units = o.units.map((u) => {
+          const pins = {};
+          const addPins = (map) => {
+            if (!map || typeof map !== 'object') return;
+            for (const [k, v] of Object.entries(map)) {
+              if (v === null || v === undefined || v === '') continue;
+              const num = String(k);
+              const net = String(v);
+              pins[num] = net;
+              if (merged[num] !== undefined && merged[num] !== net) die(`chip "${o.id}": pin "${num}" appears in two units with different nets`);
+              merged[num] = net;
+            }
+          };
+          addPins(u.pins);                       // flat pins {num: net}
+          (Array.isArray(u.groups) ? u.groups : []).forEach((g) => addPins(g && g.pins));
+          return {
+            id: String(u.id),
+            name: u.name || '',
+            pins,
+            pinNames: u.pinNames || null,
+            groups: Array.isArray(u.groups) && u.groups.length ? u.groups : null
+          };
+        });
+        const p = {
+          id: o.id,
+          name: o.name || null,
+          designator: o.designator || 'U',
+          units,
+          pins: merged,
+          footprint: o.footprint || null,
+          value: o.value
+        };
+        if (o.pitch) p.pitch = o.pitch;
+        if (o.autoNC !== false) p.autoNC = true;
+        if (o.pinoutSource) p.pinoutSource = o.pinoutSource;
+        if (o.bridge) p.bridge = 'ok';
+        return push(p);
+      }
       const pinsIn = o.pins || {};
       const pinNames = o.pinNames || null;
       let pinList;

@@ -34,11 +34,13 @@ const SCHEMA = [
 const POWER_NAME = /^(VDD|VSS|VBAT|VDDA|VSSA|GND|VIN|VOUT|VREF|AVDD|AVSS|VCC|VSS_?\d*)$/i;
 const DIR_OF = { bidirectional: 'B', input: 'I', output: 'O', power_in: 'W', passive: 'P', tri_state: 'T', open_collector: 'C' };
 
-// EasyEDA standard symbol shapes → verbatim internal (y-up mil) geometry.
-// Units: 1 unit = 10 mil. EasyEDA symbol canvas is y-down; we flip to y-up so
-// the whole build pipeline keeps its conventions (the sheet write mirrors back
-// into the client's y-down space).
-const UNIT = 10;
+// EasyEDA standard symbol shapes → verbatim internal (y-up) geometry.
+// Units: the library canvas and the symbol document BOTH use 1 unit = 10 mil,
+// so coordinates carry over 1:1 (only y is flipped). Scaling by 10 here made
+// every imported symbol ten times oversized (a 96-ball BGA came out 88 in tall,
+// exactly ten times its 8.9 in of 100-mil rows).
+const UNIT = 1;
+const IMPORTED_PIN_LEN = 20;   // units (200 mil) — the official symbols' stub
 
 function shapePts(str) {
   return String(str).trim().split(/\s+/).map(Number);
@@ -71,7 +73,7 @@ function decodeSymbolRaw(dataStr) {
         const sf = seg.split('~');
         if (sf.length >= 6 && (sf[5] === 'start' || sf[5] === 'end') && sf[4] && Number.isNaN(Number(sf[4]))) { name = sf[4]; break; }
       }
-      pins.push({ num, name, x, y, rotation, length: 100, electric: f[2] });
+      pins.push({ num, name, x, y, rotation, length: IMPORTED_PIN_LEN, electric: f[2] });
     } else if (kind === 'PL') {
       // PL~points~stroke~width~dash~id~locked  (open polyline)
       const pts = shapePts(f[1]).map((v, i) => (i % 2 === 0 ? toX(v) : toY(v)));

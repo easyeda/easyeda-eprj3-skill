@@ -104,6 +104,38 @@ function makeLibrary(project, design) {
       if (!symbolCache.has(entry.name)) symbolCache.set(entry.name, P.parseSymbolEntry(entry));
       return Object.assign({ entry }, symbolCache.get(entry.name));
     }
+    // Multi-part component: all units share ONE symbol doc (N PARTs) and ONE
+    // device; a unit's `symbol.partIndex` selects which PART it displays.
+    if (part.symbol && part.symbol.multipart) {
+      const base = part.symbol.multipart;
+      const m = design.multiUnits[base];
+      if (!m) die(`part "${part.id}": multi-unit base "${base}" not found`);
+      const cacheKey = `multipart:${base}`;
+      if (!symbolCache.has(cacheKey)) {
+        const raw = m.symbol.name;
+        const spec = Object.assign({}, m.symbol, { name: `SYM_${raw}`, title: raw });
+        const entry = P.buildMultiPartSymbolEntry(spec, ctx);
+        project.saveLibrary(entry);
+        symbolCache.set(cacheKey, { entry, parsed: P.parseSymbolEntry(entry), partIds: entry.multipart || [] });
+      }
+      const cached = symbolCache.get(cacheKey);
+      const partId = cached.partIds[part.symbol.partIndex];
+      const myPins = (cached.parsed.pinsByPart.get(partId)) || [];
+      const tips = myPins.map((p) => p.tip).concat(myPins.map((p) => ({ x: p.x, y: p.y })));
+      return {
+        entry: cached.entry,
+        name: cached.parsed.name,
+        title: cached.parsed.title,
+        designator: cached.parsed.designator,
+        bbox: G.bboxOfPoints(tips) || cached.parsed.bbox,
+        pins: myPins,
+        pinByNum: new Map(myPins.map((p) => [String(p.num), p])),
+        graphics: cached.parsed.graphics,
+        kind: 'symbol',
+        partId,
+        parts: cached.parsed.parts
+      };
+    }
     const key = `inline:${JSON.stringify(part.symbol)}`;
     if (!symbolCache.has(key)) {
       // Inline entries are keyed `SYM_*` / `FP_*`: a symbol and a footprint that
@@ -143,7 +175,7 @@ function makeLibrary(project, design) {
   return { symbolOf, footprintOf, symbolCache, footprintCache };
 }
 
-function placeSchematicComponent(em, project, pl, lib) {
+function placeSchematicComponent(em, project, pl, lib, design) {
   const sym = pl.sym;
   const entry = sym.entry;
 
@@ -179,7 +211,9 @@ function placeSchematicComponent(em, project, pl, lib) {
     const fp = lib.footprintOf(pl.part);
     fpEntry = fp ? fp.entry : null;
   }
-  const deviceUuid = E.uuid16();
+  const deviceUuid = (pl.part.multiUnitBase && design && design.multiUnits[pl.part.multiUnitBase])
+    ? (() => { const m = design.multiUnits[pl.part.multiUnitBase]; if (!m.deviceUuid) m.deviceUuid = E.uuid16(); return m.deviceUuid; })()
+    : E.uuid16();
   const deviceDoc = E.buildDeviceDoc({
     uuid: deviceUuid,
     title: deviceTitle,
@@ -202,13 +236,16 @@ function placeSchematicComponent(em, project, pl, lib) {
   const placement = entry.placement || { nameZ: 10, designatorZ: 11, symbolZ: 12 };
   const block = E.schComponentBlock({
     compId: E.randId(),
+    partId: sym.partId,
     x: pl.x, y: pl.y, rotation: pl.rotation || 0,
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid,
     deviceName: deviceTitle,
     footprintUuid: fpEntry ? fpEntry.footprintUuid : null,
-    refdes: pl.part.id,
+    // a multi-part unit stores the BASE designator (U34); the client appends
+    // the unit suffix itself (U34.1 …), exactly like the reference project
+    refdes: pl.part.multiUnitBase || pl.part.id,
     uniqueId: E.nextUniqueId(em.lines),
     nameZ: placement.nameZ,
     designatorZ: placement.designatorZ,
@@ -491,7 +528,7 @@ function main() {
   const candidates = [];
   const kinds = process.env.EPRJ3_NO_LAYERED === '1' ? ['shelf'] : ['shelf', 'layered'];
   for (const kind of kinds) {
-    for (const scale of [1, 1.7, 2.9]) {
+    for (const scale of [1, 1.7, 2.9, 5, 8]) {
       restoreRotations();
       const c = makeCandidate(kind, scale, candidates.length === 0);
       candidates.push(c);
@@ -533,19 +570,26 @@ function main() {
     // frame must reach past y2 (bottom) and keep a title strip at the top
     if (x1 > x2) { x1 = 0; x2 = 1000; y1 = 0; y2 = 600; }
     const M = 250;
-    const fw = Math.ceil((x2 - x1 + 2 * M) / 10);
-    const fh = Math.ceil((y2 + M + 100) / 10);
+    // content coordinates are already in the sheet's 10-mil units, the same
+    // units as the standard page sizes below — no further scaling
+    const fw = Math.ceil(Math.max(0, x2) + M);
+    const fh = Math.ceil(Math.max(0, y2) + M + 100);
     const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
-    const fit = stds.find(([, w, h]) => fw <= w && fh <= h);
+    const fit = stds.find(([, w, h]) => fw <= w && fh <= h) || stds[stds.length - 1];
+    // The sheet is a REAL paper size: the client draws both the page border
+    // and the embedded frame component, and they only coincide when the
+    // frame's Width/Height equal the standard. A content-sized frame renders
+    // as a second, smaller rectangle inside the page (see the reference
+    // project: A4 = 1170×825).
     const frame = {
-      width: fw, height: fh,
-      size: fit ? fit[0] : 'A0',
-      xRegions: Math.max(1, Math.round(fw / 200)),
-      yRegions: Math.max(1, Math.round(fh / 200)),
+      width: fit[1], height: fit[2],
+      size: fit[0],
+      xRegions: Math.max(1, Math.round(fit[1] / 200)),
+      yRegions: Math.max(1, Math.round(fit[2] / 200)),
       titleBlock: design.frame && design.frame.titleBlock === true ? 1 : 0
     };
     sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`, frame));
-    sheetFrames.set(s, { ...frame, wMil: fw * 10, hMil: fh * 10 });
+    sheetFrames.set(s, { ...frame, wMil: fit[1] * 10, hMil: fit[2] * 10 });
   }
 
   // one emitter per sheet; blocks/components/flags/ports/wires land on the
@@ -577,7 +621,7 @@ function main() {
     }
   }
 
-  for (const pl of placements) placeSchematicComponent(emitters.get(pl.sheet || 1), project, pl, lib);
+  for (const pl of placements) placeSchematicComponent(emitters.get(pl.sheet || 1), project, pl, lib, design);
 
   const powerEntries = new Map();
   for (const flag of routed.flags) {
@@ -748,7 +792,7 @@ function main() {
   let netcheck = null;
   if (doPcb) {
     const NC = require('./lib/netcheck');
-    netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir));
+    netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir), D.multiUnitBaseOf(design.multiUnits));
     report.netcheck = { match: netcheck.match, summary: netcheck.summary, issues: netcheck.issues };
   }
 

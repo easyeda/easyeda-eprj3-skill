@@ -34,10 +34,10 @@ const RULES = {
   L010: { level: 'warn', weight: 2, text: 'wire endpoint dangles (touches nothing)' }
 };
 
-// Drawing frame extent in mil. The generated frame's size is per-sheet (read
-// from the frame device doc's Width/Height attributes, units of 10 mil);
-// FRAME_A4 is the fallback for sheets without a recognised frame.
-const FRAME_A4 = { x1: 0, y1: 0, x2: 11700, y2: 8250 };
+// Drawing frame extent in the SAME units as the sheet records (10 mil — the
+// official A4 frame is Width 1170 × Height 825). FRAME_A4 is the fallback for
+// sheets without a recognised frame.
+const FRAME_A4 = { x1: 0, y1: 0, x2: 1170, y2: 825 };
 const FRAME = FRAME_A4;
 const GRID = 10;
 
@@ -71,8 +71,14 @@ function collectSheet(file) {
       const symAttr = mine.find((a) => a.body.key === 'Symbol');
       const sym = symAttr ? symbolByUuid.get(symAttr.body.value) : null;
       const ref = (des && des.body.value) || '?';
-      const extent = sym ? partExtent(sym, b.x, b.y, b.rotation || 0) : null;
-      parts.push({ ref, x: b.x, y: b.y, rotation: b.rotation || 0, sym, extent });
+      // multi-part units all store the base designator (U34); add the part
+      // ordinal for readable findings (U34.2) without touching the file
+      const unit = b.partId && /\.(\d+)$/.exec(String(b.partId));
+      const label = unit && ref !== '?' ? `${ref}.${unit[1]}` : ref;
+      // multi-part: a COMPONENT references one PART; show only that part's pins
+      const sym2 = P.partView(sym, b.partId);
+      const extent = sym2 ? partExtent(sym2, b.x, b.y, b.rotation || 0) : null;
+      parts.push({ ref: label, x: b.x, y: b.y, rotation: b.rotation || 0, sym: sym2, extent });
     } else if (r.type === 'RECT') {
       const b = r.body;
       rects.push({ rect: G.rect(b.dotX1, b.dotY1, b.dotX2, b.dotY2) });
@@ -103,7 +109,7 @@ function frameOf(file) {
     const a = meta.body.attributes || {};
     const w = Number(a.Width), h = Number(a.Height);
     if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
-      return { x1: 0, y1: 0, x2: w * 10, y2: h * 10 };
+      return { x1: 0, y1: 0, x2: w, y2: h };
     }
   }
   return FRAME_A4;

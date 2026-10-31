@@ -5,6 +5,67 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.32.0] - 2026-10-31
+
+**Multi-part components + EasyEDA-Pro-style symbols + a tenfold unit fix.**
+
+A large hand-drawn chip (the H6's 186-pin logical symbol used to render as a
+20×6000 mil sliver) can now be authored as ONE part split into functional
+units, serialised as a TRUE multi-part component: one symbol doc with N `PART`
+records and one device, exactly like EasyEDA Pro — verified record-by-record
+against `examples/multi-part-sch` (a client-saved `SP485EEN-L/TR` project) and
+the `BCM89071` library entry.
+
+While validating against that reference this also uncovered a units bug that
+had made **every** generated and imported symbol ten times oversized.
+
+### Added
+- `A.chip({ units: [...] })` — declare a multi-part component. Each unit is
+  `{ id:'A', name:'HDMI', pins:{…} [, pinNames] [, groups] }`; `groups` further
+  splits a unit into separated pin banks (`groups:[{ name:'DQ', pins:{…} }]`),
+  and each bank is captioned inside the body.
+- Multi-part symbol serialisation (`buildMultiPartSymbolDoc`): ONE symbol doc
+  holds N `PART` records (title `<symbol>.<n>`, `DeviceName` by name only), each
+  owning its body/pins and per-part `Symbol`/`Designator`/`Name`/`Device`/
+  `Footprint`/`Multi-Part Group` attrs; the schematic places one `COMPONENT`
+  per part (same symbol + device uuid, a different `partId`).
+- EasyEDA Pro pin-label layout: pin **name inside** the body, pin **number
+  outside** near the pin (2 mil in / 5 mil out, name 5 mil above the line, as in
+  the reference), 20-unit stub, `valueVisible` on.
+- Grouped symbol layout (`layoutSymbolPins`): body auto-widens until the longest
+  pin name fits each column (`halfW`, mil), 100 mil pitch, a 300 mil band
+  between banks with a caption.
+
+### Changed
+- **A multi-part unit stores the BASE designator (`U34`)**; the client appends
+  the unit ordinal itself and renders `U34.1 … U34.7` (the reference project
+  stores `U1` on both units). Unit designators are never rotated by the
+  orientation pass — a bank symbol is read left-to-right.
+- The PCB stage re-merges units into ONE footprint with the base designator,
+  pads bound from the union of every unit's pins.
+- Schematic↔PCB netlist comparison and ERC use the base designator on both
+  sides (`E003` expectations, `E004` duplicate check counts one multi-part
+  symbol as a single owner), with the unit-letter fallback kept for the
+  standalone CLIs.
+- Sheets are real paper sizes: a generated frame now carries a standard
+  Width/Height (A4 `1170×825`, A3, A2, A1, A0) and the same size in
+  `Size`/`Page Size`, instead of a content-sized rectangle that the client drew
+  as a second, smaller border inside the page.
+
+### Fixed
+- **Generated grouped symbols were 10× oversized**: design values (pitch,
+  halfW) are in MIL but the symbol document is in 10-mil units — a 100 mil
+  pitch was laid out as 1000 mil, so an A4 sheet could never hold the symbol.
+- **Imported LCSC symbols were 10× oversized**: `fetch-lcsc` multiplied library
+  symbol coordinates by 10 although both sides already use 10-mil units
+  (`K4E6E304EC` came out 88 in tall — exactly ten times its 8.9 in of 100-mil
+  rows). Imported pin stubs are now the official 20 units.
+- `lint` compared the frame (multiplied by 10) against raw sheet coordinates, so
+  L007 never fired; `build` divided the content extent by 10 when sizing the
+  frame, so it always chose A4. Both now use the sheet's own units.
+- The layout density ladder retries at 1×/1.7×/2.9×/5×/8× before failing.
+
+
 ## [1.31.2] - 2026-10-30
 
 **Eliminate the remaining cross-net contacts: flag/port/NC/label placement.**

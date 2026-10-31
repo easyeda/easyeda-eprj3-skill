@@ -139,10 +139,85 @@ function resolveIcPart(p) {
   return out;
 }
 
+/** Build the single multi-part symbol spec for a multi-unit component: one
+ *  symbol doc holds N PARTs (one per unit). Each part's pins are grouped (or
+ *  flat) and laid out by parts.js into a wide body with the EasyEDA Pro label
+ *  style (name inside, number outside). */
+function multiPartSymbolSpec(base, part) {
+  const name = part.symbolName || (part.name || base);
+  const pinListOf = (pins, pinNames) => Object.entries(pins || {}).map(([num, net]) => {
+    const pn = pinNames && pinNames[num];
+    return `${num}:${pn || net}`;
+  });
+  const parts = part.units.map((u) => {
+    if (u.groups && u.groups.length) {
+      return { title: u.name || u.id, groups: u.groups.map((g) => ({ name: g.name || '', pins: pinListOf(g.pins, u.pinNames) })) };
+    }
+    return { title: u.name || u.id, groups: [{ name: '', pins: pinListOf(u.pins, u.pinNames) }] };
+  });
+  return {
+    name, designator: part.designator || 'U', pitch: part.pitch, halfW: part.halfW,
+    parts, multipart: true
+  };
+}
+
+/** Expand multi-unit components into one schematic part per unit. A component
+ *  with `units` becomes N parts (U34A/U34B/…) sharing ONE footprint and ONE
+ *  multi-part symbol doc; the PCB stage re-merges them by `multiUnitBase`.
+ *  Returns {parts, multiUnits}. */
+function expandMultiUnits(rawParts) {
+  const multiUnits = {};
+  const out = [];
+  for (const p of rawParts) {
+    if (p.units && Array.isArray(p.units) && p.units.length) {
+      const base = String(p.id);
+      const sym = multiPartSymbolSpec(base, p);
+      const ids = [];
+      p.units.forEach((u, i) => {
+        const uid = `${base}${u.id}`;
+        ids.push(uid);
+        out.push(Object.assign({}, p, {
+          id: uid,
+          symbol: { name: sym.name, designator: sym.designator, multipart: base, partIndex: i },
+          pins: Object.assign({}, u.pins),
+          units: undefined,
+          multiUnitBase: base,
+          multiUnitPart: i,
+          // a bank symbol is read left-to-right: never let the rotation pass
+          // turn it (pin names would run vertically and the block loses its shape)
+          rotation: 0
+        }));
+      });
+      multiUnits[base] = {
+        designator: p.designator || 'U',
+        name: p.name,
+        footprint: p.footprint,
+        units: ids,
+        symbol: sym
+      };
+    } else {
+      out.push(p);
+    }
+  }
+  return { parts: out, multiUnits };
+}
+
+/** Map unit designator ("U34A") → base designator ("U34") for multi-unit
+ *  components, so the schematic↔PCB netlist comparison can match a unit's
+ *  pins to the single footprint that carries them. */
+function multiUnitBaseOf(multiUnits) {
+  const m = new Map();
+  for (const [base, info] of Object.entries(multiUnits || {})) {
+    for (const uid of info.units) m.set(uid, base);
+  }
+  return m;
+}
+
 /** Apply defaults and resolve the shorthand forms into one canonical shape. */
 function normalize(raw, file) {
   if (!raw || typeof raw !== 'object') fail('design must be a JSON object');
-  const rawParts = Array.isArray(raw.parts) ? raw.parts.map((p) => resolveIcPart(p)) : [];
+  const expanded = expandMultiUnits(Array.isArray(raw.parts) ? raw.parts.map((p) => resolveIcPart(p)) : []);
+  const rawParts = expanded.parts;
   const d = {
     file: file || null,
     name: raw.name || (file ? path.basename(file).replace(/\.json$/i, '') : 'project'),
@@ -164,7 +239,9 @@ function normalize(raw, file) {
     // sheets in declaration order (or per-block "sheet" overrides). The
     // intake asks 单页/多页 before generating.
     sheets: Math.max(1, Math.floor(Number(raw.sheets) || 1)),
-    expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null
+    expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null,
+    // multi-unit components: base designator → {designator, name, footprint, units:[unitIds]}
+    multiUnits: expanded.multiUnits
   };
 
   // nets may also declare power style: "nets": { "VCC": { "power": "up" } }
@@ -274,6 +351,9 @@ function normalize(raw, file) {
       rotation: rot,
       // the author chose this rotation — sch-tidy must not move it
       rotationExplicit: p.rotation !== undefined || p.rot !== undefined,
+      // multi-unit component: this part is one unit of `multiUnitBase` (the PCB
+      // stage re-merges units into ONE footprint with this base designator)
+      multiUnitBase: p.multiUnitBase === undefined ? null : String(p.multiUnitBase),
       block: p.block === undefined ? null : (typeof p.block === 'number' ? p.block : String(p.block))
     };
   });
@@ -284,7 +364,11 @@ function normalize(raw, file) {
   blocksIn.forEach((b, i) => {
     if (!b || typeof b !== 'object') fail(`blocks[${i}] must be an object`);
     const title = String(b.title || b.name || `BLOCK ${i + 1}`);
-    const list = Array.isArray(b.parts) ? b.parts.map(String) : [];
+    // a block may list a multi-unit component's base id ("U34") — expand it to
+    // its unit ids so each schematic symbol lands in the block
+    const list = Array.isArray(b.parts)
+      ? b.parts.map(String).flatMap((id) => (d.multiUnits[id] ? d.multiUnits[id].units : [id]))
+      : [];
     for (const id of list) {
       if (!seen.has(id)) fail(`block "${title}" references unknown part "${id}"`);
       if (assigned.has(id)) fail(`part "${id}" is listed in two blocks`);
@@ -609,5 +693,6 @@ module.exports = {
   layoutSchematic,
   orderByConnectivity,
   partExtent,
-  unionRect
+  unionRect,
+  multiUnitBaseOf
 };
