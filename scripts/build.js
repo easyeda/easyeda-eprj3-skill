@@ -91,8 +91,36 @@ class Emitter {
   }
 }
 
-function makeLibrary(project, design) {
-  const symbolCache = new Map();
+/**
+ * Sheet coordinates are y-UP (the client reads them that way when every record
+ * carries yAxisDirection "up"), so the page origin is the BOTTOM-left. The
+ * layout packs from y=0 upward and lets a block's title strip dip below it;
+ * lift each sheet's content by a margin so nothing hangs outside the border.
+ */
+function shiftSheetsIntoPage(placements, blocks) {
+  const MARGIN = 40;
+  const minY = new Map();
+  const put = (s, y) => minY.set(s, Math.min(minY.has(s) ? minY.get(s) : Infinity, y));
+  for (const pl of placements) put(pl.sheet || 1, pl.extent.y1);
+  for (const b of blocks) put(b.sheet || 1, b.rect.y1);
+  const dy = new Map();
+  for (const [s, y] of minY) dy.set(s, Math.round(MARGIN - y));
+  for (const pl of placements) {
+    const d = dy.get(pl.sheet || 1) || 0;
+    if (!d) continue;
+    pl.y += d;
+    pl.extent.y1 += d;
+    pl.extent.y2 += d;
+  }
+  for (const b of blocks) {
+    const d = dy.get(b.sheet || 1) || 0;
+    if (!d) continue;
+    b.rect.y1 += d;
+    b.rect.y2 += d;
+  }
+}
+
+function makeLibrary(project, design) {  const symbolCache = new Map();
   const footprintCache = new Map();
   const ctx = { ownerUuid: project.index.owner_uuid, client: project.client, ms: project.ms() };
 
@@ -506,6 +534,9 @@ function main() {
         }
       }
     }
+    // Sheet coordinates are y-UP: place each sheet's content a margin above
+    // the page origin so no block frame or label hangs below the border.
+    shiftSheetsIntoPage(placements, blocks);
     const routed = R.routeSchematic(design, placements);
     const contacts = R.countCrossNetContacts(routed);
     const bodyOf = (pl) => {
@@ -575,12 +606,14 @@ function main() {
     const fw = Math.ceil(Math.max(0, x2) + M);
     const fh = Math.ceil(Math.max(0, y2) + M + 100);
     const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
-    const fit = stds.find(([, w, h]) => fw <= w && fh <= h) || stds[stds.length - 1];
-    // The sheet is a REAL paper size: the client draws both the page border
-    // and the embedded frame component, and they only coincide when the
-    // frame's Width/Height equal the standard. A content-sized frame renders
-    // as a second, smaller rectangle inside the page (see the reference
-    // project: A4 = 1170×825).
+    const found = stds.find(([, w, h]) => fw <= w && fh <= h);
+    // A dense sheet can exceed A0. The client draws the border from the
+    // Width/Height attributes, so fall back to a custom page of exactly the
+    // content size (labelled A0) rather than letting parts hang outside.
+    const fit = found || ['A0', Math.max(4740, fw), Math.max(3350, fh)];
+    // The sheet is a real paper size: the client draws the page border from
+    // the frame's Width/Height, so a standard size keeps the border and the
+    // embedded frame component coincident (reference project: A4 = 1170×825).
     const frame = {
       width: fit[1], height: fit[2],
       size: fit[0],

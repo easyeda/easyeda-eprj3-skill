@@ -368,12 +368,12 @@ function buildSymbolDoc(spec) {
     docType: 2,
     source: spec.source
   }, 'META');
-  b.add('CANVAS', { originX: 0, originY: 0 }, 'CANVAS');
+  b.add('CANVAS', { originX: 0, originY: 0, yAxisDirection: 'up' }, 'CANVAS');
   b.add('PART', { BBOX: spec.bbox, title: '' }, PART_ID);
 
   let z = 0;
   const zIndex = () => ++z;
-  const ctx = { partId: PART_ID, groupId: '', locked: false };
+  const ctx = { partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', yAxisDirection: 'up' };
 
   for (const g of spec.graphics || []) {
     const body = Object.assign({}, ctx, { zIndex: zIndex() }, g.body);
@@ -397,7 +397,7 @@ function buildSymbolDoc(spec) {
       ['Pin Type', 'Undefined', 'LEFT_BOTTOM']
     ]) {
       b.add('ATTR', {
-        partId: PART_ID, groupId: '', locked: false,
+        partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up',
         zIndex: zIndex(), parentId: pinId,
         key, value,
         keyVisible: false, valueVisible: false,
@@ -411,7 +411,7 @@ function buildSymbolDoc(spec) {
   }
   for (const [key, value] of [['Name', spec.name || spec.title], ['Designator', spec.designator || 'U?']]) {
     b.add('ATTR', {
-      partId: PART_ID, groupId: '', locked: false,
+      partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up',
       zIndex: zIndex(), parentId: '',
       key, value,
       keyVisible: false, valueVisible: false,
@@ -444,7 +444,7 @@ function buildMultiPartSymbolDoc(spec) {
     docType: 2,
     source: spec.source
   }, 'META');
-  b.add('CANVAS', { originX: 0, originY: 0 }, 'CANVAS');
+  b.add('CANVAS', { originX: 0, originY: 0, yAxisDirection: 'up' }, 'CANVAS');
 
   let z = 0;
   const zIndex = () => ++z;
@@ -458,7 +458,7 @@ function buildMultiPartSymbolDoc(spec) {
       // leaves uuid/source empty (the device doc is the real link)
       DeviceName: { name: spec.name, uuid: '', source: '' }
     }, pid);
-    const ctx = { partId: pid, groupId: '', locked: false };
+    const ctx = { partId: pid, groupId: '', locked: false, yAxisDirection: 'up', yAxisDirection: 'up' };
     for (const g of part.graphics || []) {
       b.addElem(g.type, Object.assign({}, ctx, { zIndex: zIndex() }, g.body));
     }
@@ -492,7 +492,7 @@ function buildMultiPartSymbolDoc(spec) {
         ['Pin Type', 'Undefined', 'LEFT_BOTTOM', null, null]
       ]) {
         b.add('ATTR', {
-          partId: pid, groupId: '', locked: false,
+          partId: pid, groupId: '', locked: false, yAxisDirection: 'up',
           zIndex: zIndex(), parentId: pinId,
           key, value,
           keyVisible: false, valueVisible: true,
@@ -517,7 +517,7 @@ function buildMultiPartSymbolDoc(spec) {
       ['Multi-Part Group', null]
     ]) {
       b.add('ATTR', {
-        partId: pid, groupId: '', locked: false,
+        partId: pid, groupId: '', locked: false, yAxisDirection: 'up',
         zIndex: zIndex(), parentId: pid,
         key, value,
         keyVisible: false, valueVisible: false,
@@ -567,14 +567,14 @@ function buildPowerSymbolDoc(spec) {
     key: 'Name', zIndex: nameZ
   }));
 
-  b.add('CANVAS', { originX: 0, originY: 0 }, 'CANVAS');
+  b.add('CANVAS', { originX: 0, originY: 0, yAxisDirection: 'up' }, 'CANVAS');
   b.add('PART', {
     BBOX: down ? [-10, 0, 10, -19] : [-5, 10, 5, 0],
     title: ''
   }, PART_ID);
 
   b.add('ATTR', {
-    partId: PART_ID, groupId: '', locked: false, zIndex: 1, parentId: '',
+    partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 1, parentId: '',
     key: 'Symbol', value: spec.title,
     keyVisible: false, valueVisible: false,
     x: 0, y: 30, rotation: 360, color: null, fillColor: null,
@@ -583,7 +583,7 @@ function buildPowerSymbolDoc(spec) {
   });
 
   const pinId = b.addElem('PIN', {
-    partId: PART_ID, groupId: '', locked: false, zIndex: down ? 4 : 3,
+    partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: down ? 4 : 3,
     display: true, x: 0, y: 0,
     length: down ? 10 : 5,
     rotation: down ? 270 : 90,
@@ -602,7 +602,7 @@ function buildPowerSymbolDoc(spec) {
        ['Pin Type', 'IN', { x: -14, y: 2, align: null }]];
   pinAttrs.forEach(([key, value, pos], i) => {
     b.add('ATTR', Object.assign({
-      partId: PART_ID, groupId: '', locked: false, zIndex: (down ? 5 : 4) + i,
+      partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: (down ? 5 : 4) + i,
       parentId: pinId, key, value,
       keyVisible: false, valueVisible: false
     }, pinNulls, pos));
@@ -613,7 +613,7 @@ function buildPowerSymbolDoc(spec) {
     : [[[-5, -10], [5, -10]], [[0, -10], [0, -5]]];
   bars.forEach((points, i) => {
     b.addElem('POLY', {
-      partId: PART_ID, groupId: '', locked: false,
+      partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up',
       zIndex: (down ? 8 : 7) + i,
       points: points.map(([x, y]) => ({ x, y })),
       closed: false,
@@ -810,7 +810,9 @@ function attrNull(key, value, parentZ, parentId, over) {
     x: null, y: null, rotation: null, color: null, fontFamily: null,
     fontSize: null, fontWeight: null, italic: null, underline: null, align: null,
     value, keyVisible: null, valueVisible: null, key,
-    fillColor: null, parentId, zIndex: parentZ
+    fillColor: null, parentId, zIndex: parentZ,
+    // the client reads coordinates as y-up only when the record says so
+    yAxisDirection: 'up'
   }, over);
 }
 // Styled ATTR helper (group-A / component Name/Designator shape).
@@ -819,7 +821,8 @@ function attrStyled(over) {
     x: null, y: null, rotation: 0, color: null, fontFamily: null,
     fontSize: null, fontWeight: null, italic: null, underline: null,
     align: null, value: null, keyVisible: null, valueVisible: null,
-    key: null, fillColor: null, parentId: null, zIndex: null, locked: false
+    key: null, fillColor: null, parentId: null, zIndex: null, locked: false,
+    yAxisDirection: 'up'
   }, over);
 }
 
@@ -838,16 +841,19 @@ function buildSheetPageDoc(v) {
     b.add('ATTR', attrStyled({
       x, y, fontSize, align, value, key, parentId: frameCompId, zIndex: z
     }));
-  A(1, 2547, 159, 20, 'CENTER_MIDDLE', v.frameSymbolUuid, 'Symbol');
-  A(2, 1039, 13, 20, 'CENTER_MIDDLE', '嘉立创EDA', 'Company');
-  A(3, 599, -77, 15, 'LEFT_MIDDLE', '', 'Drawed');
-  A(4, 599, -57, 15, 'LEFT_MIDDLE', '', 'Reviewed');
-  A(5, 1051, -97, 15, 'LEFT_MIDDLE', '', 'Part Number');
-  A(6, 759, 13, 15, 'CENTER_MIDDLE', 'V1.0', 'Version');
-  A(7, 841, 13, 15, 'CENTER_MIDDLE', 'A4', 'Page Size');
-  A(8, 961, -57, 20, 'CENTER_MIDDLE', v.projectName, '@Project Name');
-  A(10, 1051, -137, 15, 'LEFT_MIDDLE', v.dateStr, '@Update Date');
-  A(11, 1051, -117, 15, 'LEFT_MIDDLE', v.dateStr, '@Create Date');
+  // Title-block field positions are the reference project's own coordinates
+  // (examples/multi-part-sch P1): the page origin is the BOTTOM-left, so the
+  // lower rows carry NEGATIVE y and the header row sits at +60…+140.
+  A(1, 2547, -156, 20, 'CENTER_MIDDLE', v.frameSymbolUuid, 'Symbol');
+  A(2, 1039, -10, 20, 'CENTER_MIDDLE', '嘉立创EDA', 'Company');
+  A(3, 599, 80, 15, 'LEFT_MIDDLE', '', 'Drawed');
+  A(4, 599, 60, 15, 'LEFT_MIDDLE', '', 'Reviewed');
+  A(5, 1051, 100, 15, 'LEFT_MIDDLE', '', 'Part Number');
+  A(6, 759, -10, 15, 'CENTER_MIDDLE', 'V1.0', 'Version');
+  A(7, 841, -10, 15, 'CENTER_MIDDLE', v.size || 'A4', 'Page Size');
+  A(8, 961, 60, 20, 'CENTER_MIDDLE', v.projectName, '@Project Name');
+  A(10, 1051, 140, 15, 'LEFT_MIDDLE', v.dateStr, '@Update Date');
+  A(11, 1051, 120, 15, 'LEFT_MIDDLE', v.dateStr, '@Create Date');
 
   const B = (z, key, value) => b.add('ATTR', attrNull(key, value, z, frameCompId));
   B(73, 'Device', v.frameDeviceUuid);
@@ -861,15 +867,15 @@ function buildSheetPageDoc(v) {
   B(81, '@Assembly Variant', 'Basic');
   B(82, 'Border', '1');
   B(83, 'Title Block Position', '3');
-  B(84, 'Size', 'A4');
-  B(85, 'Width', '1170');
-  B(86, 'Height', '825');
+  B(84, 'Size', v.size || 'A4');
+  B(85, 'Width', String(v.frameWidth || 1170));
+  B(86, 'Height', String(v.frameHeight || 825));
   B(87, 'Region Start', '1');
-  B(88, 'X Region Count', '6');
-  B(89, 'Y Region Count', '4');
+  B(88, 'X Region Count', String(v.xRegions || 6));
+  B(89, 'Y Region Count', String(v.yRegions || 4));
   B(90, 'Blade Width', '10');
   B(91, 'Color', '');
-  B(92, 'Title Block', '1');
+  B(92, 'Title Block', String(v.titleBlock === undefined ? 1 : v.titleBlock));
   B(93, 'Name', '');
   B(94, 'Description', '');
 
@@ -879,9 +885,11 @@ function buildSheetPageDoc(v) {
     attrs: {
       Footprints: '[]',
       Devices: '[]',
-      DeviceName: JSON.stringify({ uuid: v.frameDeviceUuid, name: FRAME_DEVICE_NAME, source: '' })
+      DeviceName: JSON.stringify({ uuid: v.frameDeviceUuid, name: FRAME_DEVICE_NAME, source: '' }),
+      FootprintName: null
     },
-    zIndex: null
+    zIndex: null,
+    yAxisDirection: 'up'
   }, frameCompId);
   return b.lines;
 }
@@ -911,7 +919,10 @@ function schComponentBlock(v) {
       differentialPairClass: {},
       Symbols: '[]'
     },
-    zIndex: v.zIndex
+    zIndex: v.zIndex,
+    // the client only reads the changed sheet coordinates as y-UP when the
+    // component declares it; without the flag it mirrors the part below the page
+    yAxisDirection: 'up'
   }, v.compId);
 
   // Every ATTR head carries an id; the client links attrs to their owner
@@ -949,7 +960,8 @@ function powerComponentBlock(v) {
     partId: PART_ID,
     x: v.x, y: v.y, rotation: v.rotation || 0, isMirror: false,
     attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
-    zIndex: v.zIndex
+    zIndex: v.zIndex,
+    yAxisDirection: 'up'
   }, v.compId);
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: down ? 10 : null,
@@ -997,11 +1009,11 @@ function buildPortSymbolDoc(spec) {
     key: 'Name', zIndex: 9
   }));
 
-  b.add('CANVAS', { originX: 0, originY: 0 }, 'CANVAS');
+  b.add('CANVAS', { originX: 0, originY: 0, yAxisDirection: 'up' }, 'CANVAS');
   b.add('PART', { BBOX: [0, -7, 25, 7], title: '' }, PART_ID);
 
   b.add('ATTR', {
-    partId: PART_ID, groupId: '', locked: false, zIndex: 1, parentId: '',
+    partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 1, parentId: '',
     key: 'Symbol', value: spec.title,
     keyVisible: false, valueVisible: false,
     x: 0, y: 30, rotation: 360, color: null, fillColor: null,
@@ -1010,7 +1022,7 @@ function buildPortSymbolDoc(spec) {
   });
 
   const pinId = b.addElem('PIN', {
-    partId: PART_ID, groupId: '', locked: false, zIndex: 3,
+    partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 3,
     display: true, x: 0, y: 0,
     length: 5, rotation: 0,
     color: null, pinShape: 'NONE'
@@ -1026,14 +1038,14 @@ function buildPortSymbolDoc(spec) {
   ];
   pinAttrs.forEach(([key, value, pos], i) => {
     b.add('ATTR', Object.assign({
-      partId: PART_ID, groupId: '', locked: false, zIndex: 4 + i,
+      partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 4 + i,
       parentId: pinId, key, value,
       keyVisible: false, valueVisible: false
     }, pinNulls, pos));
   });
 
   b.addElem('RECT', {
-    partId: PART_ID, groupId: '', locked: false, zIndex: 7,
+    partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 7,
     dotX1: 5, dotY1: -7, dotX2: 25, dotY2: 7,
     radiusX: 0, radiusY: 0, rotation: 0,
     strokeColor: null, strokeStyle: 'SOLID', fillColor: null,
@@ -1053,7 +1065,8 @@ function portComponentBlock(v) {
     partId: PART_ID,
     x: v.x, y: v.y, rotation: 0, isMirror: false,
     attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
-    zIndex: v.zIndex
+    zIndex: v.zIndex,
+    yAxisDirection: 'up'
   }, v.compId);
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: null,
@@ -1084,7 +1097,8 @@ function specialComponentBlock(v) {
     partId: PART_ID,
     x: v.x, y: v.y, rotation: 0, isMirror: false,
     attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
-    zIndex: v.zIndex
+    zIndex: v.zIndex,
+    yAxisDirection: 'up'
   }, v.compId);
   line('ATTR', attrStyled({
     x: v.x, y: v.y + 30, fontSize: null,
@@ -1113,13 +1127,13 @@ function wireBlock(v) {
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
 
-  line('WIRE', { zIndex: v.zIndex }, wireId);
+  line('WIRE', { zIndex: v.zIndex, yAxisDirection: 'up' }, wireId);
   for (const s of v.segs) {
     line('LINE', {
       fillColor: null, fillStyle: null, strokeColor: null, strokeStyle: null,
       strokeWidth: null,
       startX: s.startX, startY: s.startY, endX: s.endX, endY: s.endY,
-      lineGroup: wireId
+      lineGroup: wireId, yAxisDirection: 'up'
     }, randId());
   }
   line('ATTR', {}, randId()); // empty ATTR stub: id in the head, `|||` body
@@ -1154,7 +1168,7 @@ function schTextLine(v) {
     value: v.value,
     fillColor: null,
     zIndex: v.zIndex,
-    groupId: '', locked: false
+    groupId: '', locked: false, yAxisDirection: 'up'
   });
 }
 
@@ -1171,6 +1185,7 @@ function schRectLine(v) {
     radiusX: v.radiusX !== undefined ? v.radiusX : 0,
     radiusY: v.radiusY !== undefined ? v.radiusY : 0,
     rotation: v.rotation !== undefined ? v.rotation : 0,
+    yAxisDirection: 'up',
     ...SCH_STROKE
   });
 }
@@ -1181,6 +1196,7 @@ function schPolyLine(v) {
     groupId: '', locked: false, zIndex: v.zIndex,
     points: v.points,
     closed: !!v.closed,
+    yAxisDirection: 'up',
     ...SCH_STROKE
   });
 }
@@ -1778,6 +1794,14 @@ class Project {
         timeStr: `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
         frameSymbolUuid,
         frameDeviceUuid,
+        // paper parameters — the title-block fields repeat them, and the
+        // client draws the border from them
+        size: f.size || 'A4',
+        frameWidth: f.width,
+        frameHeight: f.height,
+        xRegions: f.xRegions,
+        yRegions: f.yRegions,
+        titleBlock: f.titleBlock === undefined ? 1 : f.titleBlock,
         client: this.client,
         ms
       });

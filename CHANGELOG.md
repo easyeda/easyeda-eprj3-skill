@@ -5,6 +5,37 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.32.1] - 2026-10-31
+
+**Drawing frame and content finally agree — measured against the reference.**
+
+The page border used to sit in the top-left corner with the circuit hanging
+below it. The cause was the y-axis flag plus a frame template taken from an
+older client save. Everything below was measured from
+`examples/multi-part-sch` (client 4.1.93), not guessed.
+
+### Fixed
+- **Every schematic record declares `yAxisDirection: "up"`** — components,
+  their ATTRs, wires, wire segments, block rects, free text and every element
+  of a symbol doc (CANVAS/PART/PIN/RECT/TEXT/ATTR). Without the flag the
+  client reads the record as y-down and mirrors the part below the page, which
+  is exactly what a frame "floating above the circuit" looked like.
+- **The frame template is regenerated from the reference**: title-block field
+  coordinates (`Company` y −10, `Drawed` y 80, …), the placeholder order and
+  the y-up flags now match record-for-record (the old template carried negated
+  y values and no flags).
+- Page `Size`/`Width`/`Height`/`X/Y Region Count`/`Title Block` in both the
+  frame device and the sheet's title-block attrs now follow the chosen paper
+  instead of a hardcoded A4.
+- `build` sizes the frame from the content in the sheet's own units, and when a
+  dense sheet exceeds A0 it emits a custom page of the content size (still
+  labelled A0) so no part hangs outside the border.
+- Each sheet's content is lifted by a 40-unit margin above the page origin
+  (`shiftSheetsIntoPage`), so block frames and their titles stay inside.
+
+Result on the H6 board: all 9 sheets lint 100/100 with zero findings, and the
+rendered pages put every block inside the border; units render `U34.1 … U34.7`.
+
 ## [1.32.0] - 2026-10-31
 
 **Multi-part components + EasyEDA-Pro-style symbols + a tenfold unit fix.**
