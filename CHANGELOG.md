@@ -5,6 +5,79 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.33.0] - 2026-10-31
+
+**Circuit pattern macros (self-developed), readable labels, and a frame that
+tracks the circuit size.**
+
+The reference layout engine's pattern-macro idea (`eda-copilot-backend
+src/circuit-layout/patterns/`) is now implemented for our own placer: no code
+copied, no dependency added, only the algorithm re-derived in `sch-patterns.js`.
+The same pass also fixed the flag symbols, label offsets and frame sizing that
+made the blink example look wrong.
+
+### Added
+- **`scripts/lib/sch-patterns.js` — two-pin chain macros.** Per block it
+  1. builds the two-pin net graph and splits it into paths (a star, a loop or a
+     lone part cancels the macro);
+  2. orders each path and orients it: supply end north, ground end south;
+  3. stacks members so shared pins face each other (`PIN_GAP` 80) and chooses
+     each rotation (0/90/180/270) that makes the two pins vertical;
+  4. re-lays the block frame with title strip and pushes later blocks right
+     when a grown frame would touch them (parts move with the frame);
+  5. marks chain-internal nets so a cross-block one takes a **sideways port**
+     instead of a port in the chain gap.
+  Applies to both the shelf and layered candidates; `--no-patterns` opts out.
+  Verified on blink (POWER INPUT and LED DRIVER become VCC→D1→V_LED→C1→GND and
+  V_LED→R1→LED_A→D2→GND straight chains).
+- **Restored the client-extracted preset symbols** deleted in 1.19.0:
+  `OFFPAGE_IN/OUT/BI` (real Off-Page-Connector, docType 25), `AGND`, `PGND`,
+  `SHORT` (docType 22), `DIFF_PAIR` (docType 31) and the `A3`/`A4` frame
+  symbols, back under `templates/library/symbol/` (from git history; the
+  loader accepts all four kinds). `templates/README.md` lists them.
+- **Parallel / pull banks get a row layout and a shared rail.** A block made
+  only of two-pin parts that all share both nets (decoupling caps) or one net
+  with distinct partners (pull-up/down bank) is laid out as one aligned row
+  (`sch-patterns.js`); the common side faces the supply (or the ground for a
+  down bank). The router then merges collinear contiguous same-net pins of that
+  row into one rail with a single flag on the middle stub (rail split at every
+  junction, a foreign pin between members cancels the merge) — the reference
+  engine's `mergeLocalFlags` / `centerBankFlags` idea. H6: power flags
+  679 → 643, gates unchanged. Mixed blocks (a bank plus other parts) are not
+  split yet.
+
+### Fixed
+- **Power flag symbols were vertically inverted.** Symbol docs are Y-UP: the
+  client's `Power-VCC` bar sits at `(0,+10)` and `Ground-GND`'s bars at
+  `y −10…−19`. Both were drawn on the opposite side, so every GND flag hung on
+  top of its wire. Bars, names and the symbol `y` now match the client's saves.
+- **Wire NET text is hidden along any connected path that reaches a flag or
+  port** (union-find over segment endpoints, per sheet), and short pin-to-pin
+  links / chain-internal nets print no name. Disjoint stub+label wires keep
+  their NET value — that is what joins them in the client.
+- **Designator/value offsets follow the client's saves**: above/below a
+  horizontal part, on the right of a vertical one (they used to sit on the pin
+  axis / on the body).
+- **Page content is centered** in the chosen frame (offset snapped to the
+  10-mil grid) instead of hugging the bottom-left corner.
+- **The drawing frame tracks the circuit size through Width/Height**: the box
+  is the full content extent (both ends, negative x/y included) plus a 60-unit
+  margin; A4 is used when it fits, otherwise the frame is exactly the content
+  size (the smallest enclosing standard paper is only the `Size` label) —
+  region counts follow it. No more snapping up to A3 for content that is a few
+  units over, which left the circuit in a mostly empty sheet.
+- **Blocks hold their labels**: `BLOCK_PAD` 36 → 110, shelf cells 90×80 →
+  150×110, gaps 110/100 → 160/140.
+
+### Changed
+- `examples/blink` regenerated with this version (it was still a 1.25 save with
+  no `yAxisDirection`, which opened mirrored outside the frame); its content
+  fits A4 again, so it ships on the matching `Drawing-Symbol_A4` frame.
+- The corpus skew case bends the selected LINE in **both** axes so it stays a
+  skewed-wire test whichever segment happens to be first.
+- H6 board: label-overlap pairs stay at 14 (from 300 before 1.32.2), lint/DRC
+  100/100, netlists match; each sheet takes the content-sized frame.
+
 ## [1.32.2] - 2026-10-31
 
 **Net labels and ports stop printing on top of each other at pin ends.**

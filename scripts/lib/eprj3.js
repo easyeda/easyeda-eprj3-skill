@@ -547,8 +547,12 @@ function buildPowerSymbolDoc(spec) {
     source: spec.source
   }, 'META');
 
-  const nameAlign = down ? 'CENTER_MIDDLE' : 'CENTER_BOTTOM';
-  const nameY = down ? 25 : -10;
+  // Mirror the client's own Power-VCC / Ground-GND symbol docs, which are
+  // Y-UP: the supply bar sits ABOVE the pin (0,+10) and the ground bars below
+  // (0,-10 … 0,-19). Drawing the bars on the wrong side put every GND flag on
+  // top of the wire and its neighbours.
+  const nameAlign = down ? 'CENTER_TOP' : 'CENTER_BOTTOM';
+  const nameY = down ? -19 : 10;
   const nameZ = down ? 3 : 9;
   const gnnZ = down ? 17 : 11;
   const nulls = {
@@ -577,7 +581,7 @@ function buildPowerSymbolDoc(spec) {
     partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', zIndex: 1, parentId: '',
     key: 'Symbol', value: spec.title,
     keyVisible: false, valueVisible: false,
-    x: 0, y: 30, rotation: 360, color: null, fillColor: null,
+    x: 0, y: down ? -30 : 30, rotation: 360, color: null, fillColor: null,
     fontFamily: null, fontSize: down ? 10 : null,
     strikeout: null, underline: null, italic: null, fontWeight: null, align: null
   });
@@ -594,11 +598,11 @@ function buildPowerSymbolDoc(spec) {
     strikeout: null, underline: null, italic: null, fontWeight: null, rotation: 90
   };
   const pinAttrs = down
-    ? [['Pin Name', 'Pin1', { x: 0, y: 10, align: 'RIGHT_MIDDLE' }],
-       ['Pin Number', '1', { x: -1, y: 10, align: 'LEFT_BOTTOM', fontFamily: '宋体', strikeout: null, underline: false, italic: false, fontWeight: false }],
+    ? [['Pin Name', 'Pin1', { x: 0, y: -10, align: 'RIGHT_MIDDLE' }],
+       ['Pin Number', '1', { x: -1, y: -10, align: 'LEFT_BOTTOM', fontFamily: '宋体', strikeout: null, underline: false, italic: false, fontWeight: false }],
        ['Pin Type', 'IN', { x: 0, y: 0, align: 'RIGHT_TOP' }]]
-    : [['Pin Name', 'Pin1', { x: 0, y: -5, align: 'LEFT_MIDDLE' }],
-       ['Pin Number', '1', { x: 0, y: -4.5, align: null }],
+    : [['Pin Name', 'Pin1', { x: 0, y: 5, align: 'LEFT_MIDDLE' }],
+       ['Pin Number', '1', { x: 0, y: 4.5, align: null }],
        ['Pin Type', 'IN', { x: -14, y: 2, align: null }]];
   pinAttrs.forEach(([key, value, pos], i) => {
     b.add('ATTR', Object.assign({
@@ -609,8 +613,8 @@ function buildPowerSymbolDoc(spec) {
   });
 
   const bars = down
-    ? [[[-10, 10], [10, 10]], [[-1, 19], [1, 19]], [[-4, 16], [4, 16]], [[-7, 13], [7, 13]]]
-    : [[[-5, -10], [5, -10]], [[0, -10], [0, -5]]];
+    ? [[[-10, -10], [10, -10]], [[-1, -19], [1, -19]], [[-4, -16], [4, -16]], [[-7, -13], [7, -13]]]
+    : [[[-5, 10], [5, 10]], [[0, 10], [0, 5]]];
   bars.forEach((points, i) => {
     b.addElem('POLY', {
       partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up',
@@ -932,13 +936,20 @@ function schComponentBlock(v) {
   line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId), randId());
   line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 2, v.compId), randId());
+  // Designator/value offsets follow the client's own saves: above / below the
+  // body for a horizontal part, beside it for a vertical one — never on the
+  // pin axis, where the value used to sit directly on the wire.
+  const rot = ((v.rotation || 0) % 360 + 360) % 360;
+  const vertical = rot === 90 || rot === 270;
+  const nameOff = vertical ? { x: 16, y: -10 } : { x: -10, y: -15 };
+  const desOff = vertical ? { x: 16, y: 2 } : { x: -10, y: 10 };
   line('ATTR', attrStyled({
-    x: v.x + 10, y: v.y + 10, fontSize: 6.75, fontWeight: false,
+    x: v.x + nameOff.x, y: v.y + nameOff.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: null, valueVisible: true,
     key: 'Name', parentId: v.compId, zIndex: nameZ
   }), randId());
   line('ATTR', attrStyled({
-    x: v.x + 10, y: v.y, fontSize: 6.75, fontWeight: false,
+    x: v.x + desOff.x, y: v.y + desOff.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: v.refdes, valueVisible: true,
     key: 'Designator', parentId: v.compId, zIndex: designatorZ
   }), randId());
@@ -964,17 +975,20 @@ function powerComponentBlock(v) {
     yAxisDirection: 'up'
   }, v.compId);
   line('ATTR', attrStyled({
-    x: v.x, y: v.y + 30, fontSize: down ? 10 : null,
+    x: v.x, y: v.y + (down ? -30 : 30), fontSize: down ? 10 : null,
     value: v.symbolUuid, key: 'Symbol', parentId: v.compId, zIndex: 1
   }), randId());
   line('ATTR', attrNull('Device', v.deviceUuid, down ? 18 : 12, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
-  const nameAlign = down ? 'CENTER_MIDDLE' : 'CENTER_BOTTOM';
+  // the printed net name sits beyond the flag: above an up flag's bar (+10),
+  // below a ground flag's last bar (-19), exactly like the client's saves
+  const nameAlign = down ? 'CENTER_TOP' : 'CENTER_BOTTOM';
+  const nameY = down ? v.y - 19 : v.y + 10;
   line('ATTR', attrNull('Name', v.net, down ? 3 : 9, v.compId, {
-    x: v.x, y: down ? v.y + 25 : v.y - 10, align: nameAlign
+    x: v.x, y: nameY, align: nameAlign
   }), randId());
   line('ATTR', attrNull('Global Net Name', v.net, down ? 17 : 11, v.compId, {
-    x: v.x, y: down ? v.y + 25 : v.y - 10, align: nameAlign
+    x: v.x, y: nameY, align: nameAlign
   }), randId());
   return { lines, nextTicket: t };
 }

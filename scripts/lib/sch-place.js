@@ -27,7 +27,7 @@ const { partExtent } = require('./design');
 
 const LAYER_GAP = 90;      // mil between layer columns (wire channels)
 const ROW_GAP = 80;        // mil between parts inside a column
-const BLOCK_PAD = 36;
+const BLOCK_PAD = 110;
 const BLOCK_TITLE_H = 60;
 const BARYCENTER_PASSES = 4;
 const ALIGN_PASSES = 6;

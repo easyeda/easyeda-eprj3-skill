@@ -26,6 +26,7 @@ const G = require('./lib/geom');
 const P = require('./lib/parts');
 const D = require('./lib/design');
 const R = require('./lib/sch-route');
+const PAT = require('./lib/sch-patterns');
 const FA = require('./lib/fp-auto');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
@@ -45,6 +46,7 @@ const SCHEMA = [
   { name: 'plan', desc: 'print what would be built (parts, nets, rules, intent gate) and write nothing', hasValue: false },
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
   { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
+  { name: 'no-patterns', desc: 'skip the circuit-pattern macros (two-pin chains)', hasValue: false },
   { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false }
 ];
 
@@ -117,6 +119,47 @@ function shiftSheetsIntoPage(placements, blocks) {
     if (!d) continue;
     b.rect.y1 += d;
     b.rect.y2 += d;
+  }
+}
+
+/**
+ * Center each sheet's block group inside its page. The page is the smallest
+ * standard size that fits (A4 for a small design), so without this the circuit
+ * hugs the bottom-left border and the sheet reads as empty. Wires, flags and
+ * ports move with the parts; the frame itself stays pinned to the page origin.
+ */
+function centerSheetsInPage(placements, blocks, routed, sheetFrames) {
+  for (const [s, frame] of sheetFrames) {
+    let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
+    const see = (r) => {
+      x1 = Math.min(x1, r.x1); y1 = Math.min(y1, r.y1);
+      x2 = Math.max(x2, r.x2); y2 = Math.max(y2, r.y2);
+    };
+    for (const b of blocks) if ((b.sheet || 1) === s) see(b.rect);
+    for (const p of placements) if ((p.sheet || 1) === s) see(p.extent);
+    if (!Number.isFinite(x1)) continue;
+    // keep the whole sheet on the 10-mil grid (L008): round the centering
+    // offset itself, not the moved records
+    const snap = (v) => Math.round(v / 10) * 10;
+    const dx = snap((frame.width - (x2 - x1)) / 2 - x1);
+    const dy = snap((frame.height - (y2 - y1)) / 2 - y1);
+    if (!dx && !dy) continue;
+    for (const p of placements) {
+      if ((p.sheet || 1) !== s) continue;
+      p.x += dx; p.extent.x1 += dx; p.extent.x2 += dx;
+      p.y += dy; p.extent.y1 += dy; p.extent.y2 += dy;
+    }
+    for (const b of blocks) {
+      if ((b.sheet || 1) !== s) continue;
+      b.rect.x1 += dx; b.rect.x2 += dx;
+      b.rect.y1 += dy; b.rect.y2 += dy;
+    }
+    for (const w of routed.wires) {
+      if ((w.sheet || 1) !== s) continue;
+      for (const seg of w.segs) { seg.x1 += dx; seg.x2 += dx; seg.y1 += dy; seg.y2 += dy; }
+    }
+    for (const f of routed.flags) if ((f.sheet || 1) === s) { f.x += dx; f.y += dy; }
+    for (const p of routed.ports) if ((p.sheet || 1) === s) { p.x += dx; p.y += dy; }
   }
 }
 
@@ -535,10 +578,16 @@ function main() {
         }
       }
     }
+    // Circuit pattern macros: a block that is a pure two-pin chain (LED +
+    // resistor, RC, divider) is re-laid as a vertical chain with the supply up
+    // and ground down; frame clashes are resolved by pushing blocks apart.
+    const pat = opts['no-patterns']
+      ? { changed: 0, portNets: new Set() }
+      : PAT.applyPatterns(design, placements, blocks);
     // Sheet coordinates are y-UP: place each sheet's content a margin above
     // the page origin so no block frame or label hangs below the border.
     shiftSheetsIntoPage(placements, blocks);
-    const routed = R.routeSchematic(design, placements);
+    const routed = R.routeSchematic(design, placements, { patternPortNets: pat.portNets });
     const contacts = R.countCrossNetContacts(routed);
     const bodyOf = (pl) => {
       const bb = pl.sym && pl.sym.bbox;
@@ -554,7 +603,7 @@ function main() {
       wires: routed.wires,
       blocks
     });
-    return { kind, scale, placements, blocks, routed, contacts, quality };
+    return { kind, scale, placements, blocks, routed, contacts, quality, patternNets: pat.portNets };
   }
 
   const candidates = [];
@@ -586,6 +635,7 @@ function main() {
       + `${best.quality.wires.bends} bends, ${best.quality.wires.crossings} crossings)`);
   }
   const placements = best.placements;
+  const patternNets = best.patternNets || new Set();
   const blocks = best.blocks;
   const routed = best.routed;
   const sheetFrames = new Map();
@@ -601,17 +651,25 @@ function main() {
     // y-down sheet space: content occupies y1..y2 (both positive), so the
     // frame must reach past y2 (bottom) and keep a title strip at the top
     if (x1 > x2) { x1 = 0; x2 = 1000; y1 = 0; y2 = 600; }
-    const M = 250;
-    // content coordinates are already in the sheet's 10-mil units, the same
-    // units as the standard page sizes below — no further scaling
-    const fw = Math.ceil(Math.max(0, x2) + M);
-    const fh = Math.ceil(Math.max(0, y2) + M + 100);
+    // The client draws the drawing frame from the Width/Height attributes, so
+    // size them from the REAL content box (both ends, including negative x/y):
+    // A4 when it fits, otherwise a custom frame just large enough — never snap
+    // up to the next paper size and leave the circuit in a mostly empty sheet.
+    const MARGIN = 60;
+    const needW = Math.ceil((x2 - x1) + 2 * MARGIN);
+    const needH = Math.ceil((y2 - y1) + 2 * MARGIN
+      + (design.frame && design.frame.titleBlock === true ? 100 : 0));
     const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
-    const found = stds.find(([, w, h]) => fw <= w && fh <= h);
-    // A dense sheet can exceed A0. The client draws the border from the
-    // Width/Height attributes, so fall back to a custom page of exactly the
-    // content size (labelled A0) rather than letting parts hang outside.
-    const fit = found || ['A0', Math.max(4740, fw), Math.max(3350, fh)];
+    const a4 = stds[0];
+    let fit;
+    if (needW <= a4[1] && needH <= a4[2]) {
+      fit = a4;
+    } else {
+      // W/H are adjustable in the client: keep the frame at the content size
+      // and use the smallest standard paper only as its size LABEL.
+      const label = stds.find(([, w, h]) => needW <= w && needH <= h);
+      fit = [label ? label[0] : 'A0', Math.max(needW, 200), Math.max(needH, 150)];
+    }
     // The sheet is a real paper size: the client draws the page border from
     // the frame's Width/Height, so a standard size keeps the border and the
     // embedded frame component coincident (reference project: A4 = 1170×825).
@@ -625,6 +683,10 @@ function main() {
     sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`, frame));
     sheetFrames.set(s, { ...frame, wMil: fit[1] * 10, hMil: fit[2] * 10 });
   }
+
+  // the page is chosen to fit the content, so center the circuit in it — a
+  // small design must not sit in the bottom-left corner of an A4 sheet
+  centerSheetsInPage(placements, blocks, routed, sheetFrames);
 
   // one emitter per sheet; blocks/components/flags/ports/wires land on the
   // sheet their block was assigned to
@@ -682,17 +744,68 @@ function main() {
   // A wire that lands on a power flag or a net port already carries its name
   // there; repeating it as the wire's NET text puts a second copy tight against
   // the pin, on top of the part's designator/value. The client's own saves leave
-  // the NET value empty in exactly this case (see examples/eprj3-example).
-  const namedTerminals = [];
-  for (const f of routed.flags) namedTerminals.push({ net: f.net, x: f.x, y: f.y });
-  for (const p of routed.ports) namedTerminals.push({ net: p.net, x: p.x, y: p.y });
-  const onNamedTerminal = (net, pt) => namedTerminals.some((t) => t.net === net
-    && Math.abs(t.x - pt.x) < 0.01 && Math.abs(t.y - pt.y) < 0.01);
+  // the NET value empty in that case (see examples/eprj3-example).
+  //
+  // A pin's path can be split into several WIRE records (pin → jog → flag), so
+  // decide by CONNECTED WIRE PATH, not per record: a record whose segment chain
+  // reaches a flag/port at the same net loses the printed name. A disjoint
+  // stub+label wire keeps its NET value — same-named wires are what joins those
+  // pins in the client (clearing them disconnected JP1/C156 on the H6 board).
+  const hiddenWire = new Set();
+  for (let s = 1; s <= design.sheets; s += 1) {
+    const key = (x, y) => `${Math.round(x * 100)},${Math.round(y * 100)}`;
+    const parent = new Map();
+    const ensure = (k) => { if (!parent.has(k)) parent.set(k, k); };
+    const find = (k) => {
+      let r = k;
+      while (parent.has(r) && parent.get(r) !== r) r = parent.get(r);
+      return r;
+    };
+    const union = (a, b) => {
+      const ra = find(a); const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    };
+    routed.wires.forEach((w) => {
+      if ((w.sheet || 1) !== s) return;
+      for (const g of w.segs) {
+        const a = key(g.x1, g.y1); const b = key(g.x2, g.y2);
+        ensure(a); ensure(b); union(a, b);
+      }
+    });
+    const terminalRoots = new Set();
+    const mark = (x, y) => { const k = key(x, y); if (parent.has(k)) terminalRoots.add(find(k)); };
+    for (const f of routed.flags) if ((f.sheet || 1) === s) mark(f.x, f.y);
+    for (const p of routed.ports) if ((p.sheet || 1) === s) mark(p.x, p.y);
+    routed.wires.forEach((w, i) => {
+      if ((w.sheet || 1) !== s) return;
+      if (w.segs.some((g) => terminalRoots.has(find(key(g.x1, g.y1)))
+        || terminalRoots.has(find(key(g.x2, g.y2))))) hiddenWire.add(i);
+    });
+  }
 
-  for (const w of routed.wires) {
+  // Short pin-to-pin links (a chain member to its neighbour) are self-evident:
+  // printing the net name there only covers the two symbols' own labels.
+  const pinKeysBySheet = new Map();
+  const ptKey = (x, y) => `${Math.round(x * 100)},${Math.round(y * 100)}`;
+  for (const pl of placements) {
+    const s = pl.sheet || 1;
+    if (!pinKeysBySheet.has(s)) pinKeysBySheet.set(s, new Set());
+    const set = pinKeysBySheet.get(s);
+    for (const pin of (pl.sym && pl.sym.pins) || []) {
+      const t = G.pinTip(pin, pl.x, pl.y, pl.rotation || 0);
+      set.add(ptKey(t.x, t.y));
+    }
+  }
+
+  routed.wires.forEach((w, i) => {
     const em = emitters.get(w.sheet || 1);
-    const nameShown = !w.segs.some((s) => onNamedTerminal(w.net, { x: s.x1, y: s.y1 })
-      || onNamedTerminal(w.net, { x: s.x2, y: s.y2 }));
+    const pinKeys = pinKeysBySheet.get(w.sheet || 1) || new Set();
+    const short = w.segs.length === 1 && G.segLen(w.segs[0]) <= 80
+      && pinKeys.has(ptKey(w.segs[0].x1, w.segs[0].y1))
+      && pinKeys.has(ptKey(w.segs[0].x2, w.segs[0].y2));
+    // a chain's shared net reads from the chain itself; its name only clutters
+    const chainNet = patternNets.has(w.net);
+    const nameShown = !hiddenWire.has(i) && !short && !chainNet;
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
       net: w.net,
@@ -702,7 +815,7 @@ function main() {
     });
     em.addLines(block.lines);
     em.t = block.nextTicket + 1;
-  }
+  });
 
   for (const em of emitters.values()) em.flush();
   project.save();

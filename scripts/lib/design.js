@@ -42,7 +42,7 @@ const DEFAULTS = {
   sheet: 'P1',
   pcb: 'PCB1',
   board: { width: 1600, height: 1000 },
-  layout: { cols: 3, cellW: 90, cellH: 80, blockGapX: 110, blockGapY: 100, margin: 70 }
+  layout: { cols: 3, cellW: 150, cellH: 110, blockGapX: 160, blockGapY: 140, margin: 70 }
 };
 
 const BLOCK_TITLE_H = 60;

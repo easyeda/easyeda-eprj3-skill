@@ -119,7 +119,7 @@ The **SCH_PAGE main doc** opens with page META and the placed A4 frame, then one
 
 ### Power symbol block
 
-Power components are ordinary `COMPONENT` records whose attrs **omit** `pinClass`/`differentialPairClass`/`Symbols` and carry `DeviceName: null`; the net lives in two standalone attrs:
+Power components are ordinary `COMPONENT` records whose attrs **omit** `pinClass`/`differentialPairClass`/`Symbols` and carry `DeviceName: null`; the net lives in two standalone attrs. The symbol docs are Y-UP, measured on the client's own `Power-VCC` / `Ground-GND`: the supply bar sits at `(0,+10)` with the stem `(0,+5)-(0,+10)` and the name above it (`x,y+10`, CENTER_BOTTOM); the ground bars sit at `y −10…−19` with the name below (`x,y−19`, CENTER_TOP). Drawing the bars on the wrong side puts every GND flag on top of its wire:
 
 ```jsonc
 {"type":"COMPONENT",...}||{"partId":"pid8a0e77bacb214e","x":300,"y":-500,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":null,"FootprintName":null},"zIndex":96}|

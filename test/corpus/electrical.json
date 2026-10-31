@@ -176,6 +176,7 @@
         "op": "line_skew",
         "target": "sheet",
         "sel": { "doc": "main", "type": "LINE", "nth": 0 },
+        "dx": 7,
         "dy": 7
       }],
       "expect": { "lint": ["L003"] }

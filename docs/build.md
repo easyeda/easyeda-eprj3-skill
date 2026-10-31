@@ -20,7 +20,8 @@ human confirmation gate; its board line reads
 `--report <file>`, `--quiet`, `--keep-tmp`,
 `--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`, `--no-tidy`
 (keep declared rotations — default runs the sch-tidy two-pass orientation
-optimizer: layout → rotate symbols onto their signal axes → re-layout).
+optimizer: layout → rotate symbols onto their signal axes → re-layout),
+`--no-patterns` (skip the circuit-pattern macros below; default on).
 
 `--route`, `--pour`, `--no-route` and `--no-pour` were **removed in 1.13** —
 the skill never routes and never pours, so passing any of them is an
@@ -44,12 +45,15 @@ the printed codes point at the rule that failed.
 | `parts` | array | **required** | see below |
 | `expect` | object | — | fifth-gate declarations (`decoupling`, `pairs`, `valueRange`, `divider`) — see the end of this file |
 | `layout` | object | see table | grid/tuning knobs |
-| `frame` | object | `{}` | `{ titleBlock: true }` 显示明细表（默认隐藏）; the drawing frame auto-sizes around the packed blocks |
+| `frame` | object | `{}` | `{ titleBlock: true }` 显示明细表（默认隐藏）。图框的 **Width/Height 按内容包围盒（含负坐标）+ 60 单位边距**计算：内容放得进 A4 就用 A4，放不进就用恰好包住内容的**自定义宽高**（`Size` 只作标准纸标签），客户端按这两个数值画框，内容居中摆放 |
 | — | — | — | cross-block nets encode as **net-port connectors** (short stub + PORT per pin, merged by name) — the human pattern; only same-block nets draw wires |
+| — | — | — | a block made only of **two-pin parts in a chain** (LED + series resistor, RC, voltage divider, pull-up ladder) is laid out by the pattern macro: vertical chain, supply north, ground south, shared pins facing, a sideways port on an internal cross-block net. Clashing frames push whole blocks apart (`sch-patterns.js`) |
+| — | — | — | collinear, contiguous **same-net pins of one block share a rail and ONE flag** (bank comb); a foreign pin between two members cancels the bank |
+| — | — | — | a block made only of two-pin parts that all share both nets (decoupling caps) or one net with distinct partners (pull-up/down) is laid out as an aligned row (`sch-patterns.js`), so the bank comb can merge the common side into one rail |
 | `pcb` | object or `false` | `{}` | `false` skips the PCB entirely |
 
-`layout` knobs: `cols` (max columns per block, default 3), `cellW` (260),
-`cellH` (200), `blockGapX` (280), `blockGapY` (240), `margin` (120). Increase the
+`layout` knobs: `cols` (max columns per block, default 3), `cellW` (150),
+`cellH` (110), `blockGapX` (160), `blockGapY` (140), `margin` (70). Increase the
 cells for large inline symbols so blocks keep their gutters.
 
 ## Parts

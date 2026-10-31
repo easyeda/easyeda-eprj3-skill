@@ -1,0 +1,30 @@
+{
+  "name": "OFFPAGE_IN",
+  "kind": "port",
+  "title": "OFFPAGE_IN",
+  "net": "IN",
+  "symbolUuid": "fb4d4e2afd85cf19",
+  "deviceUuid": "56f1df1f099b3c13",
+  "portSymbolDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"SYMBOL\",\"client\":\"7b2028218231d842\",\"uuid\":\"fb4d4e2afd85cf19\",\"updateTime\":1788956720008,\"version\":\"1762175205985\",\"editVersion\":\"4.1.35\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":47,\"id\":\"META\"}||{\"title\":\"OFFPAGE_IN\",\"description\":\"\",\"tags\":[],\"docType\":25,\"source\":\"cc4fbb8988a44835af896deaae716ac0|0819f05c4eef4c71ace90d822a990e87\"}|",
+    "{\"type\":\"CANVAS\",\"ticket\":39,\"id\":\"CANVAS\"}||{\"originX\":0,\"originY\":0}|",
+    "{\"type\":\"POLY\",\"ticket\":40,\"id\":\"e2\"}||{\"points\":[{\"x\":-5,\"y\":0,\"hashed\":-1072431104},{\"x\":-9,\"y\":-4,\"hashed\":3276800}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":3,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"POLY\",\"ticket\":41,\"id\":\"e3\"}||{\"points\":[{\"x\":-5,\"y\":0,\"hashed\":-1072431104},{\"x\":-9,\"y\":4,\"hashed\":-2144206848}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":4,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"POLY\",\"ticket\":42,\"id\":\"e4\"}||{\"points\":[{\"x\":-10,\"y\":0,\"hashed\":-1071382528},{\"x\":-14,\"y\":4,\"hashed\":-2143551488}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":5,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"POLY\",\"ticket\":43,\"id\":\"e5\"}||{\"points\":[{\"x\":-10,\"y\":0,\"hashed\":-1071382528},{\"x\":-14,\"y\":-4,\"hashed\":3932160}],\"strokeColor\":null,\"strokeStyle\":\"SOLID\",\"fillColor\":null,\"strokeWidth\":1,\"fillStyle\":\"SOLID\",\"closed\":false,\"zIndex\":6,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"PIN\",\"ticket\":44,\"id\":\"e6\"}||{\"display\":true,\"x\":0,\"y\":0,\"length\":5,\"rotation\":180,\"color\":null,\"pinShape\":\"NONE\",\"zIndex\":7,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":45,\"id\":\"e0\"}||{\"x\":-20,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"RIGHT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":true,\"key\":\"Name\",\"fillColor\":null,\"parentId\":\"4a0c5c88c3f967d1\",\"zIndex\":1,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":46,\"id\":\"e1\"}||{\"x\":-100,\"y\":0,\"rotation\":0,\"color\":null,\"fontFamily\":null,\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"RIGHT_MIDDLE\",\"value\":\"\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Relevance\",\"fillColor\":null,\"parentId\":\"4a0c5c88c3f967d1\",\"zIndex\":2,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":15,\"id\":\"e9\"}||{\"x\":3,\"y\":10,\"rotation\":0,\"color\":\"#FFFF00\",\"fontFamily\":\"Arial\",\"fontSize\":8,\"fontWeight\":false,\"italic\":false,\"underline\":false,\"strikeout\":false,\"align\":\"LEFT_BOTTOM\",\"value\":\"IN\",\"keyVisible\":false,\"valueVisible\":false,\"key\":\"Pin Type\",\"fillColor\":\"#FFFF00\",\"parentId\":\"e6\",\"zIndex\":10,\"locked\":false,\"partId\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"PART\",\"ticket\":2,\"id\":\"4a0c5c88c3f967d1\"}||{\"BBOX\":[-14.5,-4.5,-4.5,4.5],\"title\":\"4a0c5c88c3f967d1\"}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":5,\"id\":\"34d0e08eb6ef7cc0\"}||{\"dataType\":\"POLY\",\"max\":1}|",
+    "{\"type\":\"ELE_PLACEHOLDER\",\"ticket\":10,\"id\":\"e4b2a6864cb68452\"}||{\"dataType\":\"PIN\",\"max\":5}|",
+    "{\"type\":\"ATTR\",\"ticket\":12,\"id\":\"e7\"}||{\"partId\":\"4a0c5c88c3f967d1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":8,\"parentId\":\"e6\",\"key\":\"Pin Name\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":-8,\"y\":0,\"rotation\":0,\"color\":\"#FFFFFF\",\"fillColor\":null,\"fontFamily\":\"Arial\",\"fontSize\":8,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"RIGHT_MIDDLE\"}|",
+    "{\"type\":\"ATTR\",\"ticket\":13,\"id\":\"e8\"}||{\"partId\":\"4a0c5c88c3f967d1\",\"groupId\":\"\",\"locked\":false,\"zIndex\":9,\"parentId\":\"e6\",\"key\":\"Pin Number\",\"value\":\"1\",\"keyVisible\":false,\"valueVisible\":false,\"x\":-7.5,\"y\":0,\"rotation\":0,\"color\":\"#FFFF00\",\"fillColor\":null,\"fontFamily\":\"Arial\",\"fontSize\":8,\"strikeout\":false,\"underline\":false,\"italic\":false,\"fontWeight\":false,\"align\":\"LEFT_BOTTOM\"}|"
+  ],
+  "portDeviceDoc": [
+    "{\"type\":\"DOCHEAD\"}||{\"docType\":\"DEVICE\",\"client\":\"0000000000000000\",\"uuid\":\"56f1df1f099b3c13\",\"updateTime\":1788958715079,\"version\":\"1788958715079\",\"editVersion\":\"2.3.0\",\"user\":{}}|",
+    "{\"type\":\"META\",\"ticket\":1,\"id\":\"META\"}||{\"title\":\"OFFPAGE_IN\",\"tags\":[\"特殊器件\",\"网络标识\"],\"source\":\"eba0bcbcaeeb2f723e616104a47296d2|b10b2de82b2706300f25a57373cb8d09\",\"images\":[],\"attributes\":{\"Symbol\":\"fb4d4e2afd85cf19\",\"Name\":\"IN\",\"Description\":\"\",\"Global Net Name\":\"IN\",\"3D Model\":\"\",\"3D Model Title\":\"\",\"3D Model Transform\":\"\",\"SymbolName\":\"{\\\"name\\\":\\\"OFFPAGE_IN\\\",\\\"uuid\\\":\\\"fb4d4e2afd85cf19\\\",\\\"source\\\":\\\"\\\"}\"}}|"
+  ]
+}
