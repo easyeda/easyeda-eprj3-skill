@@ -1056,14 +1056,27 @@ function buildPortSymbolDoc(spec) {
 
 // ------------------------------------------------- SCH port component block
 function portComponentBlock(v) {
-  // v: {compId, x, y, zIndex, symbolUuid, deviceUuid, net, ticketBase}
+  // v: {compId, x, y, zIndex, symbolUuid, deviceUuid, net, dir, ticketBase}
+  // The port's body lies on the far side of its hotspot from the wire (the
+  // client's own Off-Page-Connector-In does the same: body -14..0, name at
+  // x-15 RIGHT_MIDDLE, wire on the right). `dir` is the stub direction — the
+  // direction the wire leaves the part — so the body and its name extend that
+  // way and never sit on the wire or the pin number.
+  const dir = v.dir && (v.dir.x || v.dir.y) ? v.dir : { x: 1, y: 0 };
+  const rotation = dir.x > 0 ? 0 : dir.x < 0 ? 180 : dir.y > 0 ? 90 : 270;
+  const OUT = 28;                                      // beyond the 25-unit body
+  let namePos;
+  if (dir.x > 0) namePos = { x: v.x + OUT, y: v.y, align: 'LEFT_MIDDLE' };
+  else if (dir.x < 0) namePos = { x: v.x - OUT, y: v.y, align: 'RIGHT_MIDDLE' };
+  else if (dir.y > 0) namePos = { x: v.x, y: v.y + OUT, align: 'CENTER_BOTTOM' };
+  else namePos = { x: v.x, y: v.y - OUT, align: 'CENTER_TOP' };
   const lines = [];
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
 
   line('COMPONENT', {
     partId: PART_ID,
-    x: v.x, y: v.y, rotation: 0, isMirror: false,
+    x: v.x, y: v.y, rotation, isMirror: false,
     attrs: { Footprints: '[]', Devices: '[]', DeviceName: null, FootprintName: null },
     zIndex: v.zIndex,
     yAxisDirection: 'up'
@@ -1074,12 +1087,8 @@ function portComponentBlock(v) {
   }), randId());
   line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
-  line('ATTR', attrNull('Name', v.net, 9, v.compId, {
-    x: v.x + 15, y: v.y, align: 'CENTER_MIDDLE'
-  }), randId());
-  line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId, {
-    x: v.x + 15, y: v.y, align: 'CENTER_MIDDLE'
-  }), randId());
+  line('ATTR', attrNull('Name', v.net, 9, v.compId, namePos), randId());
+  line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId, namePos), randId());
   return { lines, nextTicket: t };
 }
 
@@ -1142,7 +1151,7 @@ function wireBlock(v) {
   if (v.net) {
     line('ATTR', Object.assign(attrNull('NET', v.net, 7, wireId), {
       x: midX, y: midY, rotation: vertical ? 90 : 0,
-      keyVisible: false, valueVisible: true
+      keyVisible: false, valueVisible: v.netVisible !== false
     }), randId());
   }
   return { lines, nextTicket: t, wireId };

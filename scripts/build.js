@@ -314,6 +314,7 @@ function placeNetPort(em, project, port, entry) {
   const block = E.portComponentBlock({
     compId: E.randId(),
     x: port.x, y: port.y,
+    dir: port.dir,
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid: entry.deviceUuid,
@@ -678,11 +679,24 @@ function main() {
     placeNetPort(emitters.get(port.sheet || 1), project, port, portEntries.get(port.net));
   }
 
+  // A wire that lands on a power flag or a net port already carries its name
+  // there; repeating it as the wire's NET text puts a second copy tight against
+  // the pin, on top of the part's designator/value. The client's own saves leave
+  // the NET value empty in exactly this case (see examples/eprj3-example).
+  const namedTerminals = [];
+  for (const f of routed.flags) namedTerminals.push({ net: f.net, x: f.x, y: f.y });
+  for (const p of routed.ports) namedTerminals.push({ net: p.net, x: p.x, y: p.y });
+  const onNamedTerminal = (net, pt) => namedTerminals.some((t) => t.net === net
+    && Math.abs(t.x - pt.x) < 0.01 && Math.abs(t.y - pt.y) < 0.01);
+
   for (const w of routed.wires) {
     const em = emitters.get(w.sheet || 1);
+    const nameShown = !w.segs.some((s) => onNamedTerminal(w.net, { x: s.x1, y: s.y1 })
+      || onNamedTerminal(w.net, { x: s.x2, y: s.y2 }));
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
       net: w.net,
+      netVisible: nameShown,
       zIndex: em.nextZ(),
       ticketBase: em.nextTicket() - 1
     });

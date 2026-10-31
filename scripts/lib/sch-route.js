@@ -567,8 +567,13 @@ function placeNodePort(node, net, ctx) {
   const committed = ctx.committedSegs;
   const used = ctx.usedPoints;
   const foreign = committed.filter((c) => c.net !== net);
+  const vertical = node.dir.y !== 0;
+  const cross = vertical ? node.tip.x : node.tip.y;
+  const stair = STUB + (Math.abs(Math.round(cross / 10)) % 4) * 14;
+  const lens = [...new Set([STUB, stair, stair - 14, stair - 28, 30, 20, 10].filter((l) => l >= 10))];
   let chosen = null;
-  for (const len of [STUB, 30, 20, 10]) {
+  let fallback = null;
+  for (const len of lens) {
     const seg = {
       x1: node.tip.x, y1: node.tip.y,
       x2: G.round(node.tip.x + node.dir.x * len),
@@ -584,11 +589,19 @@ function placeNodePort(node, net, ctx) {
     // two nets when that pin's stub is later drawn there
     const pinHit = (ctx.pinPoints || []).some((f) => f.net !== net && G.pointSegDist({ x: f.x, y: f.y }, seg) < 0.01);
     const partHit = overlapsAny(box, ctx.obstacles, new Set([node.part]));
-    if (!wireHit && !portHit && !pinHit && !partHit) { chosen = seg; break; }
+    if (!wireHit && !portHit && !pinHit && !partHit) {
+      const labelBox = portLabelBox(net, pos, node.dir);
+      if (!boxClash(ctx, labelBox)) { chosen = seg; ctx.flagBoxes.push(labelBox); break; }
+      if (!fallback) fallback = { seg, labelBox };
+    }
   }
-  if (!chosen) chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+  if (!chosen && fallback) { chosen = fallback.seg; ctx.flagBoxes.push(fallback.labelBox); }
+  if (!chosen) {
+    chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+    ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, node.dir));
+  }
   const wire = (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) ? [chosen] : [];
-  return { wire, port: { net, x: chosen.x2, y: chosen.y2 } };
+  return { wire, port: { net, x: chosen.x2, y: chosen.y2, dir: node.dir } };
 }
 
 /**
@@ -623,7 +636,7 @@ function routeSignalNet(net, nodes, ctx) {
       // one port per block, anchored on the group's first stub (already on the
       // trunk for ≥2 pins) — the netlist merges ports by name across blocks
       const p = stubPoint(G[0]);
-      ports.push({ net, x: p.x, y: p.y });
+      ports.push({ net, x: p.x, y: p.y, dir: G[0].dir });
     }
   }
   return { wires, flags: [], labels, ports, issues };
@@ -657,9 +670,26 @@ function routeNet(net, nodes, ctx) {
       const flagClash = (pos) => (ctx.flagPoints || []).some((f) => f.net !== net
         && (Math.hypot(f.x - pos.x, f.y - pos.y) < 30
           || G.segsIntersect({ x1: node.tip.x, y1: node.tip.y, x2: pos.x, y2: pos.y }, { x1: f.x, y1: f.y, x2: f.x, y2: f.y }, true)));
+      // A column of up/down pins at a 10-unit pitch puts every flag's net name
+      // on the same row: the labels (≈30 units wide for "VCC-5V") overprint
+      // each other. Walk the flags up a four-step staircase by pin column so
+      // neighbours sit on different rows; same-slot columns are 40 units apart
+      // and clear each other. The normal 40-unit stub is tried first so a
+      // sparse bank keeps the plain look.
+      const cross = node.dir.y !== 0 ? node.tip.x : node.tip.y;
+      const slot = Math.abs(Math.round(cross / 10)) % 4;
+      const stair = STUB + slot * 14;
+      const lens = [...new Set([STUB, stair, stair - 14, stair - 28, 30, 20, 10]
+        .filter((l) => l >= 10))];
+      // the net name is printed beside the flag: reserve its box so a collision
+      // with an already-placed flag's name (same or foreign net) is avoided
+      const halfW = Math.max(15, String(net).length * 2.5);
+      const labelClash = (pos) => (ctx.flagBoxes || []).some((b) => G.rectsOverlap(
+        G.rect(pos.x - halfW, pos.y - 6, pos.x + halfW, pos.y + 6), b));
       let placed = null;
       let wire = null;
-      for (const len of [STUB, 30, 20, 10]) {
+      let labelFallback = null;
+      for (const len of lens) {
         const pos = {
           x: G.round(node.tip.x + node.dir.x * len),
           y: G.round(node.tip.y + node.dir.y * len)
@@ -671,10 +701,19 @@ function routeNet(net, nodes, ctx) {
         // nets the moment that net's stub is later drawn there.
         const foreign = foreignContacts([seg], ctx, net);
         if (!wireClash(seg) && !flagClash(pos) && foreign === 0 && !overlapsAny(box, obstacles, ignore)) {
-          placed = pos;
-          wire = seg;
-          break;
+          if (!labelClash(pos)) {
+            placed = pos;
+            wire = seg;
+            break;
+          }
+          // electrically clean but the name would overprint a neighbour's: keep
+          // it as the best effort — an on-pin flag is worse than crowded text
+          if (!labelFallback) labelFallback = { pos, seg };
         }
+      }
+      if (!placed && labelFallback) {
+        placed = labelFallback.pos;
+        wire = labelFallback.seg;
       }
       if (!placed) {
         // jog: 10 along the pin, then lateral (perpendicular) up to 20/40 on
@@ -713,6 +752,7 @@ function routeNet(net, nodes, ctx) {
       }
       flags.push({ net, x: placed.x, y: placed.y, style });
       (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
+      if (ctx.flagBoxes) ctx.flagBoxes.push(G.rect(placed.x - halfW, placed.y - 6, placed.x + halfW, placed.y + 6));
       if (wire && (Math.abs(wire.x2 - node.tip.x) > G.EPS || Math.abs(wire.y2 - node.tip.y) > G.EPS)) {
         wires.push([wire]);
         commitSegs([wire], net, used, committed);
@@ -738,6 +778,21 @@ function routeNet(net, nodes, ctx) {
 
   const sig = routeSignalNet(net, nodes, ctx);
   return { wires: sig.wires, flags, labels: sig.labels, ports: sig.ports, issues: sig.issues };
+}
+
+const PORT_OUT = 28; // name sits just beyond the 25-unit port body
+
+/** Space a port's body + printed net name occupies (see portComponentBlock). */
+function portLabelBox(net, pos, dir) {
+  const half = Math.max(10, String(net).length * 2.5);
+  if (dir.x > 0) return G.rect(pos.x, pos.y - 7, pos.x + PORT_OUT + 2 * half, pos.y + 7);
+  if (dir.x < 0) return G.rect(pos.x - PORT_OUT - 2 * half, pos.y - 7, pos.x, pos.y + 7);
+  if (dir.y > 0) return G.rect(pos.x - half, pos.y, pos.x + half, pos.y + PORT_OUT + 7);
+  return G.rect(pos.x - half, pos.y - PORT_OUT - 7, pos.x + half, pos.y);
+}
+
+function boxClash(ctx, box) {
+  return (ctx.flagBoxes || []).some((b) => G.rectsOverlap(box, b));
 }
 
 /**
@@ -776,6 +831,7 @@ function routeSchematic(d, placements) {
       usedPoints: new Set(),
       committedSegs: [],
       flagPoints: [],
+      flagBoxes: [],
       portPoints: [],
       pinPoints,
       powerStyle: (net) => d.powerNets.get(net) || null
@@ -790,21 +846,40 @@ function routeSchematic(d, placements) {
         // cross-sheet: every node on THIS sheet gets its own stub + net port.
         // The stub must clear foreign committed wires AND every foreign pin
         // tip / port (a port dropped onto another net's wire shorts them); if
-        // no clean stub fits, the port sits directly on the pin tip.
+        // no clean stub fits, the port sits directly on the pin tip. A pin
+        // column at a 10-unit pitch prints its port names on the same row, so
+        // walk the ports up the same four-step staircase as power flags (the
+        // port's own body + name is a reserved box in the shared registry).
         for (const node of nodes) {
-          const p = stubPoint(node);
-          const hasStub = Math.abs(p.x - node.tip.x) > G.EPS || Math.abs(p.y - node.tip.y) > G.EPS;
-          const seg = { x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y };
-          const wireHit = hasStub && ctx.committedSegs.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true));
-          const foreign = hasStub ? foreignContacts([seg], ctx, net) : 0;
-          if (hasStub && !wireHit && foreign === 0) {
-            out.wires.push({ net, sheet, segs: [seg] });
-            commitSegs([seg], net, ctx.usedPoints, ctx.committedSegs);
-            out.ports.push({ net, x: p.x, y: p.y, sheet });
-            ctx.portPoints.push({ net, x: p.x, y: p.y });
+          const vertical = node.dir.y !== 0;
+          const cross = vertical ? node.tip.x : node.tip.y;
+          const slot = Math.abs(Math.round(cross / 10)) % 4;
+          const stair = STUB + slot * 14;
+          const lens = [...new Set([STUB, stair, stair - 14, stair - 28, 30, 20, 10]
+            .filter((l) => l >= 10))];
+          let chosen = null;
+          let fallback = null;
+          for (const len of lens) {
+            const p = { x: G.round(node.tip.x + node.dir.x * len), y: G.round(node.tip.y + node.dir.y * len) };
+            const seg = { x1: node.tip.x, y1: node.tip.y, x2: p.x, y2: p.y };
+            const wireHit = ctx.committedSegs.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true));
+            const foreign = foreignContacts([seg], ctx, net);
+            if (wireHit || foreign) continue;
+            const cand = { p, seg, box: portLabelBox(net, p, node.dir) };
+            if (!boxClash(ctx, cand.box)) { chosen = cand; break; }
+            if (!fallback) fallback = cand;
+          }
+          if (!chosen) chosen = fallback;
+          if (chosen) {
+            out.wires.push({ net, sheet, segs: [chosen.seg] });
+            commitSegs([chosen.seg], net, ctx.usedPoints, ctx.committedSegs);
+            out.ports.push({ net, x: chosen.p.x, y: chosen.p.y, sheet, dir: node.dir });
+            ctx.portPoints.push({ net, x: chosen.p.x, y: chosen.p.y });
+            ctx.flagBoxes.push(chosen.box);
           } else {
-            out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet });
+            out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet, dir: node.dir });
             ctx.portPoints.push({ net, x: node.tip.x, y: node.tip.y });
+            ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, node.dir));
           }
         }
         continue;

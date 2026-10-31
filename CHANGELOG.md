@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.32.2] - 2026-10-31
+
+**Net labels and ports stop printing on top of each other at pin ends.**
+
+Measured on the H6 project (326 parts, 679 flags, 474 ports): overlapping
+terminal labels drop from 300 pairs to 24, and the dense pin banks read again.
+
+### Fixed
+- **A stub that ends at a power flag or net port no longer repeats the net name
+  as the wire's NET text.** The client's own saves leave that value empty; a
+  second copy sat right beside the pin and overprinted the part's
+  designator/value. The value stays on the record (netlist naming unchanged) —
+  only `valueVisible` turns off.
+- **Net ports are placed like the client's Off-Page-Connector-In**: the
+  component rotates so its body points away from the wire (rotation
+  0/180/90/270 by stub direction) and the name sits beyond the body
+  (`x±28` / `y±28`) instead of over the 20-unit rectangle. Every port has a
+  direction (`dir`) carried from the router to the writer.
+- **Power flags and ports walk a four-step staircase by pin column** (stub 40 /
+  54 / 68 / 82 units) when a name would collide. A 10-unit pin pitch put every
+  label of a bank on one row; the reserved label box (`ctx.flagBoxes`, shared by
+  flags and ports) is checked before each placement, and an electrically clean
+  position with crowded text is preferred over a flag sitting on the pin.
+
 ## [1.32.1] - 2026-10-31
 
 **Drawing frame and content finally agree — measured against the reference.**

@@ -132,15 +132,15 @@ Power components are ordinary `COMPONENT` records whose attrs **omit** `pinClass
 
 ### Port block
 
-Net ports are the third member of the special-device family (no `PORT` record type exists). The staged SYMBOL doc uses **META `docType: 19`** (NetPort; power uses 18) with title `Port-<NET>`, tags `["特殊器件","网络标识"]`, a PIN at `(0,0)` rotation 0 length 5 and a RECT body `(5,-7)-(25,7)`. On the page it is an ordinary power-style block:
+Net ports are the third member of the special-device family (no `PORT` record type exists). The staged SYMBOL doc uses **META `docType: 19`** (NetPort; power uses 18) with title `Port-<NET>`, tags `["特殊器件","网络标识"]`, a PIN at `(0,0)` rotation 0 length 5 and a RECT body `(5,-7)-(25,7)`. On the page it is an ordinary power-style block whose **component rotation follows the stub** (0/180/90/270 = body extends right/left/up/down, away from the wire) and whose **Name sits beyond the body** (`x±28` LEFT/RIGHT_MIDDLE, or `y±28` CENTER_BOTTOM/TOP) — the client's own Off-Page-Connector-In places its name outside the body the same way. Putting the name over the 20-unit body (the pre-1.32.2 layout) made long net names overprint neighbouring pins:
 
 ```jsonc
 {"type":"COMPONENT",...}||{"partId":"pid8a0e77bacb214e","x":460,"y":-440,"rotation":0,"isMirror":false,"attrs":{"Footprints":"[]","Devices":"[]","DeviceName":null,"FootprintName":null},"zIndex":96}|
 {"type":"ATTR",...}||{...,"key":"Symbol","value":"<port-symbol-uuid>","zIndex":1,...}|
 {"type":"ATTR",...}||{...,"key":"Device","value":"<port-device-uuid>","zIndex":12,...}|
 {"type":"ATTR",...}||{...,"key":"Relevance","value":"[]","zIndex":0,...}|
-{"type":"ATTR",...}||{...,"key":"Name","value":"SIG","x":475,"y":-440,"align":"CENTER_MIDDLE","zIndex":9,...}|
-{"type":"ATTR",...}||{...,"key":"Global Net Name","value":"SIG","x":475,"y":-440,"align":"CENTER_MIDDLE","zIndex":11,...}|
+{"type":"ATTR",...}||{...,"key":"Name","value":"SIG","x":488,"y":-440,"align":"LEFT_MIDDLE","zIndex":9,...}|
+{"type":"ATTR",...}||{...,"key":"Global Net Name","value":"SIG","x":488,"y":-440,"align":"LEFT_MIDDLE","zIndex":11,...}|
 ```
 
 ### Page TEXT & graphics
