@@ -76,7 +76,12 @@ function tidyRotations(design, lib, placements) {
     const base = scoreAt(pl.rotation || 0);
     let bestR = pl.rotation || 0;
     let bestScore = base;
-    for (const r of [0, 90, 180, 270]) {
+    // A real IC reads with its pins on the left/right sides. Rotating it 90/270
+    // turns every pin upward/downward, which is what the user sees as "the chip
+    // is lying sideways" — so multi-pin symbols may only flip (0/180). Two-pin
+    // parts (R/C/D/LED) are free to take any of the four orientations.
+    const rots = pl.sym.pins.length > 4 ? [0, 180] : [0, 90, 180, 270];
+    for (const r of rots) {
       const s = scoreAt(r) + (r === 0 ? 1 : 0);        // stability tie-break toward 0
       if (s < bestScore - 0.5) { bestScore = s; bestR = r; }
     }

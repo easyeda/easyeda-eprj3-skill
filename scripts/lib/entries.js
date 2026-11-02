@@ -7,7 +7,27 @@
  * Used by build.js and load-library.js.
  */
 
+const fs = require('fs');
+const path = require('path');
 const E = require('./eprj3');
+
+const TEMPLATE_DIR = path.join(__dirname, '..', '..', 'templates', 'library', 'symbol');
+
+/**
+ * Load a preset symbol entry committed with the skill (`templates/library/
+ * symbol/<name>.json`). Presets are client-extracted documents: using them
+ * verbatim is the difference between the official net-port symbol and a
+ * hand-drawn rectangle, and it keeps the original symbol/device names.
+ */
+function loadTemplateEntry(name) {
+  const file = path.join(TEMPLATE_DIR, `${name}.json`);
+  if (!fs.existsSync(file)) return null;
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (e) {
+    return null;
+  }
+}
 
 const NET_ATTRS = (net) => ({
   'Global Net Name': net,
@@ -56,8 +76,31 @@ function buildPowerEntry(project, net, style) {
   };
 }
 
-/** Net port entry (cross-sheet / off-page connection point) for `net`. */
+/**
+ * Net port entry (cross-block / off-page connection point).
+ *
+ * The client ships a generic Netport symbol whose net lives in the COMPONENT
+ * attributes (Name / Global Net Name), not in the symbol document. Reuse the
+ * committed client-extracted preset VERBATIM (same geometry, same size, same
+ * PORT_BI name) instead of synthesising a per-net rectangle. The rotation of
+ * the placed component still follows the wire direction. Falls back to the
+ * generated document only when the preset is missing.
+ */
 function buildPortEntry(project, net, name) {
+  const tpl = loadTemplateEntry('PORT_BI') || loadTemplateEntry('PORT_IN');
+  if (tpl && tpl.portSymbolDoc && tpl.portDeviceDoc) {
+    return {
+      name: tpl.name,
+      kind: 'port',
+      title: tpl.title || tpl.name,
+      net,
+      symbolUuid: tpl.symbolUuid,
+      deviceUuid: tpl.deviceUuid,
+      portSymbolDoc: tpl.portSymbolDoc,
+      portDeviceDoc: tpl.portDeviceDoc,
+      preset: true
+    };
+  }
   const entryName = name || `PORT_${net}`;
   const symbolUuid = E.uuid16();
   const deviceUuid = E.uuid16();
@@ -92,4 +135,4 @@ function buildPortEntry(project, net, name) {
   };
 }
 
-module.exports = { buildPowerEntry, buildPortEntry, NET_ATTRS };
+module.exports = { buildPowerEntry, buildPortEntry, loadTemplateEntry, NET_ATTRS };

@@ -28,7 +28,7 @@ const PIN_GAP = 80;    // wire between two chain members (room for a side port)
 const COL_GAP = 120;   // between independent chains in one block
 const BANK_GAP = 120;  // between members of a parallel / pull bank row
 const PAD = 110;       // frame padding around the chain
-const SUB_PAD = 36;    // frame padding around a mixed block (shelf default)
+const SUB_PAD = 110;   // frame padding around a mixed block (matches the shelf)
 const SUB_GATE = 1.10; // sub-bank row accepted only within 10% of the block area
 const TITLE_H = 60;
 const EPS = 1e-6;
@@ -256,7 +256,12 @@ function findSubBanks(design, pls) {
     if (!bank) continue;
     const g = layoutBank(bank, null);
     if (!g) continue;
-    cands.push({ bank, members: list, g, size: list.length });
+    // a bank tied to a declared supply/ground is a decoupling bank: its row is
+    // worth a larger frame because the router can then collapse the shared
+    // side into one rail + one flag
+    const shared = bank.common ? [bank.common] : [bank.north, bank.south];
+    const power = shared.some((n) => n && design.powers && design.powers[n]);
+    cands.push({ bank, members: list, g, size: list.length, power });
   }
   cands.sort((a, b) => b.size - a.size
     || a.members[0].part.id.localeCompare(b.members[0].part.id));
@@ -290,18 +295,18 @@ function placeSubBanks(pls, banks, block) {
   const areaOf = (r) => Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1);
   const oldArea = areaOf(block.rect);
 
-  // anchor the rows to the right of the rest, or above it (the title strip
-  // stays on the bottom edge, so "below" would run into it)
+  // anchor the rows to the right of the rest, or below it (the title strip
+  // now sits on the top edge, so the space underneath is free)
   let best = null;
-  for (const mode of ['right', 'above']) {
+  for (const mode of ['right', 'below']) {
     const steps = [];
     let box = restBox;
     let cursorX = restBox.x2 + BANK_GAP;
-    let cursorY = restBox.y2 + BANK_GAP;
+    let cursorY = restBox.y1 - BANK_GAP;
     for (const b of banks) {
       const g = b.g;
       const ox = mode === 'right' ? cursorX - g.bbox.x1 : restBox.x1 - g.bbox.x1;
-      const oy = mode === 'right' ? restBox.y1 - g.bbox.y1 : cursorY - g.bbox.y1;
+      const oy = mode === 'right' ? restBox.y1 - g.bbox.y1 : cursorY - g.bbox.y2;
       let bankBox = null;
       for (const s of g.steps) {
         const x = grid(s.x + ox);
@@ -312,7 +317,7 @@ function placeSubBanks(pls, banks, block) {
       }
       box = unionRect(box, bankBox);
       if (mode === 'right') cursorX = bankBox.x2 + BANK_GAP;
-      else cursorY = bankBox.y2 + BANK_GAP;
+      else cursorY = bankBox.y1 - BANK_GAP;
     }
     if (!best || areaOf(box) < areaOf(best.box)) best = { mode, steps, box };
   }
@@ -320,15 +325,19 @@ function placeSubBanks(pls, banks, block) {
 
   const rect = {
     x1: grid(best.box.x1 - SUB_PAD),
-    y1: grid(best.box.y1 - SUB_PAD - TITLE_H),
+    y1: grid(best.box.y1 - SUB_PAD),
     x2: grid(best.box.x2 + SUB_PAD),
-    y2: grid(best.box.y2 + SUB_PAD)
+    y2: grid(best.box.y2 + SUB_PAD + TITLE_H)
   };
   if (process.env.SCH_PATTERN_DEBUG) {
     console.error(`SUB-BANK "${block.title}" mode=${best.mode} area ${oldArea.toFixed(0)} → ${areaOf(rect).toFixed(0)}`
       + ` (${(areaOf(rect) / oldArea).toFixed(2)}×)`);
   }
-  if (areaOf(rect) > oldArea * SUB_GATE) return 0;
+  // decoupling rows are accepted up to 1.45×: one rail + one flag per supply
+  // and per ground is worth more than the area, and the user asked for the
+  // caps to sit side by side; other banks keep the conservative gate
+  const gate = banks.some((b) => b.power) ? 1.45 : SUB_GATE;
+  if (areaOf(rect) > oldArea * gate) return 0;
 
   for (const p of best.steps) {
     p.pl.x = p.x;
@@ -360,15 +369,15 @@ function placeWholeBlock(laid, block) {
   const cx = (block.rect.x1 + block.rect.x2) / 2;
   const rect = {
     x1: grid(cx - w / 2 - PAD),
-    y1: block.rect.y1,                                  // keep the top edge
+    y1: grid(block.rect.y2 - (TITLE_H + 2 * PAD + h)),  // keep the top edge
     x2: grid(cx + w / 2 + PAD),
-    y2: grid(block.rect.y1 + TITLE_H + 2 * PAD + h)
+    y2: block.rect.y2
   };
   // a pattern that would touch a neighbouring block is resolved by the
   // row re-pack below (blocks are pushed apart and their parts move with them)
 
   const ox = rect.x1 + PAD - box.x1;
-  const oy = rect.y1 + TITLE_H + PAD - box.y1;
+  const oy = rect.y2 - TITLE_H - PAD - box.y2;          // title strip at the top
   for (const g of laid) {
     for (const s of g.steps) {
       s.pl.x = grid(s.x + ox);
@@ -382,9 +391,9 @@ function placeWholeBlock(laid, block) {
   for (const g of laid) for (const s of g.steps) frame = frame ? unionRect(frame, s.pl.extent) : s.pl.extent;
   block.rect = {
     x1: Math.min(rect.x1, frame.x1),
-    y1: Math.min(rect.y1, frame.y1 - PAD - TITLE_H),
+    y1: Math.min(rect.y1, frame.y1 - PAD),
     x2: Math.max(rect.x2, frame.x2),
-    y2: Math.max(rect.y2, frame.y2 + PAD)
+    y2: Math.max(rect.y2, frame.y2 + PAD + TITLE_H)
   };
   return true;
 }

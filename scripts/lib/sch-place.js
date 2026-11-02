@@ -364,9 +364,9 @@ function layoutLayered(d, lib) {
 
     const rect = {
       x1: grid(box.x1 - BLOCK_PAD),
-      y1: grid(box.y1 - BLOCK_PAD - BLOCK_TITLE_H),
+      y1: grid(box.y1 - BLOCK_PAD),
       x2: grid(box.x2 + BLOCK_PAD),
-      y2: grid(box.y2 + BLOCK_PAD)
+      y2: grid(box.y2 + BLOCK_PAD + BLOCK_TITLE_H)
     };
     blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: members.map((p) => p.id) });
     rowMaxH = Math.max(rowMaxH, rect.y2 - rowBaseY);

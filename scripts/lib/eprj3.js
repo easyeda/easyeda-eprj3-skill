@@ -1078,7 +1078,7 @@ function portComponentBlock(v) {
   // way and never sit on the wire or the pin number.
   const dir = v.dir && (v.dir.x || v.dir.y) ? v.dir : { x: 1, y: 0 };
   const rotation = dir.x > 0 ? 0 : dir.x < 0 ? 180 : dir.y > 0 ? 90 : 270;
-  const OUT = 28;                                      // beyond the 25-unit body
+  const OUT = 45;                                      // official Netport name offset (body ends at 40)
   let namePos;
   if (dir.x > 0) namePos = { x: v.x + OUT, y: v.y, align: 'LEFT_MIDDLE' };
   else if (dir.x < 0) namePos = { x: v.x - OUT, y: v.y, align: 'RIGHT_MIDDLE' };
@@ -1101,7 +1101,11 @@ function portComponentBlock(v) {
   }), randId());
   line('ATTR', attrNull('Device', v.deviceUuid, 12, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 0, v.compId), randId());
-  line('ATTR', attrNull('Name', v.net, 9, v.compId, namePos), randId());
+  // the preset Netport symbol carries an EMPTY Name attribute, so the visible
+  // net name must be turned on here (the generated per-net document used to
+  // bake it into the symbol, which is exactly what we are replacing)
+  line('ATTR', attrNull('Name', v.net, 9, v.compId,
+    Object.assign({ valueVisible: true, keyVisible: false }, namePos)), randId());
   line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId, namePos), randId());
   return { lines, nextTicket: t };
 }

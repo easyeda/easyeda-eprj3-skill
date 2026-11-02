@@ -344,6 +344,8 @@ function labelEncoding(nodes, net, issues, why, ctx) {
     // like a duplicate, so prefer a shorter distinct stub when one exists.
     const crossClash = (seg) => committed.some((c) => c.net !== net && G.segsIntersect(seg, c.seg, true));
     const sameClash = (seg) => committed.some((c) => c.net === net && G.segsIntersect(seg, c.seg, true));
+    // the printed label must not land inside a symbol body (lint L009)
+    const onPart = (seg) => (ctx.obstacles || []).some((o) => G.rectContains(G.expand(o.rect, 2), { x: seg.x2, y: seg.y2 }));
     if (process.env.SCH_ROUTE_DEBUG) console.error('ADAPTIVE', net, node.part+'.'+node.pin, 'tip', node.tip.x+','+node.tip.y, 'committed', committed.length);
     let chosen = null;
     for (const len of [STUB, 30, 20, 10]) {
@@ -353,8 +355,10 @@ function labelEncoding(nodes, net, issues, why, ctx) {
         y2: G.round(node.tip.y + node.dir.y * len)
       };
       const xclash = crossClash(seg), sclash = sameClash(seg);
-      if (process.env.SCH_ROUTE_DEBUG) console.error('  ADAPTIVE', net, node.part + '.' + node.pin, 'len', len, 'cross', xclash, 'same', sclash);
-      if (!crossClash(seg) && !sameClash(seg)) { chosen = seg; break; }
+      if (process.env.SCH_ROUTE_DEBUG) console.error('  ADAPTIVE', net, node.part + '.' + node.pin, 'len', len, 'cross', xclash, 'same', sclash,
+        xclash ? `hit ${(committed.find((c) => c.net !== net && G.segsIntersect(seg, c.seg, true)) || {}).net} `
+          + JSON.stringify((committed.find((c) => c.net !== net && G.segsIntersect(seg, c.seg, true)) || {}).seg) : '');
+      if (!crossClash(seg) && !sameClash(seg) && !onPart(seg)) { chosen = seg; break; }
       if (!chosen && !crossClash(seg)) chosen = seg;   // cross-net-clean fallback
     }
     if (!chosen) {
@@ -622,24 +626,40 @@ function routeSignalNet(net, nodes, ctx) {
   const groups = groupByBlock(nodes);
   const multiBlock = groups.length > 1;
 
-  for (const G of groups) {
-    if (G.length === 1) {
+  for (const grp of groups) {
+    if (grp.length === 1) {
       if (multiBlock) {
-        const pr = placeNodePort(G[0], net, ctx);
+        const pr = placeNodePort(grp[0], net, ctx);
         if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
         ports.push(pr.port);
       }
       continue; // lone node on a single-block net is handled by the caller
     }
-    const segs = routeGroup(G, net, ctx, issues);
+    const segs = routeGroup(grp, net, ctx, issues);
     wires.push(...segs.wires);
     labels.push(...segs.labels);
     if (multiBlock) {
-      // one port per block, anchored on the group's first stub (already on the
-      // trunk for ≥2 pins) — the netlist merges ports by name across blocks
-      const p = stubPoint(G[0]);
-      const portDir = (ctx.patternPortNets && ctx.patternPortNets.has(net)) ? { x: 1, y: 0 } : G[0].dir;
-      ports.push({ net, x: p.x, y: p.y, dir: portDir });
+      // one port per block, anchored on a member stub — but never on a point
+      // that another net's wire, flag, pin or port already occupies: the client
+      // merges two nets wherever they touch (the ESP32 build failed at every
+      // density because a port sat exactly on a neighbouring vertical wire).
+      const portDirOf = (n) => ((ctx.patternPortNets && ctx.patternPortNets.has(net)) ? { x: 1, y: 0 } : n.dir);
+      let site = null;
+      for (const n of grp) {
+        const p = stubPoint(n);
+        const pt = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+        const hitWire = committed.some((c) => c.net !== net && G.pointSegDist(p, c.seg) < 0.01);
+        const hitOther = foreignContacts([pt], ctx, net) !== 0
+          || (ctx.portPoints || []).some((f) => f.net !== net && Math.hypot(f.x - p.x, f.y - p.y) < 34);
+        if (!hitWire && !hitOther) { site = { p, dir: portDirOf(n) }; break; }
+      }
+      if (site) {
+        ports.push({ net, x: site.p.x, y: site.p.y, dir: site.dir });
+      } else {
+        const pr = placeNodePort(grp[0], net, ctx);
+        if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
+        ports.push(pr.port);
+      }
     }
   }
   return { wires, flags: [], labels, ports, issues };
@@ -790,6 +810,49 @@ function routeNet(net, nodes, ctx) {
         ? G.rect(pos.x - halfW, pos.y - 27, pos.x + halfW, pos.y - 15)
         : G.rect(pos.x - halfW, pos.y + 8, pos.x + halfW, pos.y + 20));
       const labelClash = (pos) => (ctx.flagBoxes || []).some((b) => G.rectsOverlap(labelBox(pos), b));
+
+      // Ground-flag orientation policy (the human convention):
+      //  - an upward pin sits inside/next to the part, so a flag above it
+      //    overprints the symbol → use a stub + net label instead;
+      //  - a horizontal pin gets a short drop so the ground symbol hangs BELOW
+      //    the wire instead of lying on it sideways;
+      //  - a downward pin keeps the plain flag.
+      if (style === 'down' && node.dir.y > 0) {
+        const enc = labelEncoding([node], net, issues, null, ctx);
+        enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+        wires.push(...enc.wires);
+        labels.push(...enc.labels);
+        continue;
+      }
+      if (style === 'down' && node.dir.x !== 0) {
+        let drop = null;
+        for (const L of [40, 30, 20]) {
+          for (const D of [40, 60, 30]) {
+            const mid = { x: G.round(node.tip.x + node.dir.x * L), y: node.tip.y };
+            const end = { x: mid.x, y: G.round(mid.y - D) };
+            const s1 = { x1: node.tip.x, y1: node.tip.y, x2: mid.x, y2: mid.y };
+            const s2 = { x1: mid.x, y1: mid.y, x2: end.x, y2: end.y };
+            const box = G.rect(Math.min(node.tip.x, end.x) - 12, Math.min(node.tip.y, end.y) - 12,
+              Math.max(node.tip.x, end.x) + 12, Math.max(node.tip.y, end.y) + 12);
+            if (wireClash(s1) || wireClash(s2) || foreignContacts([s1, s2], ctx, net) !== 0) continue;
+            if (flagClash(end) || labelClash(end) || labelHitsPart(end)
+              || overlapsAny(box, obstacles, ignore)) continue;
+            drop = { segs: [s1, s2], end };
+            break;
+          }
+          if (drop) break;
+        }
+        if (drop) {
+          wires.push(drop.segs);
+          commitSegs(drop.segs, net, used, committed);
+          flags.push({ net, x: drop.end.x, y: drop.end.y, style });
+          ctx.flagPoints.push({ net, x: drop.end.x, y: drop.end.y });
+          ctx.flagBoxes.push(labelBox(drop.end));
+          continue;
+        }
+        // no clean drop: fall through to the generic placement as a last resort
+      }
+
       let placed = null;
       let wire = null;
       let labelFallback = null;
@@ -884,7 +947,7 @@ function routeNet(net, nodes, ctx) {
   return { wires: sig.wires, flags, labels: sig.labels, ports: sig.ports, issues: sig.issues };
 }
 
-const PORT_OUT = 28; // name sits just beyond the 25-unit port body
+const PORT_OUT = 45; // official Netport name offset (body ends at 40)
 
 /** Space a port's body + printed net name occupies (see portComponentBlock). */
 function portLabelBox(net, pos, dir) {
@@ -943,7 +1006,13 @@ function routeSchematic(d, placements, opts) {
       patternPortNets: options.patternPortNets || new Set(),
       powerStyle: (net) => d.powerNets.get(net) || null
     };
-    for (const [net, nodes] of nets) {
+    // Route SIGNAL nets first, power flags last: a power stub committed early
+    // can sit exactly on a neighbouring pin's only escape path (H6 U4.43 next
+    // to a VCC-5V stub), leaving that pin unconnected. Flags are flexible —
+    // they try several lengths/directions and avoid committed wires.
+    const order = [...nets.entries()].sort((a, b) =>
+      (d.powerNets.has(a[0]) ? 1 : 0) - (d.powerNets.has(b[0]) ? 1 : 0));
+    for (const [net, nodes] of order) {
       // Power nets keep their flags on every sheet (routeNet handles them) —
       // turning GND into a port would drop the flag convention for nothing.
       // NC nets are the deliberate no-connect convention even across sheets:

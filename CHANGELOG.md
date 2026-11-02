@@ -5,6 +5,61 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.35.0] - 2026-11-02
+
+**Schematic fidelity: official net ports, upright ICs, top-left module titles,
+frames that contain their labels, and a ground-flag orientation policy.**
+
+Driven by a review of two PRD-generated boards (ESP32 and Allwinner H6): the
+netlist was correct but the drawing did not look like a human's. This release
+fixes the deterministic causes; PCB module grouping and the remaining
+readability work follow separately.
+
+### Added
+- **No-clean-exit gate.** A pin the router cannot even leave (e.g. a power stub
+  committed on its only escape line) is now the same retry tier as a cross-net
+  contact: the candidate is re-laid on a looser grid, and the build fails with
+  the pin named if every density still leaves it unconnected.
+- **Ground-flag orientation policy** (`sch-route.js`): a downward pin keeps the
+  plain flag; a horizontal pin gets a short vertical drop so the ground symbol
+  hangs below the wire; an upward pin uses a stub + net label instead of a flag
+  that would overprint the part.
+- **Signal-before-power routing.** Signal nets are routed first and power flags
+  last; a flag stub can no longer block a neighbouring pin's only exit (H6
+  U4.43 next to a VCC-5V stub), because flags try several lengths/directions
+  and avoid committed wires.
+
+### Changed
+- **Net ports use the committed preset verbatim.** Every port now places the
+  client-extracted `PORT_BI` symbol/device documents (official pentagon, size,
+  name "PORT_BI" / "Netport-BI"); one shared symbol serves all nets and the net
+  name lives in the component attributes. The printed name uses the official
+  45-mil offset and is made visible (the preset document itself ships an empty
+  Name attribute). No more per-net rectangular `PORT_<net>` symbols.
+- **Multi-pin symbols no longer rotate 90/270** in `sch-tidy`: a part with more
+  than four pins may only flip 0/180, so ICs keep their pins on the left/right
+  (two-pin R/C/D/LED parts remain free).
+- **Module titles moved to the top-left.** The client draws Y-up, so the title
+  strip is reserved on the TOP edge (`y2`) and the caption is drawn at
+  `y2 - 20` (description `y2 - 40`); previously it sat on the bottom edge.
+- **Frame padding raised to 110 mil** for the shelf placer and mixed-bank rows
+  (layered already used 110). Ports print their net ~45 mil past a 40-mil body,
+  so the old 36-mil frame left names outside the black box.
+- **Decoupling banks are accepted up to 1.45× the block area** (was 1.10×) when
+  the bank shares a declared supply/ground, so caps sit side by side instead of
+  being spread by the generic grid; other banks keep the conservative gate.
+- **Multi-block port sites are clearance-checked** against foreign wires, pins,
+  flags and ports; when every member stub is crowded the port gets its own
+  dedicated stub. `labelEncoding` also avoids dropping the printed net name
+  inside a symbol body (lint L009).
+
+### Fixed
+- A port could be anchored exactly on another net's vertical wire (ESP32 built
+  only at a 5–8× looser density because of it); port sites now reject any
+  foreign contact.
+- The label/port name box is no longer allowed to sit on a part body in the
+  stub+label fallback.
+
 ## [1.34.0] - 2026-11-02
 
 **Mixed-block pattern subgroups and a group-level local search.**

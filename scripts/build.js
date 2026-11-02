@@ -672,8 +672,12 @@ function main() {
     // the page origin so no block frame or label hangs below the border.
     shiftSheetsIntoPage(placements, blocks);
     const { routed, contacts, quality } = assess(placements, blocks, pat.portNets);
+    // a pin the router could not even leave ("no clean exit") is electrically
+    // unconnected — same retry tier as a cross-net contact, because a looser
+    // grid is the fix (dense ICs need room around their pin columns)
+    const noExit = routed.issues.filter((s) => /no clean exit/.test(s)).length;
     return {
-      kind, scale, placements, blocks, routed, contacts, quality,
+      kind, scale, placements, blocks, routed, contacts, noExit, quality,
       patternNets: pat.portNets, subBanks: pat.subBanks || 0
     };
   }
@@ -694,16 +698,18 @@ function main() {
         if (flat.contacts < c.contacts) c = flat;
       }
       candidates.push(c);
-      if (c.contacts === 0) break;
-      log(`layout(${kind}): ${c.contacts} cross-net contact(s) at this density — retrying on a ${Math.round(scale * 1.7 * 100)}% looser grid`);
+      if (c.contacts === 0 && c.noExit === 0) break;
+      log(`layout(${kind}): ${c.contacts} cross-net contact(s), ${c.noExit} pin(s) with no clean exit`
+        + ` at this density — retrying on a ${Math.round(scale * 1.7 * 100)}% looser grid`);
     }
   }
   restoreRotations();
-  const usable = candidates.filter((c) => c.contacts === 0 && c.quality.valid);
+  const usable = candidates.filter((c) => c.contacts === 0 && c.noExit === 0 && c.quality.valid);
   if (!usable.length) {
-    const worst = candidates.reduce((a, b) => (a.contacts <= b.contacts ? a : b));
-    die(`schematic layout failed: ${worst.contacts} cross-net contact(s) and/or overlapping parts remain at every density — `
-      + 'two nets would be merged in the client. Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
+    const worst = candidates.reduce((a, b) => ((a.contacts + a.noExit) <= (b.contacts + b.noExit) ? a : b));
+    die(`schematic layout failed: ${worst.contacts} cross-net contact(s) and ${worst.noExit} pin(s) with no clean exit`
+      + ' remain at every density — two nets would be merged or a pin would be left unconnected in the client. '
+      + 'Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
   }
   const baseline = usable.find((c) => c.kind === 'shelf') || usable[0];
   let best = baseline;
@@ -793,13 +799,13 @@ function main() {
       zIndex: em.nextZ(), ticketBase: em.nextTicket()
     })]);
     em.addLines([E.schTextLine({
-      x: b.rect.x1 + 10, y: b.rect.y1 + 30,
+      x: b.rect.x1 + 10, y: b.rect.y2 - 20,
       value: b.title, fontSize: 14,
       zIndex: em.nextZ(), ticketBase: em.nextTicket()
     })]);
     if (b.desc) {
       em.addLines([E.schTextLine({
-        x: b.rect.x1 + 10, y: b.rect.y1 + 48,
+        x: b.rect.x1 + 10, y: b.rect.y2 - 40,
         value: b.desc, fontSize: 9,
         zIndex: em.nextZ(), ticketBase: em.nextTicket()
       })]);
@@ -818,16 +824,17 @@ function main() {
     placePowerFlag(emitters.get(flag.sheet || 1), project, flag, powerEntries.get(flag.net));
   }
 
-  // cross-sheet nets: a net port on each sheet it touches (netlist merges
-  // port names globally, so both sides connect without wires)
-  const portEntries = new Map();
+  // cross-sheet / cross-block nets: ONE generic client Netport symbol (the
+  // committed preset, official geometry and name) is placed at every port; the
+  // net name lives in the component attributes, so it must not be regenerated
+  // per net.
+  let portEntry = null;
   for (const port of routed.ports) {
-    if (!portEntries.has(port.net)) {
-      const entry = require('./lib/entries').buildPortEntry(project, port.net, `PORT_${port.net}`);
-      project.saveLibrary(entry);
-      portEntries.set(port.net, entry);
+    if (!portEntry) {
+      portEntry = require('./lib/entries').buildPortEntry(project, port.net);
+      project.saveLibrary(portEntry);
     }
-    placeNetPort(emitters.get(port.sheet || 1), project, port, portEntries.get(port.net));
+    placeNetPort(emitters.get(port.sheet || 1), project, port, portEntry);
   }
 
   // A wire that lands on a power flag or a net port already carries its name

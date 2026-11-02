@@ -665,13 +665,20 @@ function layoutSchematic(d, lib) {
       box = unionRect(box, pl.extent);
     });
 
-    const pad = 36;
-    // y-down: title space ABOVE the parts (smaller y = closer to the top edge)
+    // Frame padding must hold the NET NAMES, port bodies and designator text,
+    // not just the symbol extents: ports print their net ~45 mil beyond a
+    // 40-mil body, and flags print theirs above/below. 36 mil left names
+    // outside the black frame (the user's complaint); 110 matches the layered
+    // placer and the chain macro.
+    const pad = 110;
+    // The client draws Y-UP: the bigger coordinate is the top edge. Reserve the
+    // title strip on the TOP so the module caption reads top-left (it used to
+    // sit at the bottom because the strip was subtracted from y1).
     const rect = {
       x1: grid(box.x1 - pad),
-      y1: grid(box.y1 - pad - BLOCK_TITLE_H),
+      y1: grid(box.y1 - pad),
       x2: grid(box.x2 + pad),
-      y2: grid(box.y2 + pad)
+      y2: grid(box.y2 + pad + BLOCK_TITLE_H)
     };
     blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: ordered.map((p) => p.id) });
     cursorX = rect.x2 + L.blockGapX;
