@@ -466,15 +466,15 @@ function commitSegs(segs, net, usedPoints, committedSegs) {
   }
 }
 
-/** Group a net's nodes by their block title (deterministic order). */
-function groupByBlock(nodes) {
+/** Group a net's nodes by sheet (deterministic order). */
+function groupBySheet(nodes) {
   const groups = new Map();
   for (const node of nodes) {
-    const b = node.block || '';
-    if (!groups.has(b)) groups.set(b, []);
-    groups.get(b).push(node);
+    const s = node.sheet || 1;
+    if (!groups.has(s)) groups.set(s, []);
+    groups.get(s).push(node);
   }
-  return [...groups.values()].sort((a, b) => (a[0].block || '').localeCompare(b[0].block || ''));
+  return [...groups.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v);
 }
 
 /**
@@ -669,9 +669,10 @@ function placeNodePort(node, net, ctx, kind) {
 }
 
 /**
- * Route a non-power, non-NC signal net with ≥2 nodes, block-aware (report
- * §5.2/§5.3/§8.2): same-block pins are wired with a visible trunk, and a net
- * spanning multiple blocks crosses each boundary with ONE net-port per block.
+ * Route a non-power, non-NC signal net with ≥2 nodes, sheet-aware (report
+ * §5.2/§5.3/§8.2): every pin on one sheet is wired with visible orthogonal
+ * routes no matter which module it belongs to; a net spanning sheets crosses
+ * each page with ONE net-port (Netport-IN/OUT/BI by that side's pin dirs).
  * Returns { wires:[[segs]], labels:[], ports:[], issues:[] }.
  */
 function routeSignalNet(net, nodes, ctx) {
@@ -681,29 +682,32 @@ function routeSignalNet(net, nodes, ctx) {
   const issues = [];
   const used = ctx.usedPoints;
   const committed = ctx.committedSegs;
-  const groups = groupByBlock(nodes);
-  const multiBlock = groups.length > 1;
+  // Wire every pin of the net that lives on ONE sheet, regardless of block:
+  // the human pattern is visible wires inside a page, Netports only for
+  // CROSS-SHEET hops. (Grouping per block used to turn every module boundary
+  // into a port/label pair and drowned the drawing in labels.)
+  const groups = groupBySheet(nodes);
+  const multiSheet = groups.length > 1;
 
   for (const grp of groups) {
-    // this block's side of the net decides the port preset: a block that only
+    // this sheet's side of the net decides the port preset: a sheet that only
     // drives the net gets Netport-OUT, one that only receives gets Netport-IN
     const kind = portKind(grp);
     if (grp.length === 1) {
-      if (multiBlock) {
+      if (multiSheet) {
         const pr = placeNodePort(grp[0], net, ctx, kind);
         if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
         ports.push(pr.port);
       }
-      continue; // lone node on a single-block net is handled by the caller
+      continue; // lone node on a single-sheet net is handled by the caller
     }
     const segs = routeGroup(grp, net, ctx, issues);
     wires.push(...segs.wires);
     labels.push(...segs.labels);
-    if (multiBlock) {
-      // one port per block, anchored on a member stub — but never on a point
-      // that another net's wire, flag, pin or port already occupies: the client
-      // merges two nets wherever they touch (the ESP32 build failed at every
-      // density because a port sat exactly on a neighbouring vertical wire).
+    if (multiSheet) {
+      // cross-sheet hop: one port on this sheet, anchored on a member stub —
+      // but never on a point that another net's wire, flag, pin or port
+      // already occupies (the client merges two nets wherever they touch).
       const portDirOf = (n) => ((ctx.patternPortNets && ctx.patternPortNets.has(net)) ? { x: 1, y: 0 } : n.dir);
       let site = null;
       for (const n of grp) {

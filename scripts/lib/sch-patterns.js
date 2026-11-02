@@ -23,14 +23,16 @@
  */
 const G = require('./geom');
 const { partExtent } = require('./design');
+const T = require('./sch-tokens');
 
-const PIN_GAP = 80;    // wire between two chain members (room for a side port)
-const COL_GAP = 120;   // between independent chains in one block
-const BANK_GAP = 120;  // between members of a parallel / pull bank row
-const PAD = 110;       // frame padding around the chain
-const SUB_PAD = 110;   // frame padding around a mixed block (matches the shelf)
+// spacing comes from the token sheet — one rhythm for the whole drawing
+const PIN_GAP = T.PIN_GAP;
+const COL_GAP = T.COL_GAP;
+const BANK_GAP = T.BANK_GAP;
+const PAD = T.FRAME_PAD;
+const SUB_PAD = T.FRAME_PAD;
 const SUB_GATE = 1.10; // sub-bank row accepted only within 10% of the block area
-const TITLE_H = 60;
+const TITLE_H = T.TITLE_H;
 const EPS = 1e-6;
 
 const grid = (v) => Math.round(v / 10) * 10;
@@ -224,6 +226,106 @@ function layoutBank(bank, byId) {
   let bbox = null;
   for (const s of steps) bbox = bbox ? unionRect(bbox, s.extent) : s.extent;
   return { steps, bbox };
+}
+
+/**
+ * Hub-and-satellites: ONE multi-pin part (a regulator, a connector, a
+ * push-button) plus two-pin satellites that each share exactly one net with
+ * it — the caps on VIN/VOUT, a crystal's load caps, an ESD array, a gate RC.
+ * Human drawing convention: every satellite sits beside the anchor pin it
+ * belongs to, its own shared pin facing the anchor, so the router draws one
+ * short wire per satellite instead of a port/label.
+ * Returns { anchor, sats, satNet } or null.
+ */
+function blockHub(members) {
+  const isMulti = (pl) => Object.keys(pl.part.pins || {}).length > 2;
+  const anchors = members.filter(isMulti);
+  if (anchors.length !== 1) return null;
+  const anchor = anchors[0];
+  const sats = members.filter((pl) => pl !== anchor);
+  if (sats.length < 1 || sats.length > 8) return null;
+  const anchorNets = new Set(Object.values(anchor.part.pins || {}));
+  const satNet = new Map();
+  for (const s of sats) {
+    const nets = Object.values(s.part.pins || {});
+    if (nets.length !== 2 || !s.sym || s.sym.pins.length !== 2) return null;
+    const shared = nets.find((n) => anchorNets.has(n) && !/^(NC|DNC\d*)$/i.test(n));
+    if (!shared) return null;
+    satNet.set(s, shared);
+  }
+  return { anchor, sats, satNet };
+}
+
+/** Lay a hub block: anchor at the origin, satellites beside their anchor pins. */
+function layoutHub(hub) {
+  const { anchor, sats, satNet } = hub;
+  const aRot = anchor.rotation || 0;
+  const aExtent = partExtent(anchor.sym, 0, 0, aRot);
+  const placed = [{ pl: anchor, sym: anchor.sym, x: 0, y: 0, rot: aRot, extent: aExtent }];
+  const boxes = [aExtent];
+  const overlaps = (r) => boxes.some((q) => G.rectsOverlap(G.expand(q, 4), r));
+
+  const pinByNet = (pl, net) => {
+    const num = Object.keys(pl.part.pins || {}).find((n) => pl.part.pins[n] === net);
+    return pl.sym.pins.find((p) => String(p.num) === String(num)) || null;
+  };
+  // which side of the anchor does this pin open onto (client y-up: big y = top)
+  const sideOf = (tip) => {
+    const dx = tip.x - (aExtent.x1 + aExtent.x2) / 2;
+    const dy = tip.y - (aExtent.y1 + aExtent.y2) / 2;
+    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'right' : 'left';
+    return dy >= 0 ? 'top' : 'bottom';
+  };
+  const bySide = { left: [], right: [], top: [], bottom: [] };
+  for (const s of sats) {
+    const aPin = pinByNet(anchor, satNet.get(s));
+    if (!aPin) return null;
+    bySide[sideOf(G.pinTip(aPin, 0, 0, aRot))].push(s);
+  }
+
+  for (const side of ['left', 'right', 'top', 'bottom']) {
+    let used = 0;   // stacking distance already consumed on this side
+    for (const s of bySide[side]) {
+      const net = satNet.get(s);
+      const sPin = pinByNet(s, net);
+      if (!sPin) return null;
+      let done = null;
+      for (let k = 0; k <= 6 && !done; k += 1) {
+        for (const rot of [0, 90, 180, 270]) {
+          const rel = partExtent(s.sym, 0, 0, rot);
+          const rTip = G.rotate(sPin.x, sPin.y, rot);
+          // the shared pin's tip must be the extreme point on the anchor side
+          const facing = side === 'left' ? Math.abs(rTip.x - rel.x2) < 0.01
+            : side === 'right' ? Math.abs(rTip.x - rel.x1) < 0.01
+              : side === 'top' ? Math.abs(rTip.y - rel.y1) < 0.01
+                : Math.abs(rTip.y - rel.y2) < 0.01;
+          if (!facing) continue;
+          const aPin = pinByNet(anchor, net);
+          const aTip = G.pinTip(aPin, 0, 0, aRot);
+          const stack = used + k * ((side === 'left' || side === 'right')
+            ? (rel.y2 - rel.y1) : (rel.x2 - rel.x1) + T.HUB_STACK_GAP);
+          const target = side === 'left' ? { x: aTip.x - T.HUB_GAP, y: aTip.y + stack }
+            : side === 'right' ? { x: aTip.x + T.HUB_GAP, y: aTip.y + stack }
+              : side === 'top' ? { x: aTip.x + stack, y: aTip.y + T.HUB_GAP }
+                : { x: aTip.x + stack, y: aTip.y - T.HUB_GAP };
+          const ox = G.round(target.x - rTip.x);
+          const oy = G.round(target.y - rTip.y);
+          const extent = partExtent(s.sym, ox, oy, rot);
+          if (overlaps(extent)) continue;
+          done = { pl: s, sym: s.sym, x: ox, y: oy, rot, extent };
+          break;
+        }
+      }
+      if (!done) return null;
+      placed.push(done);
+      boxes.push(done.extent);
+      used += (side === 'left' || side === 'right'
+        ? (done.extent.y2 - done.extent.y1) : (done.extent.x2 - done.extent.x1)) + T.HUB_STACK_GAP;
+    }
+  }
+  let bbox = null;
+  for (const s of placed) bbox = bbox ? unionRect(bbox, s.extent) : s.extent;
+  return { steps: placed, bbox };
 }
 
 /**
@@ -453,6 +555,15 @@ function applyPatterns(design, placements, blocks, options) {
       }
     }
 
+    // 2b. hub-and-satellites: one multi-pin part + its caps/ESD/RC satellites
+    if (!laid) {
+      const hub = blockHub(pls);
+      if (hub) {
+        const g = layoutHub(hub);
+        if (g) laid = [g];
+      }
+    }
+
     if (laid) {
       if (placeWholeBlock(laid, block)) changed += 1;
       continue;
@@ -503,6 +614,6 @@ function repackBlocks(blocks, placements) {
 }
 
 module.exports = {
-  applyPatterns, blockChains, blockBank, layoutChain, layoutBank,
+  applyPatterns, blockChains, blockBank, blockHub, layoutChain, layoutBank, layoutHub,
   findSubBanks, placeSubBanks, PIN_GAP
 };

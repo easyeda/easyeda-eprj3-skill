@@ -798,8 +798,10 @@ function main() {
   const usable = candidates.filter((c) => c.contacts === 0 && c.noExit === 0 && c.quality.valid);
   if (!usable.length) {
     const worst = candidates.reduce((a, b) => ((a.contacts + a.noExit) <= (b.contacts + b.noExit) ? a : b));
-    die(`schematic layout failed: ${worst.contacts} cross-net contact(s) and ${worst.noExit} pin(s) with no clean exit`
-      + ' remain at every density — two nets would be merged or a pin would be left unconnected in the client. '
+    const q = worst.quality || {};
+    die(`schematic layout failed: ${worst.contacts} cross-net contact(s), ${worst.noExit} pin(s) with no clean exit`
+      + `, ${q.parts ? q.parts.overlaps : '?'} overlapping part pair(s), ${q.wires ? q.wires.through : '?'} wire(s) through a body`
+      + ' — at every density. Two nets would be merged or a symbol would be corrupted in the client. '
       + 'Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
   }
   const baseline = usable.find((c) => c.kind === 'shelf') || usable[0];

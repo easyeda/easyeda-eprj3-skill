@@ -29,6 +29,15 @@ the `easyeda-schematic-autodraw` skill are now part of SKILL.md.
   VISIBLE (the old auto layout used a 300 mil pitch on a 200 mil sliver with
   hidden labels — USB1/U1 were unreadable). Label offsets match the client
   sample.
+- **`sch-tokens.js` design tokens.** Every spacing the placer/router uses
+  (pin pitch, module gaps, frame padding, title strip, stub, port name
+  offset, PCB part/module gaps) comes from one token sheet, the way a slide
+  deck takes every color from `base.css`.
+- **Hub-and-satellites pattern** (`sch-patterns.js`): one multi-pin part (a
+  regulator, connector, push-button) plus two-pin satellites that each share
+  exactly one net with it — VIN/VOUT caps, an ESD array, a gate RC — are laid
+  out with each satellite beside the anchor pin it belongs to, shared pin
+  facing the anchor, so the router draws one short wire per satellite.
 - **Module-clustered PCB placement** (`pcb-plan.js`): every schematic block is
   one cluster around its largest part; each further member takes the free spot
   closest to the pads it shares a non-ground net with (decoupling caps land at
@@ -89,6 +98,14 @@ the `easyeda-schematic-autodraw` skill are now part of SKILL.md.
   inside a symbol body (lint L009).
 
 ### Fixed
+- **Fetched LCSC symbols now load in the client.** The fetch format's graphics
+  fields differ from the client record shape — RECT `x/y/x2/y2` vs
+  `dotX1…`, CIRCLE `cx/cy/r` vs `centerX/centerY/radius` — and re-emitting
+  them verbatim made the client reject the whole symbol document ("符号加载
+  报错", associations lost; bodies invisible). All raw graphics are now
+  normalized to the client's exact field set, and the raw symbol BBOX reads
+  the normalized shapes (reading the old names degraded every official body
+  to the pin-span box, tripping phantom through-body violations).
 - A port could be anchored exactly on another net's vertical wire (ESP32 built
   only at a 5–8× looser density because of it); port sites now reject any
   foreign contact.

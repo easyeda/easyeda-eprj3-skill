@@ -440,25 +440,84 @@ function buildInlineSymbolEntry(spec, ctx) {
       length: p.length !== undefined ? p.length : 100
     }));
     const xs = rawPins.map((p) => p.x), ys = rawPins.map((p) => p.y);
-    const graphics = (spec.graphics || []).map((g) => Object.assign({}, g));
+    // Official LCSC graphics arrive in the fetch format, NOT the client record
+    // shape. Re-emit each with the client's exact field set — a RECT carrying
+    // x/y/x2/y2 or a CIRCLE carrying cx/cy/r makes the client reject the
+    // symbol document ("符号加载报错"), losing the association entirely.
+    const graphics = (spec.graphics || []).map((g) => {
+      const b = g.body || {};
+      if (g.type === 'RECT') {
+        const x1 = b.dotX1 !== undefined ? b.dotX1 : Math.min(b.x, b.x2);
+        const y1 = b.dotY1 !== undefined ? b.dotY1 : Math.min(b.y, b.y2);
+        const x2 = b.dotX2 !== undefined ? b.dotX2 : Math.max(b.x, b.x2);
+        const y2 = b.dotY2 !== undefined ? b.dotY2 : Math.max(b.y, b.y2);
+        return { type: 'RECT', body: {
+          dotX1: x1, dotY1: y1, dotX2: x2, dotY2: y2,
+          radiusX: b.radiusX || 0, radiusY: b.radiusY || 0, rotation: b.rotation || 0,
+          strokeColor: b.strokeColor || null, strokeStyle: b.strokeStyle || null,
+          fillColor: b.fillColor || null, strokeWidth: b.strokeWidth || null,
+          fillStyle: b.fillStyle || null
+        } };
+      }
+      if (g.type === 'CIRCLE') {
+        return { type: 'CIRCLE', body: {
+          centerX: b.centerX !== undefined ? b.centerX : b.cx,
+          centerY: b.centerY !== undefined ? b.centerY : b.cy,
+          radius: b.radius !== undefined ? b.radius : b.r,
+          strokeColor: b.strokeColor || null, strokeStyle: b.strokeStyle || null,
+          fillColor: b.fillColor || null, strokeWidth: b.strokeWidth || null,
+          fillStyle: b.fillStyle || null
+        } };
+      }
+      if (g.type === 'POLY') {
+        return { type: 'POLY', body: {
+          points: (b.points || []).map((p) => ({ x: p.x, y: p.y })),
+          closed: !!b.closed, rotation: b.rotation || 0,
+          strokeColor: b.strokeColor || null, strokeStyle: b.strokeStyle || null,
+          fillColor: b.fillColor || null, strokeWidth: b.strokeWidth || null,
+          fillStyle: b.fillStyle || null
+        } };
+      }
+      return { type: g.type, body: Object.assign({}, b) };
+    });
     // BBOX = the BODY graphics extent (NOT the pin-tip span) — lint L004
     // judges wire-crossing against this, and pins legitimately extend outward
     let gx1 = 1e9, gy1 = 1e9, gx2 = -1e9, gy2 = -1e9;
     for (const g of graphics) {
-      for (const p of (g.body.points || [])) {
-        gx1 = Math.min(gx1, p.x); gx2 = Math.max(gx2, p.x);
-        gy1 = Math.min(gy1, p.y); gy2 = Math.max(gy2, p.y);
-      }
-      if (g.body.x !== undefined) {
-        gx1 = Math.min(gx1, g.body.x); gx2 = Math.max(gx2, g.body.x2 || g.body.x);
-        gy1 = Math.min(gy1, g.body.y); gy2 = Math.max(gy2, g.body.y2 || g.body.y);
-      }
-      if (g.body.cx !== undefined) {
-        gx1 = Math.min(gx1, g.body.cx - g.body.r); gx2 = Math.max(gx2, g.body.cx + g.body.r);
-        gy1 = Math.min(gy1, g.body.cy - g.body.r); gy2 = Math.max(gy2, g.body.cy + g.body.r);
+      const b = g.body;
+      // read the NORMALIZED shapes (see the mapping above): RECT = dotX1…,
+      // CIRCLE = centerX/centerY/radius, POLY = points
+      if (g.type === 'RECT' && b.dotX1 !== undefined) {
+        gx1 = Math.min(gx1, b.dotX1); gx2 = Math.max(gx2, b.dotX2);
+        gy1 = Math.min(gy1, b.dotY1); gy2 = Math.max(gy2, b.dotY2);
+      } else if (g.type === 'CIRCLE' && b.centerX !== undefined) {
+        gx1 = Math.min(gx1, b.centerX - b.radius); gx2 = Math.max(gx2, b.centerX + b.radius);
+        gy1 = Math.min(gy1, b.centerY - b.radius); gy2 = Math.max(gy2, b.centerY + b.radius);
+      } else {
+        for (const p of (b.points || [])) {
+          gx1 = Math.min(gx1, p.x); gx2 = Math.max(gx2, p.x);
+          gy1 = Math.min(gy1, p.y); gy2 = Math.max(gy2, p.y);
+        }
       }
     }
     if (gx1 > gx2) { gx1 = Math.min(...xs) - 10; gy1 = Math.min(...ys) - 10; gx2 = Math.max(...xs) + 10; gy2 = Math.max(...ys) + 10; }
+    // Show pin names/numbers the way the official client does (name just inside
+    // the body edge, number on the stub near the hotspot). The pin's rotation
+    // points hotspot→body, so rot 0 = left side, 180 = right side.
+    const showLabels = rawPins.length > 2;
+    if (showLabels) {
+      for (const p of rawPins) {
+        if (p.rotation === 180) {
+          p.nameX = p.x - p.length - 2; p.nameY = p.y - 4.9; p.numX = p.x - 5; p.numY = p.y - 0.9;
+        } else if (p.rotation === 0) {
+          p.nameX = p.x + p.length + 2; p.nameY = p.y - 4.9; p.numX = p.x + 5; p.numY = p.y - 0.9;
+        } else if (p.rotation === 90) {          // bottom side, stub runs up into the body
+          p.nameX = p.x + 2; p.nameY = p.y + p.length - 2; p.numX = p.x + 2; p.numY = p.y + 5;
+        } else {                                  // 270: top side, stub runs down
+          p.nameX = p.x + 2; p.nameY = p.y - p.length + 2; p.numX = p.x + 2; p.numY = p.y - 5;
+        }
+      }
+    }
     const doc = E.buildSymbolDoc({
       uuid,
       title: spec.title || spec.name,
