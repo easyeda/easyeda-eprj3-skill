@@ -326,6 +326,7 @@ function symbolBodyBox(pins, pitch) {
 // oversized and no sheet size can hold it.
 const MIL = 0.1;
 const DEFAULT_BODY_HALF_W = 400;   // mil — minimum half body width (400 mil → 800 mil body)
+const FLAT_BODY_HALF_W = 200;      // mil — flat IC minimum; grows with the longest pin name
 const GROUP_GAP = 30;              // symbol units (300 mil) of blank band between banks
 const MULTI_PIN_LEN = 20;          // symbol units (200 mil) pin stub — matches the reference
 
@@ -352,6 +353,9 @@ function layoutSymbolPins(groups, pitchMil, halfWMil, pinLen) {
   for (const g of groups) {
     for (const p of g.pins) halfW = Math.max(halfW, textW(p.name || p.num));
   }
+  halfW = Math.ceil(halfW / 5) * 5;                    // keep pin tips on a 50-mil grid
+  // pin number sits above the stub, ending just outside the body edge
+  const numIn = Math.min(5, len / 2);
   const out = [];
   const labels = [];
   let cursor = 0;   // y of the current group's bottom row (y-up)
@@ -370,16 +374,16 @@ function layoutSymbolPins(groups, pitchMil, halfWMil, pinLen) {
       const y = cursor + i * pitch;
       out.push(Object.assign({}, p, {
         x: -(halfW + len), rotation: 0, length: len, y,
-        nameX: -halfW + 2, nameY: y + 5, nameAlign: 'LEFT_BOTTOM',
-        numX: -(halfW + len) + 15, numY: y + 1, numAlign: 'RIGHT_BOTTOM'
+        nameX: -halfW + 2, nameY: y - 5, nameAlign: 'LEFT_BOTTOM',
+        numX: -(halfW + numIn), numY: y - 1, numAlign: 'RIGHT_BOTTOM'
       }));
     });
     right.forEach((p, i) => {
       const y = cursor + i * pitch;
       out.push(Object.assign({}, p, {
         x: halfW + len, rotation: 180, length: len, y,
-        nameX: halfW - 2, nameY: y + 5, nameAlign: 'RIGHT_BOTTOM',
-        numX: (halfW + len) - 15, numY: y + 1, numAlign: 'LEFT_BOTTOM'
+        nameX: halfW - 2, nameY: y - 5, nameAlign: 'RIGHT_BOTTOM',
+        numX: halfW + numIn, numY: y - 1, numAlign: 'LEFT_BOTTOM'
       }));
     });
     // the caption sits in the blank band ABOVE this bank, so it never
@@ -457,13 +461,13 @@ function buildInlineSymbolEntry(spec, ctx) {
     if (gx1 > gx2) { gx1 = Math.min(...xs) - 10; gy1 = Math.min(...ys) - 10; gx2 = Math.max(...xs) + 10; gy2 = Math.max(...ys) + 10; }
     const doc = E.buildSymbolDoc({
       uuid,
-      title: spec.name,
+      title: spec.title || spec.name,
       description: spec.description || '',
       tags: [],
       source: E.makeSource(E.uuid32(), ctx.ownerUuid),
       client: ctx.client,
       ms: ctx.ms,
-      name: spec.name,
+      name: spec.title || spec.name,
       designator: spec.designator || 'U?',
       bbox: [gx1, gy1, gx2, gy2],
       graphics: graphics.map((g) => ({ type: g.type, body: Object.assign({}, g.body, { partId: 'PART_ID' }) })),
@@ -472,7 +476,7 @@ function buildInlineSymbolEntry(spec, ctx) {
     return {
       name: spec.name,
       kind: 'symbol',
-      title: spec.name,
+      title: spec.title || spec.name,
       designator: spec.designator || 'U?',
       description: spec.description || '',
       symbolUuid: uuid,
@@ -494,6 +498,17 @@ function buildInlineSymbolEntry(spec, ctx) {
     const laid = layoutSymbolPins(gs, pitch, halfW);
     pins = laid.pins;
     box = { dotX1: laid.body.x1, dotY1: laid.body.y1, dotX2: laid.body.x2, dotY2: laid.body.y2 };
+  } else if ((spec.pins || []).length > 4) {
+    // Flat IC / connector spec: lay it out the way the official library draws
+    // ICs — 100-mil pin pitch, 200-mil pin stubs, a body wide enough for the
+    // longest pin name, names inside and numbers outside, both VISIBLE. The
+    // old auto layout used a 300-mil pitch on a 200-mil-wide sliver with
+    // hidden labels, which is what made USB1/U1 unreadable.
+    const pitch = Math.max(100, Number(spec.pitch) || 0);
+    const halfW = spec.halfW || FLAT_BODY_HALF_W;
+    const laid = layoutSymbolPins([{ name: '', pins: parseAutoPinSpec(spec.pins) }], pitch, halfW);
+    pins = laid.pins;
+    box = { dotX1: laid.body.x1, dotY1: laid.body.y1, dotX2: laid.body.x2, dotY2: laid.body.y2 };
   } else {
     const nPins = (spec.pins || []).length;
     const pitch = spec.pitch || (nPins >= 3 ? 30 : 10);
@@ -507,13 +522,13 @@ function buildInlineSymbolEntry(spec, ctx) {
   // buildSymbolDoc needs explicit geometry, so lay the pins out first.
   const doc = E.buildSymbolDoc({
     uuid,
-    title: spec.name,
+    title: spec.title || spec.name,
     description: spec.description || '',
     tags: [],
     source: E.makeSource(E.uuid32(), ctx.ownerUuid),
     client: ctx.client,
     ms: ctx.ms,
-    name: spec.name,
+    name: spec.title || spec.name,
     designator: spec.designator || 'U?',
     bbox: [box.dotX1, box.dotY1, box.dotX2, box.dotY2],
     graphics: [{ type: 'RECT', body: {
@@ -526,7 +541,7 @@ function buildInlineSymbolEntry(spec, ctx) {
   return {
     name: spec.name,
     kind: 'symbol',
-    title: spec.name,
+    title: spec.title || spec.name,
     designator: spec.designator || 'U?',
     description: spec.description || '',
     symbolUuid: uuid,
@@ -583,7 +598,7 @@ function buildMultiPartSymbolEntry(spec, ctx) {
   return {
     name: spec.name,
     kind: 'symbol',
-    title: spec.name,
+    title: spec.title || spec.name,
     designator: spec.designator || 'U?',
     description: spec.description || '',
     symbolUuid: uuid,
@@ -607,7 +622,7 @@ function buildInlineFootprintEntry(spec, ctx) {
     : G.bboxOfPoints(pads.map((p) => ({ x: p.x, y: p.y })));
   const doc = E.buildFootprintDoc({
     uuid,
-    title: spec.name,
+    title: spec.title || spec.name,
     description: spec.description || '',
     tags: [],
     source: E.makeSource(E.uuid32(), ctx.ownerUuid),
@@ -630,7 +645,7 @@ function buildInlineFootprintEntry(spec, ctx) {
   return {
     name: spec.name,
     kind: 'footprint',
-    title: spec.name,
+    title: spec.title || spec.name,
     designator: spec.designator || 'U?',
     footprintUuid: uuid,
     footprintDoc: doc.lines,

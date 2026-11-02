@@ -43,6 +43,40 @@ function exitDir(pl, tip, pin) {
   return { x: 0, y: Math.sign(dy) || -1 };
 }
 
+/**
+ * Electrical direction of one pin, seen from its own part: 'I' (the part
+ * receives), 'O' (the part drives), 'B' (both / bus) or null (unknown).
+ * Order of evidence: the design's declared pin direction, the symbol's Pin
+ * Type, then the pin NAME (TX/OUT/DOUT drive, RX/IN/EN/RST/CS receive).
+ * Two-pin passives never decide a direction.
+ */
+function pinDirection(pl, pin) {
+  const declared = pl.part.pinDirs && pl.part.pinDirs[String(pin.num)];
+  if (declared === 'I' || declared === 'O') return declared;
+  if (declared === 'B' || declared === 'T' || declared === 'C') return 'B';
+  const t = String(pin.type || '').toUpperCase();
+  if (t === 'IN' || t === 'INPUT') return 'I';
+  if (t === 'OUT' || t === 'OUTPUT') return 'O';
+  if (t === 'BI' || t === 'IO' || t === 'I/O') return 'B';
+  if ((pl.sym.pins || []).length <= 2) return null;
+  const n = `_${String(pin.name || '').toUpperCase().replace(/[^A-Z0-9]+/g, '_')}_`;
+  if (/_(TXD?|DOUT|SDO|OUT|INT|IRQ|TX_?OUT)\d*_/.test(n)) return 'O';
+  if (/_(RXD?|DIN|SDI|IN|EN|CE|RST|RESET|NRST|CS|NCS)\d*_/.test(n)) return 'I';
+  return null;
+}
+
+/**
+ * Port preset for one block's side of a net: OUT when that block only drives
+ * it, IN when it only receives it, BI otherwise (mixed, bus or unknown).
+ */
+function portKind(nodes) {
+  const ds = nodes.map((n) => n.pdir).filter(Boolean);
+  const hasO = ds.includes('O');
+  const hasI = ds.includes('I');
+  if (!ds.length || ds.includes('B') || (hasO && hasI)) return 'BI';
+  return hasO ? 'OUT' : 'IN';
+}
+
 /** Collected connection points per net. */
 function collectNodes(d, placements) {
   const nets = new Map();
@@ -58,6 +92,7 @@ function collectNodes(d, placements) {
         pin: String(pin.num),
         tip,
         dir: exitDir(pl, tip, pin),
+        pdir: pinDirection(pl, pin),
         placement: pl,
         sheet: pl.sheet || 1,
         block: pl.block ? pl.block.title : null
@@ -241,6 +276,18 @@ function zPath(pa, pb, midY) {
   return out;
 }
 
+/** Z-shaped path through a vertical channel at midX. */
+function zPathV(pa, pb, midX) {
+  if (Math.abs(pa.x - midX) < G.EPS && Math.abs(pb.x - midX) < G.EPS) {
+    return Math.abs(pa.y - pb.y) > G.EPS ? [{ x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y }] : [];
+  }
+  const out = [];
+  if (Math.abs(pa.x - midX) > G.EPS) out.push({ x1: pa.x, y1: pa.y, x2: midX, y2: pa.y });
+  if (Math.abs(pa.y - pb.y) > G.EPS) out.push({ x1: midX, y1: pa.y, x2: midX, y2: pb.y });
+  if (Math.abs(pb.x - midX) > G.EPS) out.push({ x1: midX, y1: pb.y, x2: pb.x, y2: pb.y });
+  return out;
+}
+
 /** All candidate routes between two nodes, cheapest first. */
 function bestRoute(a, b, obstacles, usedPoints, committedSegs, ctx) {
   const makers = [
@@ -257,8 +304,19 @@ function bestRoute(a, b, obstacles, usedPoints, committedSegs, ctx) {
   const pa0 = stubPoint(a);
   const pb0 = stubPoint(b);
   const midY = Math.round((pa0.y + pb0.y) / 2);
-  for (const my of [midY, midY - STUB, midY + STUB]) {
+  // horizontal channels: the midpoint first, then steps outward on both sides
+  const offs = [0, -20, 20, -40, 40, -60, 60, -90, 90];
+  for (const o of offs) {
+    const my = midY + o;
     candidates.push(stubRoute(a, b, (pa, pb) => zPath(pa, pb, my)));
+  }
+  // vertical channels: the same detour turned 90° — two pins on facing sides
+  // of a part, or stacked parts, often only have a clean VERTICAL corridor
+  // (this is what left most in-module signal nets as stub+label)
+  const midX = Math.round((pa0.x + pb0.x) / 2);
+  for (const o of offs) {
+    const mx = midX + o;
+    candidates.push(stubRoute(a, b, (pa, pb) => zPathV(pa, pb, mx)));
   }
 
   // Trunk candidates: one bus above and one below every obstacle on the sheet,
@@ -567,7 +625,7 @@ function routeGroup(nodes, net, ctx, issues) {
 }
 
 /** Adaptive stub + net-port for a lone node (mirrors the old connector path). */
-function placeNodePort(node, net, ctx) {
+function placeNodePort(node, net, ctx, kind) {
   const committed = ctx.committedSegs;
   const used = ctx.usedPoints;
   const foreign = committed.filter((c) => c.net !== net);
@@ -607,7 +665,7 @@ function placeNodePort(node, net, ctx) {
     ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, portDir));
   }
   const wire = (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) ? [chosen] : [];
-  return { wire, port: { net, x: chosen.x2, y: chosen.y2, dir: portDir } };
+  return { wire, port: { net, x: chosen.x2, y: chosen.y2, dir: portDir, kind: kind || portKind([node]) } };
 }
 
 /**
@@ -627,9 +685,12 @@ function routeSignalNet(net, nodes, ctx) {
   const multiBlock = groups.length > 1;
 
   for (const grp of groups) {
+    // this block's side of the net decides the port preset: a block that only
+    // drives the net gets Netport-OUT, one that only receives gets Netport-IN
+    const kind = portKind(grp);
     if (grp.length === 1) {
       if (multiBlock) {
-        const pr = placeNodePort(grp[0], net, ctx);
+        const pr = placeNodePort(grp[0], net, ctx, kind);
         if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
         ports.push(pr.port);
       }
@@ -654,9 +715,9 @@ function routeSignalNet(net, nodes, ctx) {
         if (!hitWire && !hitOther) { site = { p, dir: portDirOf(n) }; break; }
       }
       if (site) {
-        ports.push({ net, x: site.p.x, y: site.p.y, dir: site.dir });
+        ports.push({ net, x: site.p.x, y: site.p.y, dir: site.dir, kind });
       } else {
-        const pr = placeNodePort(grp[0], net, ctx);
+        const pr = placeNodePort(grp[0], net, ctx, kind);
         if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
         ports.push(pr.port);
       }
@@ -810,6 +871,25 @@ function routeNet(net, nodes, ctx) {
         ? G.rect(pos.x - halfW, pos.y - 27, pos.x + halfW, pos.y - 15)
         : G.rect(pos.x - halfW, pos.y + 8, pos.x + halfW, pos.y + 20));
       const labelClash = (pos) => (ctx.flagBoxes || []).some((b) => G.rectsOverlap(labelBox(pos), b));
+
+      // Dense IC side: a power pin on a multi-pin symbol with a neighbour pin
+      // within two pitches cannot carry a flag — the flag names (printed above
+      // or below the symbol) overprint each other at a 100-mil pitch. The
+      // human convention is a short stub + net label on the IC pin, with the
+      // real supply/ground symbols living in the decoupling bank.
+      const pl = node.placement;
+      const horizontalPin = node.dir.x !== 0;
+      if (horizontalPin && pl && pl.sym && pl.sym.pins.length > 4) {
+        const crowded = (ctx.pinPoints || []).some((p) => !(p.x === node.tip.x && p.y === node.tip.y)
+          && Math.abs(p.x - node.tip.x) < 0.01 && Math.abs(p.y - node.tip.y) <= 20);
+        if (crowded) {
+          const enc = labelEncoding([node], net, issues, null, ctx);
+          enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+          wires.push(...enc.wires);
+          labels.push(...enc.labels);
+          continue;
+        }
+      }
 
       // Ground-flag orientation policy (the human convention):
       //  - an upward pin sits inside/next to the part, so a flag above it
@@ -1051,11 +1131,11 @@ function routeSchematic(d, placements, opts) {
           if (chosen) {
             out.wires.push({ net, sheet, segs: [chosen.seg] });
             commitSegs([chosen.seg], net, ctx.usedPoints, ctx.committedSegs);
-            out.ports.push({ net, x: chosen.p.x, y: chosen.p.y, sheet, dir: portDir });
+            out.ports.push({ net, x: chosen.p.x, y: chosen.p.y, sheet, dir: portDir, kind: portKind([node]) });
             ctx.portPoints.push({ net, x: chosen.p.x, y: chosen.p.y });
             ctx.flagBoxes.push(chosen.box);
           } else {
-            out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet, dir: portDir });
+            out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet, dir: portDir, kind: portKind([node]) });
             ctx.portPoints.push({ net, x: node.tip.x, y: node.tip.y });
             ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, portDir));
           }

@@ -66,10 +66,6 @@ function connectorAngle(fp) {
   return line ? 90 : 0;
 }
 
-function overlapsAny(ext, placed, selfRef) {
-  return placed.some((p) => p.ref !== selfRef && G.rectsOverlap(p.ext, ext));
-}
-
 /**
  * @param design  normalized design
  * @param lib     {footprintOf}
@@ -114,8 +110,9 @@ function planPcb(design, lib, schematicPlacements) {
   }
 
   // ---- pass 2: auto placement --------------------------------------------
-  const connectors = items.filter((it) => !it.explicit && /^J/i.test(it.part.id));
-  const rest = items.filter((it) => !it.explicit && !/^J/i.test(it.part.id));
+  const isConnector = (it) => /^(J|CN|USB)\d/i.test(it.part.id);
+  const connectors = items.filter((it) => !it.explicit && isConnector(it));
+  const rest = items.filter((it) => !it.explicit && !isConnector(it));
   const placed = [];          // {ref, ext} for overlap/refinement checks
   for (const it of items) {
     if (it.explicit && it.ext) placed.push({ ref: it.part.id, ext: it.ext });
@@ -157,79 +154,134 @@ function planPcb(design, lib, schematicPlacements) {
     connBand = rowBase + rowHConn;
   }
 
-  // everything else grids in rows above the connector row — starting back at
-  // the LEFT edge (cursorX currently sits where the connector row ended)
-  cursorX = EDGE;
-  let cursorY = EDGE + (connectors.length ? connBand + GAP_MAX : 0);
-  let rowH = 0;
-  let boardW = design.board.width;
+  // ---- module clusters ----------------------------------------------------
+  // Every schematic block becomes ONE PCB cluster laid out around its anchor
+  // (the member with the most pads — normally the IC). Each further member
+  // takes the free spot beside the cluster that is closest to the pads it
+  // shares a net with, so a decoupling cap lands next to the supply pin it
+  // serves and a pull-up next to the signal it pulls. Ground never attracts
+  // (every part touches it). Clusters are then shelf-packed in block order —
+  // the schematic's signal flow — with a routing channel between modules.
+  const INTRA_GAP = 60;    // mil between parts inside one module
+  const BLOCK_GAP = 300;   // mil between modules
+  const padsAt = (it, x, y) => (it.fp.pads || []).map((p) => {
+    const r = G.rotate(p.x, p.y, it.angle || 0);
+    return { net: (it.part.pins || {})[String(p.num)] || null, x: x + r.x, y: y + r.y };
+  });
+  const tieNets = (it) => new Set(Object.values(it.part.pins || {})
+    .filter((n) => n && !groundNets.has(n) && !/^(NC|DNCd*)$/i.test(n)));
+  const centre = (r) => ({ x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2 });
+  const unionAll = (boxes) => boxes.reduce((u, r) => (u ? G.rect(Math.min(u.x1, r.x1), Math.min(u.y1, r.y1),
+    Math.max(u.x2, r.x2), Math.max(u.y2, r.y2)) : r), null);
+
+  for (const it of rest) it.ext = footprintExtent(it.fp, it.angle);
+  const byBlock = new Map();
+  for (const it of rest) {
+    const k = it.part.blockIndex === undefined ? -1 : it.part.blockIndex;
+    if (!byBlock.has(k)) byBlock.set(k, []);
+    byBlock.get(k).push(it);
+  }
+
+  const clusters = [];
+  for (const [, members] of [...byBlock.entries()].sort((p, q) => p[0] - q[0])) {
+    const padCount = (it) => (it.fp.pads || []).length;
+    const anchor = members.slice().sort((p, q) => padCount(q) - padCount(p))[0];
+    const local = [{ it: anchor, x: 0, y: 0, box: anchor.ext }];
+    const ac = centre(anchor.ext);
+    const remaining = members.filter((it) => it !== anchor);
+    while (remaining.length) {
+      // strongest tie to what is already placed goes next
+      let pick = 0;
+      let pickTie = -1;
+      remaining.forEach((it, i) => {
+        const nets = tieNets(it);
+        let tie = 0;
+        for (const q of local) for (const p of padsAt(q.it, q.x, q.y)) if (p.net && nets.has(p.net)) tie += 1;
+        if (tie > pickTie) { pickTie = tie; pick = i; }
+      });
+      const it = remaining.splice(pick, 1)[0];
+      const nets = tieNets(it);
+      const targets = [];
+      for (const q of local) for (const p of padsAt(q.it, q.x, q.y)) if (p.net && nets.has(p.net)) targets.push(p);
+      const attract = targets.length
+        ? { x: targets.reduce((n, p) => n + p.x, 0) / targets.length, y: targets.reduce((n, p) => n + p.y, 0) / targets.length }
+        : ac;
+      const w = it.ext.x2 - it.ext.x1;
+      const h = it.ext.y2 - it.ext.y1;
+      const cands = [];
+      for (const q of local) {
+        const r = q.box;
+        for (const y1 of [r.y1, (r.y1 + r.y2) / 2 - h / 2, r.y2 - h, attract.y - h / 2]) {
+          cands.push({ x1: r.x2 + INTRA_GAP, y1 }, { x1: r.x1 - INTRA_GAP - w, y1 });
+        }
+        for (const x1 of [r.x1, (r.x1 + r.x2) / 2 - w / 2, r.x2 - w, attract.x - w / 2]) {
+          cands.push({ x1, y1: r.y2 + INTRA_GAP }, { x1, y1: r.y1 - INTRA_GAP - h });
+        }
+      }
+      let best = null;
+      for (const c of cands) {
+        const ox = G.round(c.x1 - it.ext.x1);
+        const oy = G.round(c.y1 - it.ext.y1);
+        const box = G.translateBox(it.ext, ox, oy);
+        if (local.some((q) => G.rectsOverlap(G.expand(q.box, INTRA_GAP - 0.5), box))) continue;
+        const m = centre(box);
+        const cost = Math.hypot(m.x - attract.x, m.y - attract.y) + 0.35 * Math.hypot(m.x - ac.x, m.y - ac.y);
+        if (!best || cost < best.cost - 1e-6) best = { ox, oy, box, cost };
+      }
+      if (!best) {
+        const u = unionAll(local.map((q) => q.box));
+        const ox = G.round(u.x2 + INTRA_GAP - it.ext.x1);
+        const oy = G.round(u.y1 - it.ext.y1);
+        best = { ox, oy, box: G.translateBox(it.ext, ox, oy) };
+      }
+      local.push({ it, x: best.ox, y: best.oy, box: best.box });
+    }
+    clusters.push({ local, bbox: unionAll(local.map((q) => q.box)) });
+  }
+
+  // shelf-pack the clusters in block order; an undeclared board aims for a
+  // roughly square layout, a declared one fills its width
   let neededW = 0;
   let neededH = 0;
-  const gridStart = (it) => {
-    const w = it.ext.x2 - it.ext.x1;
-    const h = it.ext.y2 - it.ext.y1;
-    // cursorX/cursorY track the CURRENT row's extent edges (left/bottom), so
-    // the wrap test compares extent right edge against the usable width —
-    // mixing in the part ORIGIN (as the old `x + w` form did) overstates the
-    // right edge by |ext.x1| and wraps one part too many. `right` MUST be
-    // recomputed after a wrap: using the pre-wrap cursorX cascaded every
-    // later part onto the pre-wrap position (single row → single column,
-    // board explosion on 50+ part designs).
-    //
-    // Explicit `pcb.place` parts are KEEPOUTS for the auto placer (report P5:
-    // an auto-placed resistor used to land on a fixed mounting hole). When the
-    // slot collides, drop below the blocking footprint and continue.
-    for (let guard = 0; guard < 12; guard += 1) {
-      if (cursorX > EDGE && cursorX + w > Math.max(boardW, neededW) - EDGE) {
-        cursorX = EDGE;
-        cursorY += rowH + gapFor(rowH);
-        rowH = 0;
+  const totalArea = clusters.reduce((n, c) => n
+    + (c.bbox.x2 - c.bbox.x1 + BLOCK_GAP) * (c.bbox.y2 - c.bbox.y1 + BLOCK_GAP), 0);
+  const widest = clusters.reduce((n, c) => Math.max(n, c.bbox.x2 - c.bbox.x1), 0);
+  const rowLimit = Math.max(widest, design.boardDeclared
+    ? design.board.width - 2 * EDGE
+    : Math.sqrt(totalArea) * 1.25);
+  let packX = 0;
+  let packY = EDGE + (connectors.length ? connBand + GAP_MAX : 0);
+  let packRowH = 0;
+  for (const c of clusters) {
+    const w = c.bbox.x2 - c.bbox.x1;
+    const h = c.bbox.y2 - c.bbox.y1;
+    let at = null;
+    for (let guard = 0; guard < 24 && !at; guard += 1) {
+      if (packX > 0 && packX + w > rowLimit) {
+        packX = 0;
+        packY += packRowH + BLOCK_GAP;
+        packRowH = 0;
       }
-      const cand = G.translateBox(it.ext, G.round(cursorX - it.ext.x1), G.round(cursorY - it.ext.y1));
-      const hit = explicitBoxes.find((o) => G.rectsOverlap(cand, G.expand(o, 10)));
-      if (!hit) break;
-      cursorX = EDGE;
-      cursorY = hit.y2 + gapFor(hit.y2 - hit.y1);
-      rowH = 0;
+      const dx = EDGE + packX - c.bbox.x1;
+      const dy = packY - c.bbox.y1;
+      const boxes = c.local.map((q) => G.translateBox(q.box, dx, dy));
+      // explicit `pcb.place` parts are keepouts for the auto placer
+      const hit = explicitBoxes.find((o) => boxes.some((r) => G.rectsOverlap(r, G.expand(o, 10))));
+      if (!hit) at = { dx, dy };
+      else packX = hit.x2 - EDGE + BLOCK_GAP;
     }
-    const right = cursorX + w;
-    it.x = G.round(cursorX - it.ext.x1);
-    it.y = G.round(cursorY - it.ext.y1);
-    placed.push({ ref: it.part.id, ext: G.translateBox(it.ext, it.x, it.y) });
-    neededW = Math.max(neededW, right + EDGE);
-    neededH = Math.max(neededH, cursorY + h + EDGE);
-    cursorX = right + gapFor(w);
-    rowH = Math.max(rowH, h);
-  };
-
-  // extents are needed before the grid walk — compute them in a first sweep
-  for (const it of rest) it.ext = footprintExtent(it.fp, it.angle);
-  for (const it of rest) gridStart(it);
-
-  // ---- pass 3: decoupling caps next to their IC ---------------------------
-  const isCap = (it) => /^C/i.test(it.part.id) && it.fp && it.fp.pads && it.fp.pads.length === 2
-    && Object.values(it.part.pins).some((n) => groundNets.has(n));
-  const moved = new Set();
-  for (const ic of rest) {
-    if (!/^U/i.test(ic.part.id)) continue;
-    if (!ic.fp || !ic.fp.pads || ic.fp.pads.length < 4) continue;   // an IC, not a 2-3 pin part
-    const cap = rest.find((c) => isCap(c) && !moved.has(c.part.id)
-      && c.part.blockIndex !== undefined && c.part.blockIndex === ic.part.blockIndex);
-    if (!cap) continue;
-    // candidate spot: right of the IC, vertically centred on it
-    const icBox = G.translateBox(ic.ext, ic.x, ic.y);
-    const capW = cap.ext.x2 - cap.ext.x1;
-    const capH = cap.ext.y2 - cap.ext.y1;
-    const cx = icBox.x2 + gapFor(capW) - cap.ext.x1;
-    const cy = ic.y + (ic.ext.y1 + ic.ext.y2) / 2 - cap.ext.y1 - capH / 2;
-    const cand = G.rect(cx + cap.ext.x1, cy + cap.ext.y1, cx + cap.ext.x2, cy + cap.ext.y2);
-    if (overlapsAny(cand, placed, cap.part.id)) continue;
-    // commit: drop the cap's old grid cell from the overlap registry
-    const old = placed.find((p) => p.ref === cap.part.id);
-    if (old) { old.ext = cand; }
-    cap.x = G.round(cx);
-    cap.y = G.round(cy);
-    moved.add(cap.part.id);
+    if (!at) {
+      packX = 0;
+      packY = Math.max(packY, ...explicitBoxes.map((r) => r.y2)) + BLOCK_GAP;
+      at = { dx: EDGE - c.bbox.x1, dy: packY - c.bbox.y1 };
+    }
+    for (const q of c.local) {
+      q.it.x = G.round(q.x + at.dx);
+      q.it.y = G.round(q.y + at.dy);
+      placed.push({ ref: q.it.part.id, ext: G.translateBox(q.it.ext, q.it.x, q.it.y) });
+    }
+    packX += w + BLOCK_GAP;
+    packRowH = Math.max(packRowH, h);
   }
 
   // ---- required board size from the FINAL extents -------------------------

@@ -1,10 +1,10 @@
 {
   "name": "blink",
-  "owner_uuid": "9db99cd1ece6a7fd1b5a8c8312a6e23a",
-  "creator_uuid": "9db99cd1ece6a7fd1b5a8c8312a6e23a",
-  "created_at": "2026-11-02 13:53:51",
-  "updated_at": "2026-11-02 13:53:51",
-  "modifier_uuid": "9db99cd1ece6a7fd1b5a8c8312a6e23a",
+  "owner_uuid": "4841937163a8b32f6b21a338b3c47aa5",
+  "creator_uuid": "4841937163a8b32f6b21a338b3c47aa5",
+  "created_at": "2026-11-02 16:18:56",
+  "updated_at": "2026-11-02 16:18:56",
+  "modifier_uuid": "4841937163a8b32f6b21a338b3c47aa5",
   "content": "",
   "archive": false,
   "cbb_project": 0,
@@ -19,48 +19,48 @@
   "format": "folder",
   "profile": {
     "boards": {
-      "65b34360a670370b": {
-        "uuid": "65b34360a670370b",
+      "5537458a0e14ff86": {
+        "uuid": "5537458a0e14ff86",
         "title": "Board1",
         "zIndex": 1
       }
     },
     "schematics": {
-      "7b391291669bad60": {
-        "uuid": "7b391291669bad60",
+      "cb9cdc87ab0b4b4b": {
+        "uuid": "cb9cdc87ab0b4b4b",
         "name": "Schematic1",
-        "board": "65b34360a670370b",
+        "board": "5537458a0e14ff86",
         "source": "",
-        "version": "1793598831629",
-        "updateTime": 1793598831629
+        "version": "1793607536161",
+        "updateTime": 1793607536161
       }
     },
     "sheets": {
-      "a0703f1e04d21605": {
-        "uuid": "a0703f1e04d21605",
+      "7cc26a41b572626a": {
+        "uuid": "7cc26a41b572626a",
         "title": "P1",
-        "schematic_uuid": "7b391291669bad60",
+        "schematic_uuid": "cb9cdc87ab0b4b4b",
         "zIndex": 1,
         "source": "",
-        "version": "1793598831633",
-        "updateTime": 1793598831633
+        "version": "1793607536166",
+        "updateTime": 1793607536166
       }
     },
     "pcbs": {
-      "a7ba1934c287be88": {
-        "uuid": "a7ba1934c287be88",
+      "0db35e18527e4262": {
+        "uuid": "0db35e18527e4262",
         "title": "PCB1",
-        "board": "65b34360a670370b",
+        "board": "5537458a0e14ff86",
         "parent_uuid": "",
         "source": "",
-        "version": "1793598831569",
-        "updateTime": 1793598831569
+        "version": "1793607536101",
+        "updateTime": 1793607536101
       }
     },
     "panels": {},
     "blockSymbols": {},
     "owner": {
-      "uuid": "9db99cd1ece6a7fd1b5a8c8312a6e23a"
+      "uuid": "4841937163a8b32f6b21a338b3c47aa5"
     },
     "simSchematics": {},
     "simulations": {}

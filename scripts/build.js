@@ -129,6 +129,82 @@ function shiftSheetsIntoPage(placements, blocks) {
  * hugs the bottom-left border and the sheet reads as empty. Wires, flags and
  * ports move with the parts; the frame itself stays pinned to the page origin.
  */
+/**
+ * Module frames are sized from part extents before routing, but the router
+ * then prints text OUTSIDE those extents: net-port names (45 units beyond the
+ * port), power-flag names and stub-label names. Grow every frame to contain
+ * the text that belongs to it (nearest frame within 200 units), with a 12-unit
+ * margin, and never let a grown side come closer than 20 units to another
+ * frame on the same sheet.
+ */
+function growFramesToLabels(blocks, routed) {
+  const textW = (s) => Math.max(20, String(s).length * 5.5);
+  const boxes = [];
+  for (const p of routed.ports || []) {
+    const w = textW(p.net) + 45;
+    const d = p.dir || { x: 1, y: 0 };
+    let r;
+    if (d.x > 0) r = G.rect(p.x, p.y - 8, p.x + w, p.y + 8);
+    else if (d.x < 0) r = G.rect(p.x - w, p.y - 8, p.x, p.y + 8);
+    else if (d.y > 0) r = G.rect(p.x - textW(p.net) / 2, p.y, p.x + textW(p.net) / 2, p.y + 58);
+    else r = G.rect(p.x - textW(p.net) / 2, p.y - 58, p.x + textW(p.net) / 2, p.y);
+    boxes.push({ sheet: p.sheet || 1, at: { x: p.x, y: p.y }, r });
+  }
+  for (const f of routed.flags || []) {
+    const hw = textW(f.net) / 2;
+    const r = f.style === 'down'
+      ? G.rect(f.x - hw, f.y - 32, f.x + hw, f.y)
+      : G.rect(f.x - hw, f.y, f.x + hw, f.y + 24);
+    boxes.push({ sheet: f.sheet || 1, at: { x: f.x, y: f.y }, r });
+  }
+  for (const w of routed.wires || []) {
+    if (!w.net || w.segs.length !== 1) continue;
+    const s = w.segs[0];
+    if (s.y1 !== s.y2 || s.x1 === s.x2) continue;
+    const left = s.x2 < s.x1;
+    const tw = textW(w.net);
+    const r = left ? G.rect(s.x2 - tw, s.y2 - 7, s.x2, s.y2 + 7) : G.rect(s.x2, s.y2 - 7, s.x2 + tw, s.y2 + 7);
+    boxes.push({ sheet: w.sheet || 1, at: { x: s.x2, y: s.y2 }, r });
+  }
+  const original = blocks.map((b) => Object.assign({}, b.rect));
+  const grown = blocks.map((b) => Object.assign({}, b.rect));
+  for (const bx of boxes) {
+    let best = -1;
+    let bestD = Infinity;
+    blocks.forEach((b, i) => {
+      if ((b.sheet || 1) !== bx.sheet) return;
+      const r = original[i];
+      const dx = Math.max(r.x1 - bx.at.x, 0, bx.at.x - r.x2);
+      const dy = Math.max(r.y1 - bx.at.y, 0, bx.at.y - r.y2);
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best < 0 || bestD > 200) continue;
+    const g = grown[best];
+    g.x1 = Math.min(g.x1, bx.r.x1 - 12);
+    g.y1 = Math.min(g.y1, bx.r.y1 - 12);
+    g.x2 = Math.max(g.x2, bx.r.x2 + 12);
+    g.y2 = Math.max(g.y2, bx.r.y2 + 12);
+  }
+  const snapDown = (v) => Math.floor(v / 10) * 10;
+  const snapUp = (v) => Math.ceil(v / 10) * 10;
+  blocks.forEach((b, i) => {
+    const g = { x1: snapDown(grown[i].x1), y1: snapDown(grown[i].y1), x2: snapUp(grown[i].x2), y2: snapUp(grown[i].y2) };
+    const o = original[i];
+    blocks.forEach((n, j) => {
+      if (i === j || (n.sheet || 1) !== (b.sheet || 1)) return;
+      const r = original[j];
+      const vOverlap = g.y1 < r.y2 + 20 && r.y1 - 20 < g.y2;
+      const hOverlap = g.x1 < r.x2 + 20 && r.x1 - 20 < g.x2;
+      if (vOverlap && r.x1 >= o.x2 && g.x2 > r.x1 - 20) g.x2 = Math.max(o.x2, snapDown(r.x1 - 20));
+      if (vOverlap && r.x2 <= o.x1 && g.x1 < r.x2 + 20) g.x1 = Math.min(o.x1, snapUp(r.x2 + 20));
+      if (hOverlap && r.y1 >= o.y2 && g.y2 > r.y1 - 20) g.y2 = Math.max(o.y2, snapDown(r.y1 - 20));
+      if (hOverlap && r.y2 <= o.y1 && g.y1 < r.y2 + 20) g.y1 = Math.min(o.y1, snapUp(r.y2 + 20));
+    });
+    b.rect = g;
+  });
+}
+
 function centerSheetsInPage(placements, blocks, routed, sheetFrames) {
   for (const [s, frame] of sheetFrames) {
     let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
@@ -291,9 +367,11 @@ function placeSchematicComponent(em, project, pl, lib, design) {
     title: deviceTitle,
     designator: entry.designator || 'U?',
     symbolUuid: entry.symbolUuid,
-    symbolName: entry.name,
+    // the client shows these names: keep the original library names, never the
+    // SYM_/FP_ staging keys
+    symbolName: entry.title || entry.name,
     footprintUuid: fpEntry ? fpEntry.footprintUuid : undefined,
-    footprintName: fpEntry ? fpEntry.name : undefined,
+    footprintName: fpEntry ? (fpEntry.title || fpEntry.name) : undefined,
     tags: [],
     source: E.makeSource(E.uuid32(), project.index.owner_uuid),
     client: project.client,
@@ -359,6 +437,7 @@ function placeNetPort(em, project, port, entry) {
     compId: E.randId(),
     x: port.x, y: port.y,
     dir: port.dir,
+    portKind: entry.portKind || 'BI',
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid: entry.deviceUuid,
@@ -376,15 +455,15 @@ function placePcbComponent(em, project, design, pl, lib) {
   if (!fp) return null;
   const fpEntry = fp.entry;
   const deviceUuid = E.uuid16();
-  const deviceTitle = part.name || fpEntry.name;
+  const deviceTitle = part.name || fpEntry.title || fpEntry.name;
   const deviceDoc = E.buildDeviceDoc({
     uuid: deviceUuid,
     title: deviceTitle,
     designator: sym.designator || 'U?',
     symbolUuid: sym.entry.symbolUuid,
-    symbolName: sym.name,
+    symbolName: sym.entry.title || sym.name,
     footprintUuid: fpEntry.footprintUuid,
-    footprintName: fpEntry.name,
+    footprintName: fpEntry.title || fpEntry.name,
     tags: [],
     source: E.makeSource(E.uuid32(), project.index.owner_uuid),
     client: project.client,
@@ -499,6 +578,18 @@ function main() {
     console.error('design errors:');
     for (const e of check.errors) console.error(`  ✗ ${e}`);
     process.exit(2);
+  }
+  // Library fidelity: a real multi-pin device drawn from an inline pin list is
+  // NOT the official symbol (shape, pin order and names differ from the
+  // library). Name every such part so the author fetches the official entry
+  // (`fetch-lcsc.js --id C<LCSC> --install`, then `"ic": "<name>"`).
+  const inlineIcs = design.parts.filter((p) => p.symbol && typeof p.symbol === 'object'
+    && !p.symbol.raw && !p.symbol.multipart && !p.ic
+    && Array.isArray(p.symbol.pins) && p.symbol.pins.length > 4);
+  if (inlineIcs.length) {
+    log(`library: ${inlineIcs.length} multi-pin part(s) use a self-drawn inline symbol, not the official library`
+      + ` — fetch the official entry and reference it with "ic": ${inlineIcs.slice(0, 10).map((p) => p.id).join(' ')}`
+      + `${inlineIcs.length > 10 ? ' …' : ''}`);
   }
 
   // ------------------------------------------------- plan gate (--plan)
@@ -733,6 +824,7 @@ function main() {
   const patternNets = best.patternNets || new Set();
   const blocks = best.blocks;
   const routed = best.routed;
+  growFramesToLabels(blocks, routed);
   const sheetFrames = new Map();
   // per-sheet frame: sized around what the packing produced, 明细表 off by
   // default (design.frame.titleBlock opts back in)
@@ -828,13 +920,16 @@ function main() {
   // committed preset, official geometry and name) is placed at every port; the
   // net name lives in the component attributes, so it must not be regenerated
   // per net.
-  let portEntry = null;
+  // Netport-IN / -OUT / -BI follow the pin directions on each block's side
+  const portEntries = new Map();
   for (const port of routed.ports) {
-    if (!portEntry) {
-      portEntry = require('./lib/entries').buildPortEntry(project, port.net);
-      project.saveLibrary(portEntry);
+    const kind = port.kind || 'BI';
+    if (!portEntries.has(kind)) {
+      const entry = require('./lib/entries').buildPortEntry(project, port.net, kind);
+      project.saveLibrary(entry);
+      portEntries.set(kind, entry);
     }
-    placeNetPort(emitters.get(port.sheet || 1), project, port, portEntry);
+    placeNetPort(emitters.get(port.sheet || 1), project, port, portEntries.get(kind));
   }
 
   // A wire that lands on a power flag or a net port already carries its name

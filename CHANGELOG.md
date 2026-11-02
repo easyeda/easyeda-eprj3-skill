@@ -7,15 +7,44 @@ Versioning convention: every change that lands in a commit must bump `package.js
 
 ## [1.35.0] - 2026-11-02
 
-**Schematic fidelity: official net ports, upright ICs, top-left module titles,
-frames that contain their labels, and a ground-flag orientation policy.**
+**Schematic fidelity: official net ports by signal direction, readable IC
+symbols with visible pin names/numbers, upright ICs, top-left module titles,
+frames that contain their labels, module-clustered PCB placement.**
 
 Driven by a review of two PRD-generated boards (ESP32 and Allwinner H6): the
-netlist was correct but the drawing did not look like a human's. This release
-fixes the deterministic causes; PCB module grouping and the remaining
-readability work follow separately.
+netlist was correct but the drawing did not look like a human's. Layout rules
+distilled (re-expressed, not copied) from an external PCB design guideline and
+the `easyeda-schematic-autodraw` skill are now part of SKILL.md.
 
 ### Added
+- **Port kind follows the signal.** Each block's side of a cross-block net gets
+  the committed `PORT_IN`, `PORT_OUT` or `PORT_BI` preset: OUT when the block
+  only drives the net, IN when it only receives it, BI for mixed/bus/unknown.
+  Evidence order: declared pin direction → symbol Pin Type → pin name
+  (TX/DOUT/INT drive; RX/DIN/EN/RST/CS receive). The IN preset (body on −x) is
+  turned an extra half-turn so every kind sits on the far side of its wire.
+- **Official-style inline IC symbols.** An inline pin list with more than four
+  pins is laid out like the official library: 100 mil pitch, 200 mil stubs,
+  body widened to the longest pin name, names inside / numbers outside, both
+  VISIBLE (the old auto layout used a 300 mil pitch on a 200 mil sliver with
+  hidden labels — USB1/U1 were unreadable). Label offsets match the client
+  sample.
+- **Module-clustered PCB placement** (`pcb-plan.js`): every schematic block is
+  one cluster around its largest part; each further member takes the free spot
+  closest to the pads it shares a non-ground net with (decoupling caps land at
+  their supply pins). Clusters are shelf-packed in block order with a 300 mil
+  channel; J/CN/USB connectors keep the board edge.
+- **Vertical routing channels.** Same-block pairs also try Z paths through
+  vertical channels (and wider horizontal ones), so fewer in-module nets fall
+  back to stub + label.
+- **Frames grow to their text.** After routing, each module frame expands to
+  contain the port names, flag names and stub labels that belong to it, never
+  closer than 20 units to a neighbouring frame.
+- **Library-fidelity notice.** The build names every multi-pin part drawn from
+  an inline pin list and asks for the official entry (`"ic": …`).
+- **Dense IC power pins carry labels.** A power pin on a multi-pin symbol with
+  another pin within 200 mil uses stub + net label instead of a stacked flag;
+  the decoupling bank keeps the real supply/ground symbols.
 - **No-clean-exit gate.** A pin the router cannot even leave (e.g. a power stub
   committed on its only escape line) is now the same retry tier as a cross-net
   contact: the candidate is re-laid on a looser grid, and the build fails with
@@ -30,12 +59,18 @@ readability work follow separately.
   and avoid committed wires.
 
 ### Changed
-- **Net ports use the committed preset verbatim.** Every port now places the
-  client-extracted `PORT_BI` symbol/device documents (official pentagon, size,
-  name "PORT_BI" / "Netport-BI"); one shared symbol serves all nets and the net
-  name lives in the component attributes. The printed name uses the official
-  45-mil offset and is made visible (the preset document itself ships an empty
-  Name attribute). No more per-net rectangular `PORT_<net>` symbols.
+- **Net ports use the committed presets verbatim.** Every port places the
+  client-extracted `PORT_IN` / `PORT_OUT` / `PORT_BI` symbol/device documents
+  (official shape, size and name); one shared symbol per kind serves all nets
+  and the net name lives in the component attributes. The printed name uses
+  the official 45-mil offset and is made visible (the preset documents ship an
+  empty Name attribute). No more per-net rectangular `PORT_<net>` symbols.
+- **Symbol/footprint documents keep the original library names**; the
+  `SYM_`/`FP_` prefix survives only as the internal staging key. Device docs
+  reference those original names.
+- **Stub-label net names** continue the wire beyond its free end, vertically
+  centred (`LEFT_MIDDLE` / `RIGHT_MIDDLE`), so at a 100 mil pitch they no longer
+  climb into the neighbouring row.
 - **Multi-pin symbols no longer rotate 90/270** in `sch-tidy`: a part with more
   than four pins may only flip 0/180, so ICs keep their pins on the left/right
   (two-pin R/C/D/LED parts remain free).

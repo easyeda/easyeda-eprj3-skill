@@ -79,8 +79,8 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    ... builds schematic + PCB PLACEMENT, runs validate + ERC + lint + DRC
 #    the PCB is placement-only; the run prints the rats list of nets to
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
-#    placement: connectors (J…) line the bottom edge, decoupling caps sit next
-#    to their IC, an undeclared board auto-fits the parts
+#    placement: one cluster per schematic block (caps beside the pads they
+#    decouple), connectors (J/CN/USB) on the board edge, board auto-fits
 node scripts/netlist.js --dir <project dir> --design design.json --audit <project dir>/.tmp/netlist-audit.json
 #    netlist audit package → a FRESH sub-agent reviews it (mandatory; see the
 #    "Netlist audit" section below, not an optional nicety)
@@ -451,6 +451,36 @@ parts, keep these invariants:
   anti-pattern; labels are for far/cross-block links and need a ≥30 mil stub;
 - net names UPPERCASE and meaningful (`SPI_CLK`), never `N$1`;
 - rows ≥200 mil apart so designator/name labels don't collide.
+
+What the builder does on top of that (and what to keep when editing by hand):
+
+- **Symbols come from the library verbatim.** A real device uses `"ic": "<name>"`
+  (official cache, original symbol/footprint geometry and names). An inline
+  `symbol: {pins:[...]}` is a last resort for parts that have no official entry;
+  the builder draws it in the official IC style — 100 mil pitch, pin names
+  inside the body, numbers outside, both visible, body widened to the longest
+  name — and keeps the original name on the symbol/footprint documents (the
+  `SYM_`/`FP_` prefix is only the staging key).
+- **ICs stay upright**: a symbol with more than four pins only flips 0/180.
+- **Module = one functional unit, read left→right / top→bottom.** Caption at the
+  top-left; the frame is grown after routing so port names, flag names and
+  stub labels stay inside it.
+- **Wires inside a module, ports between modules.** Same-block nets are wired
+  (L/Z through horizontal or vertical channels); stub + label is the fallback
+  only when no clean orthogonal path exists. Do not turn local nets into
+  global labels to save wiring.
+- **Port kind follows the signal**: Netport-OUT when this module only drives the
+  net, Netport-IN when it only receives it, Netport-BI for buses, mixed or
+  unknown direction (evidence: declared pin dir → symbol pin type → pin name).
+- **Power and ground**: decoupling caps sharing a supply/ground form one row with
+  one rail and one flag; a dense IC side (power pins within 200 mil of each
+  other) carries labels instead of stacked flags; a ground flag hangs below a
+  horizontal pin, and an upward pin gets a label instead of a flag on the part.
+- **PCB placement mirrors the modules**: each schematic block becomes one
+  cluster around its largest part; every other member is placed next to the
+  pads it shares a (non-ground) net with, so decoupling caps land at their
+  supply pins. Clusters are packed in block order with a 300 mil channel;
+  connectors (J/CN/USB) take the board edge. Placement only — no copper.
 
 ## Library tiers
 

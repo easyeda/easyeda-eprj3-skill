@@ -389,19 +389,24 @@ function buildSymbolDoc(spec) {
       color: null,
       pinShape: 'NONE'
     }));
-    const nameAlign = p.rotation === 180 ? 'RIGHT_BOTTOM' : 'LEFT_BOTTOM';
-    const numAlign = p.rotation === 180 ? 'LEFT_BOTTOM' : 'RIGHT_BOTTOM';
-    for (const [key, value, align] of [
-      ['Pin Name', p.name || p.num, nameAlign],
-      ['Pin Number', p.num, numAlign],
-      ['Pin Type', 'Undefined', 'LEFT_BOTTOM']
+    const nameAlign = p.nameAlign || (p.rotation === 180 ? 'RIGHT_BOTTOM' : 'LEFT_BOTTOM');
+    const numAlign = p.numAlign || (p.rotation === 180 ? 'LEFT_BOTTOM' : 'RIGHT_BOTTOM');
+    // a pin laid out with explicit label positions (layoutSymbolPins) shows its
+    // name inside the body and its number outside — the official style; legacy
+    // auto pins keep the hidden labels they always had
+    const shown = p.nameX !== undefined && p.nameX !== null;
+    for (const [key, value, align, px, py] of [
+      ['Pin Name', p.name || p.num, nameAlign, p.nameX, p.nameY],
+      ['Pin Number', p.num, numAlign, p.numX, p.numY],
+      ['Pin Type', p.type || 'Undefined', 'LEFT_BOTTOM', null, null]
     ]) {
+      const visible = shown && key !== 'Pin Type';
       b.add('ATTR', {
         partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up',
         zIndex: zIndex(), parentId: pinId,
         key, value,
-        keyVisible: false, valueVisible: false,
-        x: null, y: null, rotation: 0, color: null, fillColor: null,
+        keyVisible: false, valueVisible: visible,
+        x: visible ? px : null, y: visible ? py : null, rotation: 0, color: null, fillColor: null,
         fontFamily: null,
         fontSize: key === 'Pin Type' ? 6.75 : 9.72222,
         strikeout: false, underline: false, italic: false, fontWeight: false,
@@ -1077,7 +1082,11 @@ function portComponentBlock(v) {
   // direction the wire leaves the part — so the body and its name extend that
   // way and never sit on the wire or the pin number.
   const dir = v.dir && (v.dir.x || v.dir.y) ? v.dir : { x: 1, y: 0 };
-  const rotation = dir.x > 0 ? 0 : dir.x < 0 ? 180 : dir.y > 0 ? 90 : 270;
+  // Netport-OUT/BI draw their body on +x of the pin; Netport-IN draws it on
+  // −x (its pin record is rot 180). Turn IN an extra half-turn so every kind
+  // puts its body on the far side of the hotspot from the wire.
+  const base = dir.x > 0 ? 0 : dir.x < 0 ? 180 : dir.y > 0 ? 90 : 270;
+  const rotation = v.portKind === 'IN' ? (base + 180) % 360 : base;
   const OUT = 45;                                      // official Netport name offset (body ends at 40)
   let namePos;
   if (dir.x > 0) namePos = { x: v.x + OUT, y: v.y, align: 'LEFT_MIDDLE' };
@@ -1147,9 +1156,24 @@ function wireBlock(v) {
   // centre — a multi-segment trunk's bbox centre floats in space or lands on a
   // part (L009), while the last segment is always on the wire.
   const last = v.segs[v.segs.length - 1];
-  const midX = (last.startX + last.endX) / 2;
-  const midY = (last.startY + last.endY) / 2;
   const vertical = last.startX === last.endX;
+  // Horizontal: anchor the name at the FREE end of the last segment (the end
+  // away from the pin) and run the text outward, sitting just above the wire
+  // (rightward wire → LEFT_BOTTOM, leftward → RIGHT_BOTTOM). Centring it on a
+  // short stub pushed the text back over the IC's pin number.
+  let midX = (last.startX + last.endX) / 2;
+  let midY = (last.startY + last.endY) / 2;
+  let netAlign = null;
+  // Only a single-segment wire is a stub+label (pin tip → free end): its name
+  // continues the wire beyond the free end, vertically CENTRED on the wire, so
+  // at a 100-mil pin pitch it never climbs into the neighbouring row's port.
+  // A multi-segment wire keeps the name at its last segment's midpoint.
+  if (v.segs.length === 1 && !vertical && last.startX !== last.endX) {
+    const leftward = last.endX < last.startX;
+    midX = last.endX + (leftward ? -3 : 3);
+    midY = last.endY;
+    netAlign = leftward ? 'RIGHT_MIDDLE' : 'LEFT_MIDDLE';
+  }
   const lines = [];
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
@@ -1169,6 +1193,7 @@ function wireBlock(v) {
   if (v.net) {
     line('ATTR', Object.assign(attrNull('NET', v.net, 7, wireId), {
       x: midX, y: midY, rotation: vertical ? 90 : 0,
+      align: netAlign,
       keyVisible: false, valueVisible: v.netVisible !== false
     }), randId());
   }

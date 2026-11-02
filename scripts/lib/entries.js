@@ -86,12 +86,16 @@ function buildPowerEntry(project, net, style) {
  * the placed component still follows the wire direction. Falls back to the
  * generated document only when the preset is missing.
  */
-function buildPortEntry(project, net, name) {
-  const tpl = loadTemplateEntry('PORT_BI') || loadTemplateEntry('PORT_IN');
+function buildPortEntry(project, net, portKind, name) {
+  // portKind: 'IN' | 'OUT' | 'BI' — chosen by the router from the pin
+  // directions on this block's side of the net (unknown/mixed → BI)
+  const k = ['IN', 'OUT', 'BI'].includes(portKind) ? portKind : 'BI';
+  const tpl = loadTemplateEntry(`PORT_${k}`) || loadTemplateEntry('PORT_BI');
   if (tpl && tpl.portSymbolDoc && tpl.portDeviceDoc) {
     return {
       name: tpl.name,
       kind: 'port',
+      portKind: k,
       title: tpl.title || tpl.name,
       net,
       symbolUuid: tpl.symbolUuid,
