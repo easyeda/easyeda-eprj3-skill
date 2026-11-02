@@ -292,6 +292,80 @@ function main() {
   const badOut = run('scripts/build.js', ['--design', bad, '--dir', path.join(TMP, 'bad')], 1);
   ok(/E001|unconnected|ERC error/i.test(badOut), 'design with a floating pin is rejected', badOut);
 
+  // ---------------------------------------- circuit patterns (unit, no build)
+  // A mixed block (a 3-pin IC plus three decoupling caps) must absorb the caps
+  // as ONE bank row, leave the IC out of it, and never grow the frame past the
+  // 10% area gate. Everything here is geometry, so no library is needed.
+  const PAT = require(path.join(ROOT, 'scripts', 'lib', 'sch-patterns.js'));
+  const DL = require(path.join(ROOT, 'scripts', 'lib', 'design.js'));
+  const symOf = (pins) => ({ bbox: { x1: -30, y1: -20, x2: 30, y2: 20 }, pins });
+  const capSym = symOf([
+    { num: 1, x: 0, y: 20, length: 10, rotation: 270 },
+    { num: 2, x: 0, y: -20, length: 10, rotation: 90 }
+  ]);
+  const icSym = symOf([
+    { num: 1, x: -30, y: 10, length: 10, rotation: 0 },
+    { num: 2, x: -30, y: -10, length: 10, rotation: 0 },
+    { num: 3, x: 30, y: 0, length: 10, rotation: 180 }
+  ]);
+  const mkPl = (id, sym, pins, x, y) => {
+    const pl = { part: { id, pins }, sym, x, y, rotation: 0, sheet: 1, block: 'MIX' };
+    pl.extent = DL.partExtent(sym, x, y, 0);
+    return pl;
+  };
+  const powerDesign = { powers: { VCC: 'up', GND: 'down' } };
+  const mixed = [
+    mkPl('U1', icSym, { 1: 'VCC', 2: 'GND', 3: 'SIG' }, 0, 0),
+    mkPl('C1', capSym, { 1: 'VCC', 2: 'GND' }, -40, 160),
+    mkPl('C2', capSym, { 1: 'VCC', 2: 'GND' }, 140, 160),
+    mkPl('C3', capSym, { 1: 'VCC', 2: 'GND' }, 320, 160)
+  ];
+  const subBanks = PAT.findSubBanks(powerDesign, mixed);
+  ok(subBanks.length === 1, 'mixed block finds one decoupling bank', String(subBanks.length));
+  ok(subBanks[0] && subBanks[0].members.map((p) => p.part.id).join(',') === 'C1,C2,C3',
+    'the bank holds exactly the caps (IC excluded)',
+    subBanks[0] ? subBanks[0].members.map((p) => p.part.id).join(',') : 'none');
+  // roomy frame: the row must be accepted and the caps must share one axis
+  const roomy = { x1: -240, y1: -260, x2: 560, y2: 260 };
+  const roomyArea = (roomy.x2 - roomy.x1) * (roomy.y2 - roomy.y1);
+  const blockA = { title: 'MIX', sheet: 1, members: ['U1', 'C1', 'C2', 'C3'], rect: roomy };
+  const placedN = PAT.placeSubBanks(mixed, subBanks, blockA);
+  ok(placedN === 1, 'sub-bank row is placed in a roomy block', String(placedN));
+  const caps = mixed.filter((p) => /^C/.test(p.part.id));
+  ok(new Set(caps.map((p) => p.rotation)).size === 1
+    && new Set(caps.map((p) => p.extent.y1)).size === 1,
+  'bank caps share rotation and row', JSON.stringify(caps.map((p) => [p.rotation, p.extent.y1])));
+  ok((blockA.rect.x2 - blockA.rect.x1) * (blockA.rect.y2 - blockA.rect.y1) <= roomyArea * 1.10 + 1,
+    'placed sub-bank stays within the area gate',
+    JSON.stringify(blockA.rect));
+  // tight frame: a narrow tall stack of caps — a horizontal row beside the IC
+  // would inflate the block, so nothing may move
+  const tight = [
+    mkPl('U1', icSym, { 1: 'VCC', 2: 'GND', 3: 'SIG' }, 0, 0),
+    mkPl('C1', capSym, { 1: 'VCC', 2: 'GND' }, 0, 120),
+    mkPl('C2', capSym, { 1: 'VCC', 2: 'GND' }, 0, 240),
+    mkPl('C3', capSym, { 1: 'VCC', 2: 'GND' }, 0, 360)
+  ];
+  const tightBanks = PAT.findSubBanks(powerDesign, tight);
+  const tightRect = { x1: -66, y1: -116, x2: 72, y2: 430 };
+  const blockB = { title: 'MIX', sheet: 1, members: ['U1', 'C1', 'C2', 'C3'], rect: tightRect };
+  const before = tight.map((p) => `${p.x},${p.y}`);
+  const rejected = PAT.placeSubBanks(tight, tightBanks, blockB);
+  ok(rejected === 0, 'sub-bank is rejected when it would inflate a tight block', String(rejected));
+  ok(tight.map((p) => `${p.x},${p.y}`).join('|') === before.join('|'),
+    'a rejected sub-bank leaves every placement untouched');
+
+  // --------------------------------------------- local search never regresses
+  const nsDir = path.join(TMP, 'blink-nosearch');
+  const nsReport = path.join(TMP, 'blink-nosearch.json');
+  run('scripts/build.js', ['--design', design, '--dir', nsDir, '--force', '--schematic-only', '--no-search', '--report', nsReport]);
+  const sDir = path.join(TMP, 'blink-search');
+  const sReport = path.join(TMP, 'blink-search.json');
+  run('scripts/build.js', ['--design', design, '--dir', sDir, '--force', '--schematic-only', '--report', sReport]);
+  const qOf = (f) => JSON.parse(fs.readFileSync(f, 'utf8')).schematic.layout.quality.score;
+  ok(qOf(sReport) <= qOf(nsReport) + 1e-9, 'local search never worsens the layout score',
+    `${qOf(sReport)} vs ${qOf(nsReport)}`);
+
   // ------------------------------------------------------------- summary
   console.log(`\n${checks - failures}/${checks} pipeline checks passed`);
   fs.rmSync(TMP, { recursive: true, force: true });

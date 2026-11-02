@@ -676,6 +676,8 @@ function routeNet(net, nodes, ctx) {
       || (used && segPointKeys(seg).some((key) => used.has(key)));
     const flagNear = (pos) => (ctx.flagPoints || []).some((f) => f.net !== net
       && Math.hypot(f.x - pos.x, f.y - pos.y) < 30);
+    // the printed net name must not land on a symbol body (lint L009)
+    const labelHitsPart = (pos) => obstacles.some((o) => G.rectsOverlap(labelBox(pos), o.rect));
     const groups = new Map();
     nodes.forEach((node) => {
       const vertical = node.dir.y !== 0;
@@ -690,12 +692,15 @@ function routeNet(net, nodes, ctx) {
       const fixed = vertical ? run[0].node.tip.y : run[0].node.tip.x;
       const lo = run[0].pos;
       const hi = run[run.length - 1].pos;
+      const dbg = process.env.SCH_ROUTE_DEBUG ? (...a) => console.error('BANK', net, ...a) : () => {};
+      dbg('run', run.map((it) => `${it.node.part}.${it.node.pin}`).join(','), 'fixed', fixed, 'lo..hi', lo, hi);
       // never draw the rail across a foreign pin on the same row: that pin's
       // own stub would have to land on (or cross) it
-      const blocked = (ctx.pinPoints || []).some((p) => p.net !== net
+      const blocker = (ctx.pinPoints || []).find((p) => p.net !== net
         && Math.abs((vertical ? p.y : p.x) - fixed) < 0.01
         && (vertical ? p.x : p.y) > lo && (vertical ? p.x : p.y) < hi);
-      if (blocked) return false;
+      const blocked = !!blocker;
+      if (blocked) { dbg('blocked by pin', blocker.part, blocker.pin || '', blocker.x, blocker.y); return false; }
       const ignore = new Set(run.map((it) => it.node.part));
       for (const len of [30, 40, 50, 60]) {
         const stubs = [];
@@ -705,7 +710,7 @@ function routeNet(net, nodes, ctx) {
           const n = it.node;
           const end = { x: G.round(n.tip.x + n.dir.x * len), y: G.round(n.tip.y + n.dir.y * len) };
           const seg = { x1: n.tip.x, y1: n.tip.y, x2: end.x, y2: end.y };
-          if (wireClash(seg) || foreignContacts([seg], ctx, net) !== 0) { ok = false; break; }
+          if (wireClash(seg) || foreignContacts([seg], ctx, net) !== 0) { ok = false; dbg('stub clash at len', len, n.part + '.' + n.pin); break; }
           stubs.push(seg);
           ends.push(end);
         }
@@ -718,16 +723,16 @@ function routeNet(net, nodes, ctx) {
           const box = G.rect(Math.min(a.x, b.x) - 6, Math.min(a.y, b.y) - 6,
             Math.max(a.x, b.x) + 6, Math.max(a.y, b.y) + 6);
           if (wireClash(seg) || foreignContacts([seg], ctx, net) !== 0
-            || overlapsAny(box, obstacles, ignore)) ok = false;
+            || overlapsAny(box, obstacles, ignore)) { ok = false; dbg('rail clash at len', len, Math.min(a.x, b.x), Math.min(a.y, b.y)); }
           else rails.push(seg);
         }
         if (!ok) continue;
         let flagAt = null;
         const order = [Math.floor(run.length / 2), ...run.map((_, i) => i)];
         for (const i of order) {
-          if (!flagNear(ends[i]) && !labelClash(ends[i])) { flagAt = ends[i]; break; }
+          if (!flagNear(ends[i]) && !labelClash(ends[i]) && !labelHitsPart(ends[i])) { flagAt = ends[i]; break; }
         }
-        if (!flagAt) continue;
+        if (!flagAt) { dbg('no flag site at len', len); continue; }
         const all = stubs.concat(rails);
         wires.push(all);
         commitSegs(all, net, used, committed);
@@ -735,6 +740,7 @@ function routeNet(net, nodes, ctx) {
         ctx.flagPoints.push({ net, x: flagAt.x, y: flagAt.y });
         ctx.flagBoxes.push(labelBox(flagAt));
         run.forEach((it) => combed.add(it.node));
+        dbg('MERGED at len', len);
         return true;
       }
       return false;
@@ -799,7 +805,7 @@ function routeNet(net, nodes, ctx) {
         // nets the moment that net's stub is later drawn there.
         const foreign = foreignContacts([seg], ctx, net);
         if (!wireClash(seg) && !flagClash(pos) && foreign === 0 && !overlapsAny(box, obstacles, ignore)) {
-          if (!labelClash(pos)) {
+          if (!labelClash(pos) && !labelHitsPart(pos)) {
             placed = pos;
             wire = seg;
             break;

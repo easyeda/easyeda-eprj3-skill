@@ -8,12 +8,18 @@
  * letting the generic grid decide. No code is copied and no dependency is
  * added.
  *
- * Recognised here (phase 1): a block made only of two-pin parts joined in a
- * chain — LED + series resistor, RC, voltage divider, pull-up ladder. The
- * chain is stacked along Y, supply end north and ground end south, shared pins
- * facing each other with a short wire; outer odd nets get ports from the
- * router. A block whose new frame would touch a neighbour keeps its generic
- * placement, so this pass can never make a sheet worse.
+ * Recognised here: a block made only of two-pin parts joined in a chain — LED
+ * + series resistor, RC, voltage divider, pull-up ladder. The chain is stacked
+ * along Y, supply end north and ground end south, shared pins facing each other
+ * with a short wire; outer odd nets get ports from the router. A block whose
+ * new frame would touch a neighbour keeps its generic placement, so this pass
+ * can never make a sheet worse.
+ *
+ * A MIXED block (an IC plus its decoupling caps) is handled by absorbing the
+ * largest two-pin sub-bank into one row beside the remaining parts (right or
+ * above, whichever keeps the block smaller); the router's bank comb then turns
+ * the row's shared pins into one rail and one flag. A row that would inflate
+ * the block past 10% is rejected, so the generic placement is kept.
  */
 const G = require('./geom');
 const { partExtent } = require('./design');
@@ -22,6 +28,8 @@ const PIN_GAP = 80;    // wire between two chain members (room for a side port)
 const COL_GAP = 120;   // between independent chains in one block
 const BANK_GAP = 120;  // between members of a parallel / pull bank row
 const PAD = 110;       // frame padding around the chain
+const SUB_PAD = 36;    // frame padding around a mixed block (shelf default)
+const SUB_GATE = 1.10; // sub-bank row accepted only within 10% of the block area
 const TITLE_H = 60;
 const EPS = 1e-6;
 
@@ -219,26 +227,195 @@ function layoutBank(bank, byId) {
 }
 
 /**
- * Apply chain macros to one candidate layout. Mutates `placements` and
- * `blocks`; returns { changed, portNets } — the number of blocks re-laid and
- * the chain-internal nets that should take a sideways port.
+ * Mixed block: the block as a whole is neither a chain nor a bank, but a
+ * SUBSET of its two-pin members is (the decoupling caps beside an IC). Find
+ * the disjoint banks, largest first; each comes back already laid out.
  */
-function applyPatterns(design, placements, blocks) {
+function findSubBanks(design, pls) {
+  const eligible = pls.filter((pl) => {
+    const nets = Object.values(pl.part.pins || {});
+    return nets.length === 2 && pl.sym && pl.sym.pins.length === 2;
+  });
+  if (eligible.length < 2 || eligible.length > 8) return [];
+  const byNet = new Map();
+  for (const pl of eligible) {
+    for (const n of new Set(Object.values(pl.part.pins))) {
+      if (/^(NC|DNC\d*)$/i.test(n)) continue;
+      if (!byNet.has(n)) byNet.set(n, []);
+      byNet.get(n).push(pl);
+    }
+  }
+  const seen = new Set();
+  const cands = [];
+  for (const list of byNet.values()) {
+    if (list.length < 2) continue;
+    const key = list.map((pl) => pl.part.id).sort().join(',');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const bank = blockBank(design, list);
+    if (!bank) continue;
+    const g = layoutBank(bank, null);
+    if (!g) continue;
+    cands.push({ bank, members: list, g, size: list.length });
+  }
+  cands.sort((a, b) => b.size - a.size
+    || a.members[0].part.id.localeCompare(b.members[0].part.id));
+  const used = new Set();
+  const out = [];
+  for (const c of cands) {
+    if (c.members.some((pl) => used.has(pl.part.id))) continue;
+    if (c.members.length === pls.length) continue;   // whole-block path owns it
+    for (const pl of c.members) used.add(pl.part.id);
+    out.push(c);
+  }
+  return out;
+}
+
+/**
+ * Lay each sub-bank as a row beside the parts that stay put, try both anchors
+ * (right of them / above them), and keep the smaller block. The frame is
+ * recomputed from the resulting parts, so vacated space is reclaimed; a block
+ * that would grow by more than SUB_GATE keeps its generic placement.
+ */
+function placeSubBanks(pls, banks, block) {
+  const bankIds = new Set();
+  for (const b of banks) for (const pl of b.members) bankIds.add(pl.part.id);
+  let restBox = null;
+  for (const pl of pls) {
+    if (bankIds.has(pl.part.id)) continue;
+    restBox = restBox ? unionRect(restBox, pl.extent) : pl.extent;
+  }
+  if (!restBox) return 0;
+
+  const areaOf = (r) => Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1);
+  const oldArea = areaOf(block.rect);
+
+  // anchor the rows to the right of the rest, or above it (the title strip
+  // stays on the bottom edge, so "below" would run into it)
+  let best = null;
+  for (const mode of ['right', 'above']) {
+    const steps = [];
+    let box = restBox;
+    let cursorX = restBox.x2 + BANK_GAP;
+    let cursorY = restBox.y2 + BANK_GAP;
+    for (const b of banks) {
+      const g = b.g;
+      const ox = mode === 'right' ? cursorX - g.bbox.x1 : restBox.x1 - g.bbox.x1;
+      const oy = mode === 'right' ? restBox.y1 - g.bbox.y1 : cursorY - g.bbox.y1;
+      let bankBox = null;
+      for (const s of g.steps) {
+        const x = grid(s.x + ox);
+        const y = grid(s.y + oy);
+        const extent = partExtent(s.sym, x, y, s.rot);
+        steps.push({ pl: s.pl, x, y, rot: s.rot, extent });
+        bankBox = bankBox ? unionRect(bankBox, extent) : extent;
+      }
+      box = unionRect(box, bankBox);
+      if (mode === 'right') cursorX = bankBox.x2 + BANK_GAP;
+      else cursorY = bankBox.y2 + BANK_GAP;
+    }
+    if (!best || areaOf(box) < areaOf(best.box)) best = { mode, steps, box };
+  }
+  if (!best) return 0;
+
+  const rect = {
+    x1: grid(best.box.x1 - SUB_PAD),
+    y1: grid(best.box.y1 - SUB_PAD - TITLE_H),
+    x2: grid(best.box.x2 + SUB_PAD),
+    y2: grid(best.box.y2 + SUB_PAD)
+  };
+  if (process.env.SCH_PATTERN_DEBUG) {
+    console.error(`SUB-BANK "${block.title}" mode=${best.mode} area ${oldArea.toFixed(0)} → ${areaOf(rect).toFixed(0)}`
+      + ` (${(areaOf(rect) / oldArea).toFixed(2)}×)`);
+  }
+  if (areaOf(rect) > oldArea * SUB_GATE) return 0;
+
+  for (const p of best.steps) {
+    p.pl.x = p.x;
+    p.pl.y = p.y;
+    p.pl.rotation = p.rot;
+    p.pl.extent = p.extent;
+  }
+  block.rect = rect;
+  return 1;
+}
+
+/** Pack already-laid chains/banks side by side and replace the block frame. */
+function placeWholeBlock(laid, block) {
+  let cursor = 0;
+  let box = null;
+  for (const g of laid) {
+    const dx = cursor - g.bbox.x1;
+    for (const s of g.steps) {
+      s.x += dx;
+      s.extent = partExtent(s.sym, s.x, s.y, s.rot);
+      box = box ? unionRect(box, s.extent) : s.extent;
+    }
+    cursor = g.bbox.x2 + dx + COL_GAP;
+  }
+  if (!box) return false;
+
+  const w = box.x2 - box.x1;
+  const h = box.y2 - box.y1;
+  const cx = (block.rect.x1 + block.rect.x2) / 2;
+  const rect = {
+    x1: grid(cx - w / 2 - PAD),
+    y1: block.rect.y1,                                  // keep the top edge
+    x2: grid(cx + w / 2 + PAD),
+    y2: grid(block.rect.y1 + TITLE_H + 2 * PAD + h)
+  };
+  // a pattern that would touch a neighbouring block is resolved by the
+  // row re-pack below (blocks are pushed apart and their parts move with them)
+
+  const ox = rect.x1 + PAD - box.x1;
+  const oy = rect.y1 + TITLE_H + PAD - box.y1;
+  for (const g of laid) {
+    for (const s of g.steps) {
+      s.pl.x = grid(s.x + ox);
+      s.pl.y = grid(s.y + oy);
+      s.pl.rotation = s.rot;
+      s.pl.extent = partExtent(s.sym, s.pl.x, s.pl.y, s.pl.rotation);
+    }
+  }
+  // the frame must wrap the SNAPPED extents, not the pre-snap box
+  let frame = null;
+  for (const g of laid) for (const s of g.steps) frame = frame ? unionRect(frame, s.pl.extent) : s.pl.extent;
+  block.rect = {
+    x1: Math.min(rect.x1, frame.x1),
+    y1: Math.min(rect.y1, frame.y1 - PAD - TITLE_H),
+    x2: Math.max(rect.x2, frame.x2),
+    y2: Math.max(rect.y2, frame.y2 + PAD)
+  };
+  return true;
+}
+
+/**
+ * Apply pattern macros to one candidate layout. Mutates `placements` and
+ * `blocks`; returns { changed, subBanks, portNets } — the number of blocks
+ * re-laid, how many of those were mixed-block sub-banks (the builder retries
+ * without them when routing cannot find a clean path), and the chain-internal
+ * nets that should take a sideways port.
+ */
+function applyPatterns(design, placements, blocks, options) {
+  const opt = options || {};
   const portNets = new Set();
   const byId = new Map(placements.map((pl) => [pl.part.id, pl]));
-  if (byId.size !== placements.length) return { changed: 0, portNets };
+  if (byId.size !== placements.length) return { changed: 0, subBanks: 0, portNets };
   let changed = 0;
+  let subBanks = 0;
   for (const block of blocks) {
     const memberSet = new Set(block.members || []);
     const pls = placements.filter((pl) => memberSet.has(pl.part.id) && pl.sheet === block.sheet);
     if (pls.length < 2) continue;
-    const chains = blockChains(design, pls);
 
-    // orient every chain: ground south, supply north (when an end says so)
-    const laid = [];
-    let ok = true;
+    // 1. whole block is a pure two-pin chain
+    let laid = null;
+    const chains = blockChains(design, pls);
     if (chains) {
+      const out = [];
+      let ok = true;
       for (const chain of chains) {
+        // orient every chain: ground south, supply north (when an end says so)
         const groundTop = design.powers[chain.top] === 'down';
         const groundBottom = design.powers[chain.bottom] === 'down';
         const supplyTop = design.powers[chain.top] === 'up';
@@ -248,67 +425,40 @@ function applyPatterns(design, placements, blocks) {
         const g = layoutChain(c, byId);
         if (!g) { ok = false; break; }
         for (const n of c.shared) portNets.add(n);
-        laid.push(g);
+        out.push(g);
       }
-    } else {
-      // star / cycle shapes: a parallel (decoupling) or pull-up/down bank
+      if (ok && out.length) laid = out;
+    }
+
+    // 2. whole block is a parallel (decoupling) or pull-up/down bank
+    if (!laid) {
       const bank = blockBank(design, pls);
-      if (!bank) continue;
-      const g = layoutBank(bank, byId);
-      if (!g) continue;
-      laid.push(g);
-    }
-    if (!ok || !laid.length) continue;
-
-    // chains side by side, tops aligned
-    let cursor = 0;
-    let box = null;
-    for (const g of laid) {
-      const dx = cursor - g.bbox.x1;
-      for (const s of g.steps) {
-        s.x += dx;
-        s.extent = partExtent(s.sym, s.x, s.y, s.rot);
-        box = box ? unionRect(box, s.extent) : s.extent;
-      }
-      cursor = g.bbox.x2 + dx + COL_GAP;
-    }
-    if (!box) continue;
-
-    const w = box.x2 - box.x1;
-    const h = box.y2 - box.y1;
-    const cx = (block.rect.x1 + block.rect.x2) / 2;
-    const rect = {
-      x1: grid(cx - w / 2 - PAD),
-      y1: block.rect.y1,                                  // keep the bottom edge
-      x2: grid(cx + w / 2 + PAD),
-      y2: grid(block.rect.y1 + TITLE_H + 2 * PAD + h)
-    };
-    // a pattern that would touch a neighbouring block is resolved by the
-    // row re-pack below (blocks are pushed apart and their parts move with them)
-
-    const ox = rect.x1 + PAD - box.x1;
-    const oy = rect.y1 + TITLE_H + PAD - box.y1;
-    for (const g of laid) {
-      for (const s of g.steps) {
-        s.pl.x = grid(s.x + ox);
-        s.pl.y = grid(s.y + oy);
-        s.pl.rotation = s.rot;
-        s.pl.extent = partExtent(s.sym, s.pl.x, s.pl.y, s.pl.rotation);
+      if (bank) {
+        const g = layoutBank(bank, byId);
+        if (g) {
+          laid = [g];
+          if (process.env.SCH_PATTERN_DEBUG && chains) {
+            console.error(`PATTERN "${block.title}": chain layout failed → whole-block bank`);
+          }
+        }
       }
     }
-    // the frame must wrap the SNAPPED extents, not the pre-snap box
-    let frame = null;
-    for (const g of laid) for (const s of g.steps) frame = frame ? unionRect(frame, s.pl.extent) : s.pl.extent;
-    block.rect = {
-      x1: Math.min(rect.x1, frame.x1),
-      y1: Math.min(rect.y1, frame.y1 - PAD - TITLE_H),
-      x2: Math.max(rect.x2, frame.x2),
-      y2: Math.max(rect.y2, frame.y2 + PAD)
-    };
-    changed += 1;
+
+    if (laid) {
+      if (placeWholeBlock(laid, block)) changed += 1;
+      continue;
+    }
+
+    // 3. mixed block: absorb the largest two-pin sub-bank (decoupling row).
+    // The builder retries a candidate without this step when the row leaves the
+    // router unable to find a clean path (see build.js), so it is safe to try.
+    if (opt.noSubBanks) continue;
+    const subs = findSubBanks(design, pls);
+    if (!subs.length) continue;
+    if (placeSubBanks(pls, subs, block)) { changed += 1; subBanks += 1; }
   }
   if (changed) repackBlocks(blocks, placements);
-  return { changed, portNets };
+  return { changed, subBanks, portNets };
 }
 
 /**
@@ -343,4 +493,7 @@ function repackBlocks(blocks, placements) {
   }
 }
 
-module.exports = { applyPatterns, blockChains, layoutChain, PIN_GAP };
+module.exports = {
+  applyPatterns, blockChains, blockBank, layoutChain, layoutBank,
+  findSubBanks, placeSubBanks, PIN_GAP
+};

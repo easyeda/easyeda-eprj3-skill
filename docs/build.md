@@ -21,7 +21,8 @@ human confirmation gate; its board line reads
 `--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`, `--no-tidy`
 (keep declared rotations — default runs the sch-tidy two-pass orientation
 optimizer: layout → rotate symbols onto their signal axes → re-layout),
-`--no-patterns` (skip the circuit-pattern macros below; default on).
+`--no-patterns` (skip the circuit-pattern macros below; default on),
+`--no-search` (skip the local block-move search pass below; default on).
 
 `--route`, `--pour`, `--no-route` and `--no-pour` were **removed in 1.13** —
 the skill never routes and never pours, so passing any of them is an
@@ -50,6 +51,8 @@ the printed codes point at the rule that failed.
 | — | — | — | a block made only of **two-pin parts in a chain** (LED + series resistor, RC, voltage divider, pull-up ladder) is laid out by the pattern macro: vertical chain, supply north, ground south, shared pins facing, a sideways port on an internal cross-block net. Clashing frames push whole blocks apart (`sch-patterns.js`) |
 | — | — | — | collinear, contiguous **same-net pins of one block share a rail and ONE flag** (bank comb); a foreign pin between two members cancels the bank |
 | — | — | — | a block made only of two-pin parts that all share both nets (decoupling caps) or one net with distinct partners (pull-up/down) is laid out as an aligned row (`sch-patterns.js`), so the bank comb can merge the common side into one rail |
+| — | — | — | in a **mixed block** (an IC plus its decoupling caps) the largest two-pin sub-bank is absorbed into one row beside the remaining parts — right of them or above them, whichever keeps the block smaller. The frame is recomputed from the result, and a row that would grow the block by more than 10% is rejected, leaving the generic placement untouched. If the row still leaves a net with no clean route, the same density is retried without sub-banks before the sheet is loosened |
+| — | — | — | **local search**: after the layout strategies are scored, one block at a time is nudged on the 10-mil grid (up to 8 directions, 2 rounds), re-routed and re-scored; a move is kept only when the sheet stays contact-free, block frames stay apart and the same 0.985 quality gate accepts it. Bounded to ≤48 parts and ≤8 blocks so a large sheet does not pay for a route per trial |
 | `pcb` | object or `false` | `{}` | `false` skips the PCB entirely |
 
 `layout` knobs: `cols` (max columns per block, default 3), `cellW` (150),

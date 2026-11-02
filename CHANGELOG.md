@@ -5,6 +5,39 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.34.0] - 2026-11-02
+
+**Mixed-block pattern subgroups and a group-level local search.**
+
+Continues the self-developed port of the reference layout engine's ideas: a
+block that is not a pure chain/bank can still absorb its decoupling bank, and
+the finished placement is refined by re-routing cheap block moves. Still no
+copied code and no new dependency (`scripts/depcheck.js` stays at 0).
+
+### Added
+- **Mixed-block sub-banks (`sch-patterns.js`).** When the block as a whole is
+  neither a chain nor a bank, the largest subset of its two-pin members that
+  forms a parallel bank (all share both nets) or a pull bank (share one net,
+  distinct partners) is laid out as one row beside the rest — right of them or
+  above them, whichever yields the smaller block. The frame is recomputed from
+  the result (vacated space is reclaimed), and the row is applied only while
+  the block stays within 1.10× its original area; otherwise the generic
+  placement is kept untouched.
+- **Group-level local search (`build.js`).** After the strategy candidates are
+  scored, each block is nudged in 8 directions (20/40 mil, up to 2 rounds);
+  every trial is re-routed and re-scored, and a move is accepted only when the
+  sheet is contact-free, block frames stay apart and the same 0.985 quality
+  gate accepts it. Bounded to ≤48 parts / ≤8 blocks; `--no-search` opts out.
+  blink: score 30.53 → 27.70 (layered candidate), gates unchanged.
+
+### Fixed
+- **A power-flag's printed net name no longer lands on a symbol body**
+  (`sch-route.js`): candidate flag sites whose label box overlaps any part are
+  skipped in favour of a longer stub, in both the bank comb and the single-pin
+  path. `examples/designs/inline-spec.json` lint 98 → 100 (L009 gone).
+- The local-search trials share the candidate quality gate, so a block move can
+  never trade a contact or an overlap for a better score.
+
 ## [1.33.0] - 2026-10-31
 
 **Circuit pattern macros (self-developed), readable labels, and a frame that

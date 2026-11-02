@@ -47,6 +47,7 @@ const SCHEMA = [
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
   { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
   { name: 'no-patterns', desc: 'skip the circuit-pattern macros (two-pin chains)', hasValue: false },
+  { name: 'no-search', desc: 'skip the local block-move search pass', hasValue: false },
   { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false }
 ];
 
@@ -557,7 +558,90 @@ function main() {
     ? SP.layoutLayered(passDesign, lib)
     : D.layoutSchematic(passDesign, lib));
 
-  function makeCandidate(kind, scale, rotatedNote) {
+  const bodyOf = (pl) => {
+    const bb = pl.sym && pl.sym.bbox;
+    if (!bb) return pl.extent;
+    const pts = [[bb.x1, bb.y1], [bb.x2, bb.y1], [bb.x2, bb.y2], [bb.x1, bb.y2]].map(([x, y]) => {
+      const r = G.rotate(x, y, pl.rotation || 0);
+      return { x: pl.x + r.x, y: pl.y + r.y };
+    });
+    return G.bboxOfPoints(pts);
+  };
+
+  /** Route + score one placement state (positions must already be shifted). */
+  const assess = (placements, blocks, patternNets) => {
+    const routed = R.routeSchematic(design, placements, { patternPortNets: patternNets });
+    const contacts = R.countCrossNetContacts(routed);
+    const quality = Q.evaluate({
+      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p), sheet: p.sheet || 1 })),
+      wires: routed.wires,
+      blocks
+    });
+    return { routed, contacts, quality };
+  };
+
+  /** Two block frames on one sheet must never overlap. */
+  const framesOverlap = (blocks) => {
+    for (let i = 0; i < blocks.length; i += 1) {
+      for (let j = i + 1; j < blocks.length; j += 1) {
+        if ((blocks[i].sheet || 1) !== (blocks[j].sheet || 1)) continue;
+        if (G.rectsOverlap(blocks[i].rect, blocks[j].rect)) return true;
+      }
+    }
+    return false;
+  };
+
+  /**
+   * Group-level local search (idea from the reference engine's local-search
+   * pass, re-derived): move one block at a time on the 10-mil grid, re-route,
+   * and keep a move only when the sheet stays contact-free, block frames stay
+   * apart, and the SAME safe gate as candidate selection accepts it. Bounded
+   * by design size: a large sheet skips the per-trial routing.
+   */
+  const refineLayout = (state) => {
+    if (state.placements.length > 48 || state.blocks.length > 8) return state;
+    let cur = state;
+    let moved = 0;
+    const from = state.quality.score;
+    const deltas = [[20, 0], [-20, 0], [0, 20], [0, -20], [40, 0], [-40, 0], [0, 40], [0, -40]];
+    for (let round = 0; round < 2; round += 1) {
+      let improved = false;
+      for (let bi = 0; bi < cur.blocks.length; bi += 1) {
+        const block = cur.blocks[bi];
+        const ids = new Set(block.members || []);
+        const sheet = block.sheet || 1;
+        for (const [dx, dy] of deltas) {
+          const placements = cur.placements.map((pl) => Object.assign({}, pl, {
+            extent: Object.assign({}, pl.extent)
+          }));
+          const blocks = cur.blocks.map((b) => Object.assign({}, b, { rect: Object.assign({}, b.rect) }));
+          for (const pl of placements) {
+            if (!ids.has(pl.part.id) || (pl.sheet || 1) !== sheet) continue;
+            pl.x += dx;
+            pl.extent.x1 += dx; pl.extent.x2 += dx;
+            pl.y += dy;
+            pl.extent.y1 += dy; pl.extent.y2 += dy;
+          }
+          blocks[bi].rect.x1 += dx; blocks[bi].rect.x2 += dx;
+          blocks[bi].rect.y1 += dy; blocks[bi].rect.y2 += dy;
+          shiftSheetsIntoPage(placements, blocks);
+          if (framesOverlap(blocks)) continue;
+          const trial = assess(placements, blocks, cur.patternNets);
+          if (trial.contacts !== 0 || !Q.safelyImproves(trial.quality, cur.quality)) continue;
+          if (trial.quality.score >= cur.quality.score) continue;
+          cur = Object.assign({}, cur, trial, { placements, blocks });
+          moved += 1;
+          improved = true;
+          break;
+        }
+      }
+      if (!improved) break;
+    }
+    if (!moved) return state;
+    return Object.assign({}, cur, { search: { moves: moved, from, to: cur.quality.score } });
+  };
+
+  function makeCandidate(kind, scale, rotatedNote, patternOpts) {
     const passDesign = scale === 1 ? design : Object.assign({}, design, {
       layout: {
         cols: design.layout.cols,
@@ -582,28 +666,16 @@ function main() {
     // resistor, RC, divider) is re-laid as a vertical chain with the supply up
     // and ground down; frame clashes are resolved by pushing blocks apart.
     const pat = opts['no-patterns']
-      ? { changed: 0, portNets: new Set() }
-      : PAT.applyPatterns(design, placements, blocks);
+      ? { changed: 0, subBanks: 0, portNets: new Set() }
+      : PAT.applyPatterns(design, placements, blocks, patternOpts);
     // Sheet coordinates are y-UP: place each sheet's content a margin above
     // the page origin so no block frame or label hangs below the border.
     shiftSheetsIntoPage(placements, blocks);
-    const routed = R.routeSchematic(design, placements, { patternPortNets: pat.portNets });
-    const contacts = R.countCrossNetContacts(routed);
-    const bodyOf = (pl) => {
-      const bb = pl.sym && pl.sym.bbox;
-      if (!bb) return pl.extent;
-      const pts = [[bb.x1, bb.y1], [bb.x2, bb.y1], [bb.x2, bb.y2], [bb.x1, bb.y2]].map(([x, y]) => {
-        const r = G.rotate(x, y, pl.rotation || 0);
-        return { x: pl.x + r.x, y: pl.y + r.y };
-      });
-      return G.bboxOfPoints(pts);
+    const { routed, contacts, quality } = assess(placements, blocks, pat.portNets);
+    return {
+      kind, scale, placements, blocks, routed, contacts, quality,
+      patternNets: pat.portNets, subBanks: pat.subBanks || 0
     };
-    const quality = Q.evaluate({
-      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p), sheet: p.sheet || 1 })),
-      wires: routed.wires,
-      blocks
-    });
-    return { kind, scale, placements, blocks, routed, contacts, quality, patternNets: pat.portNets };
   }
 
   const candidates = [];
@@ -611,7 +683,16 @@ function main() {
   for (const kind of kinds) {
     for (const scale of [1, 1.7, 2.9, 5, 8]) {
       restoreRotations();
-      const c = makeCandidate(kind, scale, candidates.length === 0);
+      let c = makeCandidate(kind, scale, candidates.length === 0);
+      if (c.contacts > 0 && c.subBanks > 0 && !opts['no-patterns']) {
+        // A mixed-block row can crowd a dense block until the router has no
+        // clean path left. Retry THIS density with the generic placement
+        // before loosening the whole sheet: the row is an optimisation, never
+        // a reason to fail a design that used to build.
+        restoreRotations();
+        const flat = makeCandidate(kind, scale, false, { noSubBanks: true });
+        if (flat.contacts < c.contacts) c = flat;
+      }
       candidates.push(c);
       if (c.contacts === 0) break;
       log(`layout(${kind}): ${c.contacts} cross-net contact(s) at this density — retrying on a ${Math.round(scale * 1.7 * 100)}% looser grid`);
@@ -633,6 +714,14 @@ function main() {
     log(`layout: ${best.kind}${best.scale > 1 ? ` ×${best.scale}` : ''} chosen — score ${best.quality.score.toFixed(2)}`
       + ` (shelf baseline ${baseline.quality.score.toFixed(2)}; ${usable.length} candidate(s), `
       + `${best.quality.wires.bends} bends, ${best.quality.wires.crossings} crossings)`);
+  }
+  if (!opts['no-search']) {
+    const refined = refineLayout(best);
+    if (refined !== best) {
+      log(`layout: local search accepted ${refined.search.moves} move(s) — score `
+        + `${refined.search.from.toFixed(2)} → ${refined.search.to.toFixed(2)}`);
+      best = refined;
+    }
   }
   const placements = best.placements;
   const patternNets = best.patternNets || new Set();
