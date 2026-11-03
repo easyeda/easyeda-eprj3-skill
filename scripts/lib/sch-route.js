@@ -20,9 +20,10 @@
  */
 
 const G = require('./geom');
+const T = require('./sch-tokens');
 
-const STUB = 40;
-const TRUNK_OFFSET = 60;
+const STUB = T.STUB;
+const TRUNK_OFFSET = T.TRUNK_OFFSET;
 const LABEL_DISTANCE = 900; // mil: beyond this, prefer a label over a long wire
 
 /** Unit vector pointing away from the component body at this pin tip.
@@ -35,7 +36,19 @@ function exitDir(pl, tip, pin) {
   if (pin && pin.length > 0) {
     const v = G.rotate(-Math.cos(((pin.rotation || 0) * Math.PI) / 180),
       -Math.sin(((pin.rotation || 0) * Math.PI) / 180), pl.rotation || 0);
-    return { x: Math.abs(v.x) < 1e-9 ? 0 : Math.sign(v.x), y: Math.abs(v.y) < 1e-9 ? 0 : Math.sign(v.y) };
+    let dir = { x: Math.abs(v.x) < 1e-9 ? 0 : Math.sign(v.x), y: Math.abs(v.y) < 1e-9 ? 0 : Math.sign(v.y) };
+    // The pin's own rotation says which way it is drawn, but library symbols
+    // disagree on the convention: a 0402 cap whose pins sit 10 mil apart got
+    // its "outward" direction pointing INTO the part, so the GND stub ran
+    // straight through the other pin and shorted the two nets. Step both ways
+    // and keep the direction that moves AWAY from the body centre.
+    if (pl.extent) {
+      const step = Math.max(40, (pin.length || 0) * 2);
+      const away = Math.hypot(tip.x + dir.x * step - pl.x, tip.y + dir.y * step - pl.y);
+      const into = Math.hypot(tip.x - dir.x * step - pl.x, tip.y - dir.y * step - pl.y);
+      if (away + 1 < into) dir = { x: -dir.x, y: -dir.y };
+    }
+    return dir;
   }
   const dx = tip.x - pl.x;
   const dy = tip.y - pl.y;
@@ -75,6 +88,20 @@ function portKind(nodes) {
   const hasI = ds.includes('I');
   if (!ds.length || ds.includes('B') || (hasO && hasI)) return 'BI';
   return hasO ? 'OUT' : 'IN';
+}
+
+/**
+ * Is this pin one of a dense column (another pin tip within 16 units along the
+ * perpendicular axis)? A port body + printed name is ~14 units tall, so at a
+ * 100-mil pin pitch two stacked ports overlap; such pins take a stub + global
+ * net label instead (labels print above the wire and fit the row pitch).
+ */
+function densePin(node, ctx) {
+  return (ctx.pinPoints || []).some((p) => {
+    if (p.x === node.tip.x && p.y === node.tip.y) return false;
+    if (node.dir.x !== 0) return Math.abs(p.x - node.tip.x) < 0.01 && Math.abs(p.y - node.tip.y) <= 16;
+    return Math.abs(p.y - node.tip.y) < 0.01 && Math.abs(p.x - node.tip.x) <= 16;
+  });
 }
 
 /** Collected connection points per net. */
@@ -391,8 +418,13 @@ function labelEncoding(nodes, net, issues, why, ctx) {
   const used = (ctx && ctx.usedPoints) || null;
   for (const node of nodes) {
     // already connected to this net by an earlier edge? then the wire carries
-    // the NET attr already — a second stub would only duplicate it
-    if (committed.some((c) => c.net === net && G.pointSegDist(node.tip, c.seg) < 0.01)) continue;
+    // the NET attr already — a second stub would only duplicate it. Only an
+    // ENDPOINT counts: a wire that merely PASSES OVER this pin (a same-net
+    // escape stub crossing a pin column) does not connect it in the client
+    // netlist, so those pins still need their own stub.
+    const endsAt = (s, t) => (Math.abs(s.x1 - t.x) < 0.01 && Math.abs(s.y1 - t.y) < 0.01)
+      || (Math.abs(s.x2 - t.x) < 0.01 && Math.abs(s.y2 - t.y) < 0.01);
+    if (committed.some((c) => c.net === net && endsAt(c.seg, node.tip))) continue;
     // Adaptive stub: facing pins of DIFFERENT nets sit close together at
     // tight layout — a fixed 40 mil stub from both sides meets in the middle
     // and the client merges the two nets at that contact. Try 40 → 10 and
@@ -404,8 +436,21 @@ function labelEncoding(nodes, net, issues, why, ctx) {
     const sameClash = (seg) => committed.some((c) => c.net === net && G.segsIntersect(seg, c.seg, true));
     // the printed label must not land inside a symbol body (lint L009)
     const onPart = (seg) => (ctx.obstacles || []).some((o) => G.rectContains(G.expand(o.rect, 2), { x: seg.x2, y: seg.y2 }));
+    // a stub drawn THROUGH another net's pin tip shorts the two nets the moment
+    // that pin is later wired (ESP32: a GND stub crossed an AUD_3V3 pin, whose
+    // flag then landed on the wire). Same-net pins are allowed on the segment —
+    // the contact is electrically harmless — but the skip below only treats a
+    // pin as connected when a wire ENDPOINT lands on it, so each crossed pin
+    // still emits its own stub.
+    const overPin = (seg) => (ctx.pinPoints || []).some((p) => p.net !== net
+      && G.pointSegDist({ x: p.x, y: p.y }, seg) < 0.01)
+      || (ctx.flagPoints || []).some((f) => f.net !== net
+        && G.pointSegDist({ x: f.x, y: f.y }, seg) < 0.01)
+      || (ctx.portPoints || []).some((f) => f.net !== net
+        && G.pointSegDist({ x: f.x, y: f.y }, seg) < 0.01);
     if (process.env.SCH_ROUTE_DEBUG) console.error('ADAPTIVE', net, node.part+'.'+node.pin, 'tip', node.tip.x+','+node.tip.y, 'committed', committed.length);
     let chosen = null;
+    let soft = null;   // cross-net- and pin-clean, but the name would sit on a body
     for (const len of [STUB, 30, 20, 10]) {
       const seg = {
         x1: node.tip.x, y1: node.tip.y,
@@ -416,24 +461,52 @@ function labelEncoding(nodes, net, issues, why, ctx) {
       if (process.env.SCH_ROUTE_DEBUG) console.error('  ADAPTIVE', net, node.part + '.' + node.pin, 'len', len, 'cross', xclash, 'same', sclash,
         xclash ? `hit ${(committed.find((c) => c.net !== net && G.segsIntersect(seg, c.seg, true)) || {}).net} `
           + JSON.stringify((committed.find((c) => c.net !== net && G.segsIntersect(seg, c.seg, true)) || {}).seg) : '');
-      if (!crossClash(seg) && !sameClash(seg) && !onPart(seg)) { chosen = seg; break; }
-      if (!chosen && !crossClash(seg)) chosen = seg;   // cross-net-clean fallback
+      if (!crossClash(seg) && !overPin(seg)) {
+        if (!sameClash(seg) && !onPart(seg)) { chosen = seg; break; }
+        // cross-net-clean fallback: a same-net duplicate or a crowded label is
+        // cosmetic, a foreign pin ON the stub is electrical (it shorts the two
+        // nets the moment that pin is wired/flagged) — never fall back to it
+        if (!soft) soft = seg;
+      }
+    }
+    if (!chosen && soft) {
+      // the pin's own axis is clean but the name would land on a symbol body
+      // (a neighbouring part sits right in front): step perpendicular from the
+      // tip instead — any stub endpoint carries the net name (L009)
+      for (const pd of [{ x: node.dir.y, y: -node.dir.x }, { x: -node.dir.y, y: node.dir.x }]) {
+        for (const len of [20, 30, 40]) {
+          const s = {
+            x1: node.tip.x, y1: node.tip.y,
+            x2: G.round(node.tip.x + pd.x * len), y2: G.round(node.tip.y + pd.y * len)
+          };
+          if (!crossClash(s) && !sameClash(s) && !overPin(s) && !onPart(s)) { chosen = s; break; }
+        }
+        if (chosen) break;
+      }
+      if (!chosen) chosen = soft;
     }
     if (!chosen) {
       // last resort: a short jog — 10 along the pin, then 20 perpendicular
       const first = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + node.dir.x * 10), y2: G.round(node.tip.y + node.dir.y * 10) };
       const second = { x1: first.x2, y1: first.y2, x2: first.x2, y2: first.y2 + 20 };
-      if (crossClash(first)) {
+      if (crossClash(first) || overPin(first)) {
         // The pin's exit direction is blocked by a facing foreign wire (two
         // pins of different nets meet in the middle). A label alone would not
         // connect the pin (the netlist only unions a pin where a WIRE endpoint
         // lands on it), so step PERPENDICULAR straight from the tip instead —
         // any clean stub carries the net name and connects the pin.
         let alt = null;
-        for (const pd of [{ x: node.dir.y, y: -node.dir.x }, { x: -node.dir.y, y: node.dir.x }]) {
-          for (const len of [20, 30]) {
-            const s = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + pd.x * len), y2: G.round(node.tip.y + pd.y * len) };
-            if (!crossClash(s) && !sameClash(s)) { alt = s; break; }
+        const perps = [{ x: node.dir.y, y: -node.dir.x }, { x: -node.dir.y, y: node.dir.x }];
+        // prefer a stub whose name also clears every symbol body; accept an
+        // on-body one only when no off-body escape exists (readability, not
+        // electrical)
+        for (const strict of [true, false]) {
+          for (const pd of perps) {
+            for (const len of [20, 30]) {
+              const s = { x1: node.tip.x, y1: node.tip.y, x2: G.round(node.tip.x + pd.x * len), y2: G.round(node.tip.y + pd.y * len) };
+              if (!crossClash(s) && !sameClash(s) && !overPin(s) && (!strict || !onPart(s))) { alt = s; break; }
+            }
+            if (alt) break;
           }
           if (alt) break;
         }
@@ -443,10 +516,15 @@ function labelEncoding(nodes, net, issues, why, ctx) {
           chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
           issues.push(`net "${net}": pin ${node.part}.${node.pin} has no clean exit — check for neighbouring wires/flags`);
         }
-      } else {
+      } else if (!overPin(second) && !onPart(second)) {
         chosen = second;
         if (crossClash(second)) issues.push(`net "${net}": stub for ${node.part}.${node.pin} could not avoid neighbouring wires — check the label placement`);
         wires.push([first]);
+        commitSegs([first], net, used, committed);
+      } else {
+        // the perpendicular jog would cross a foreign pin: keep the clean
+        // along-pin stub and put the net name at its end
+        chosen = first;
         commitSegs([first], net, used, committed);
       }
     }
@@ -464,6 +542,20 @@ function commitSegs(segs, net, usedPoints, committedSegs) {
     if (usedPoints) for (const k of segPointKeys(seg)) usedPoints.add(k);
     if (committedSegs) committedSegs.push({ seg, net });
   }
+}
+
+/**
+ * Group a net's nodes by (sheet, block): one group = one module side of the
+ * net. Deterministic order (sheet, then block title).
+ */
+function groupBySheetBlock(nodes) {
+  const groups = new Map();
+  for (const node of nodes) {
+    const key = `${node.sheet || 1}|${node.block || ''}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(node);
+  }
+  return [...groups.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)).map(([, v]) => v);
 }
 
 /** Group a net's nodes by sheet (deterministic order). */
@@ -682,29 +774,39 @@ function routeSignalNet(net, nodes, ctx) {
   const issues = [];
   const used = ctx.usedPoints;
   const committed = ctx.committedSegs;
-  // Wire every pin of the net that lives on ONE sheet, regardless of block:
-  // the human pattern is visible wires inside a page, Netports only for
-  // CROSS-SHEET hops. (Grouping per block used to turn every module boundary
-  // into a port/label pair and drowned the drawing in labels.)
-  const groups = groupBySheet(nodes);
-  const multiSheet = groups.length > 1;
+  // Group by (sheet, block): a net that leaves its block is a module-boundary
+  // signal. Each block side wires its own pins locally and gets ONE net port,
+  // so a wire never runs across the page into another module's frame (the old
+  // per-sheet grouping drew long L wires between distant blocks). Cross-sheet
+  // nets are already intercepted by routeSchematic and never reach this path.
+  const groups = groupBySheetBlock(nodes);
+  const multiGroup = groups.length > 1;
 
   for (const grp of groups) {
-    // this sheet's side of the net decides the port preset: a sheet that only
+    // this block's side of the net decides the port preset: a block that only
     // drives the net gets Netport-OUT, one that only receives gets Netport-IN
     const kind = portKind(grp);
     if (grp.length === 1) {
-      if (multiSheet) {
+      if (multiGroup) {
+        // dense pin column: a port would collide with its neighbours' ports;
+        // a stub + global net label is what a human draws there
+        if (!(ctx.patternPortNets && ctx.patternPortNets.has(net)) && densePin(grp[0], ctx)) {
+          const enc = labelEncoding(grp, net, issues, null, ctx);
+          enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+          wires.push(...enc.wires);
+          labels.push(...enc.labels);
+          continue;
+        }
         const pr = placeNodePort(grp[0], net, ctx, kind);
         if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
         ports.push(pr.port);
       }
-      continue; // lone node on a single-sheet net is handled by the caller
+      continue; // lone node on a single-block net is handled by the caller
     }
     const segs = routeGroup(grp, net, ctx, issues);
     wires.push(...segs.wires);
     labels.push(...segs.labels);
-    if (multiSheet) {
+    if (multiGroup) {
       // cross-sheet hop: one port on this sheet, anchored on a member stub —
       // but never on a point that another net's wire, flag, pin or port
       // already occupies (the client merges two nets wherever they touch).
@@ -770,7 +872,7 @@ function routeNet(net, nodes, ctx) {
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push({ node, pos: vertical ? node.tip.x : node.tip.y });
     });
-    const COMB_GAP = 200;
+    const COMB_GAP = T.COMB_GAP;
     const tryBank = (run) => {
       if (run.length < 2 || run.length > 8) return false;
       const vertical = run[0].node.dir.y !== 0;
@@ -815,7 +917,10 @@ function routeNet(net, nodes, ctx) {
         let flagAt = null;
         const order = [Math.floor(run.length / 2), ...run.map((_, i) => i)];
         for (const i of order) {
-          if (!flagNear(ends[i]) && !labelClash(ends[i]) && !labelHitsPart(ends[i])) { flagAt = ends[i]; break; }
+          // the flag POINT must not lie on a foreign wire (the stub test alone
+          // misses a point-on-segment contact: the client merges both nets)
+          const onForeign = committed.some((c) => c.net !== net && G.pointSegDist(ends[i], c.seg) < 0.01);
+          if (!onForeign && !flagNear(ends[i]) && !labelClash(ends[i]) && !labelHitsPart(ends[i])) { flagAt = ends[i]; break; }
         }
         if (!flagAt) { dbg('no flag site at len', len); continue; }
         const all = stubs.concat(rails);
@@ -951,7 +1056,11 @@ function routeNet(net, nodes, ctx) {
         // drawn THROUGH another net's port or (not-yet-wired) pin shorts two
         // nets the moment that net's stub is later drawn there.
         const foreign = foreignContacts([seg], ctx, net);
-        if (!wireClash(seg) && !flagClash(pos) && foreign === 0 && !overlapsAny(box, obstacles, ignore)) {
+        // the flag POINT itself must not sit on a foreign wire: with a short
+        // (or zero-length) stub the segment test alone misses it — the client
+        // merges the two nets at any contact (ESP32 AUD_3V3 on a GND stub)
+        const onForeignWire = committed.some((c) => c.net !== net && G.pointSegDist(pos, c.seg) < 0.01);
+        if (!onForeignWire && !wireClash(seg) && !flagClash(pos) && foreign === 0 && !overlapsAny(box, obstacles, ignore)) {
           if (!labelClash(pos) && !labelHitsPart(pos)) {
             placed = pos;
             wire = seg;
@@ -1001,6 +1110,7 @@ function routeNet(net, nodes, ctx) {
           issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
         }
       }
+      if (process.env.SCH_ROUTE_DEBUG) console.error('GFLAG', net, `${placed.x},${placed.y}`, `${node.part}.${node.pin}`, 'tip', `${node.tip.x},${node.tip.y}`, 'wire', wire ? `${wire.x1},${wire.y1}-${wire.x2},${wire.y2}` : 'on-pin');
       flags.push({ net, x: placed.x, y: placed.y, style });
       (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
       if (ctx.flagBoxes) ctx.flagBoxes.push(labelBox(placed));
@@ -1031,7 +1141,7 @@ function routeNet(net, nodes, ctx) {
   return { wires: sig.wires, flags, labels: sig.labels, ports: sig.ports, issues: sig.issues };
 }
 
-const PORT_OUT = 45; // official Netport name offset (body ends at 40)
+const PORT_OUT = T.PORT_NAME_OFFSET; // official Netport name offset (body ends at 40)
 
 /** Space a port's body + printed net name occupies (see portComponentBlock). */
 function portLabelBox(net, pos, dir) {
@@ -1094,8 +1204,16 @@ function routeSchematic(d, placements, opts) {
     // can sit exactly on a neighbouring pin's only escape path (H6 U4.43 next
     // to a VCC-5V stub), leaving that pin unconnected. Flags are flexible —
     // they try several lengths/directions and avoid committed wires.
-    const order = [...nets.entries()].sort((a, b) =>
-      (d.powerNets.has(a[0]) ? 1 : 0) - (d.powerNets.has(b[0]) ? 1 : 0));
+    const order = [...nets.entries()].sort((a, b) => {
+      const pa = d.powerNets.has(a[0]) ? 1 : 0;
+      const pb = d.powerNets.has(b[0]) ? 1 : 0;
+      if (pa !== pb) return pa - pb;
+      // among power nets, route the BIGGEST first (GND): its web is long and
+      // fixed, so the smaller rails' flags are the ones that can move out of
+      // its way instead of landing on a GND stub
+      if (pa === 1) return b[1].length - a[1].length;
+      return 0;
+    });
     for (const [net, nodes] of order) {
       // Power nets keep their flags on every sheet (routeNet handles them) —
       // turning GND into a port would drop the flag convention for nothing.
@@ -1111,6 +1229,18 @@ function routeSchematic(d, placements, opts) {
         // walk the ports up the same four-step staircase as power flags (the
         // port's own body + name is a reserved box in the shared registry).
         for (const node of nodes) {
+          // A dense pin column cannot carry a port: the port body and its
+          // printed name are ~14 units tall, so at a 100-mil pitch the stacked
+          // ports and names overlap (multi-unit ICs were unreadable). The
+          // human convention there is a stub + global net label — the Wire's
+          // NET attr joins the same net by name.
+          if (!(ctx.patternPortNets && ctx.patternPortNets.has(net)) && densePin(node, ctx)) {
+            const enc = labelEncoding([node], net, out.issues, null, ctx);
+            enc.wires.forEach((w) => commitSegs(w, net, ctx.usedPoints, ctx.committedSegs));
+            for (const segs of enc.wires) out.wires.push({ net, sheet, segs });
+            out.labels.push(...enc.labels);
+            continue;
+          }
           const vertical = node.dir.y !== 0;
           const cross = vertical ? node.tip.x : node.tip.y;
           const slot = Math.abs(Math.round(cross / 10)) % 4;

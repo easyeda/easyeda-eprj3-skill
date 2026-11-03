@@ -19,6 +19,11 @@ module.exports = {
   HUB_GAP: 120,        // anchor ↔ satellite spacing (hub pattern)
   HUB_STACK_GAP: 40,   // between two satellites stacked on one anchor side
 
+  // ---- shelf grid (mil)
+  CELL_W: 150,
+  CELL_H: 110,
+  MARGIN: 70,
+
   // ---- module frame
   FRAME_PAD: 110,      // padding around a module's parts (holds labels)
   TITLE_H: 60,         // caption strip on the top edge

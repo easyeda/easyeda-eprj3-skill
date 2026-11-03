@@ -234,12 +234,51 @@ function expandAuto(spec) {
   }
   const { pads, outline, hole } = family.gen(s);
   const outPads = pads.map((p) => (hole && p.length === 5 ? p.concat(hole) : p));
+  // A bare family token ("QFN", "SOP8") is not a package name a library can be
+  // read from: derive the descriptive form from the real geometry, like the
+  // official names (`QFN-24_L6.1-W6.1-P0.50`). An author-supplied datasheet
+  // name (it carries the `_` separators) is kept verbatim.
+  const given = spec.name;
+  const keepGiven = typeof given === 'string' && given.includes('_');
   return {
-    name: spec.name || wanted,
+    name: keepGiven ? given : describePackage(familyName, outPads, outline),
     designator: spec.designator || family.designator || 'U',
     pads: outPads,
     outline
   };
+}
+
+const MIL_MM = 25.4 / 1000;   // 1 mil in mm
+
+/** Official-style package description from the generated land pattern. */
+function describePackage(family, pads, outline) {
+  const mm = (v) => v * MIL_MM;
+  const w = mm(outline[2] - outline[0]);
+  const h = mm(outline[3] - outline[1]);
+  const L = Math.max(w, h);
+  const W = Math.min(w, h);
+  // pitch = smallest positive centre spacing between pads in one column/row
+  const cols = new Map();
+  const rows = new Map();
+  for (const p of pads) {
+    const kx = Math.round(p[1] * 10);
+    if (!cols.has(kx)) cols.set(kx, []);
+    cols.get(kx).push(p[2]);
+    const ky = Math.round(p[2] * 10);
+    if (!rows.has(ky)) rows.set(ky, []);
+    rows.get(ky).push(p[1]);
+  }
+  let pitch = Infinity;
+  for (const line of [...cols.values(), ...rows.values()]) {
+    line.sort((a, b) => a - b);
+    for (let i = 1; i < line.length; i += 1) {
+      const d = line[i] - line[i - 1];
+      if (d > 0.5) pitch = Math.min(pitch, d);
+    }
+  }
+  const pinCount = `${family}-${pads.length}`;
+  return `${pinCount}_L${L.toFixed(1)}-W${W.toFixed(1)}`
+    + (Number.isFinite(pitch) ? `-P${mm(pitch).toFixed(2)}` : '');
 }
 
 // LQFP is the everyday name for a fine-pitch QFP body.

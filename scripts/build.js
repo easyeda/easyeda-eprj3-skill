@@ -107,7 +107,10 @@ function shiftSheetsIntoPage(placements, blocks) {
   for (const pl of placements) put(pl.sheet || 1, pl.extent.y1);
   for (const b of blocks) put(b.sheet || 1, b.rect.y1);
   const dy = new Map();
-  for (const [s, y] of minY) dy.set(s, Math.round(MARGIN - y));
+  // snap the shift itself to the 10-mil grid: extents include the label band
+  // (+16/+34 may be off-grid), and an unsnapped shift moves EVERY part off the
+  // grid at once (lint L008 on parts nobody touched)
+  for (const [s, y] of minY) dy.set(s, Math.round((MARGIN - y) / 10) * 10);
   for (const pl of placements) {
     const d = dy.get(pl.sheet || 1) || 0;
     if (!d) continue;
@@ -193,13 +196,18 @@ function growFramesToLabels(blocks, routed) {
     const o = original[i];
     blocks.forEach((n, j) => {
       if (i === j || (n.sheet || 1) !== (b.sheet || 1)) return;
-      const r = original[j];
+      // clamp against the OTHER block's CURRENT rect (it may already have grown
+      // towards this gap): the clamp may only pull a grown side back, never
+      // push it further out — both blocks growing into the same gap used to
+      // cross by 10 units (lint L005)
+      const r = grown[j];
+      const og = original[j];
       const vOverlap = g.y1 < r.y2 + 20 && r.y1 - 20 < g.y2;
       const hOverlap = g.x1 < r.x2 + 20 && r.x1 - 20 < g.x2;
-      if (vOverlap && r.x1 >= o.x2 && g.x2 > r.x1 - 20) g.x2 = Math.max(o.x2, snapDown(r.x1 - 20));
-      if (vOverlap && r.x2 <= o.x1 && g.x1 < r.x2 + 20) g.x1 = Math.min(o.x1, snapUp(r.x2 + 20));
-      if (hOverlap && r.y1 >= o.y2 && g.y2 > r.y1 - 20) g.y2 = Math.max(o.y2, snapDown(r.y1 - 20));
-      if (hOverlap && r.y2 <= o.y1 && g.y1 < r.y2 + 20) g.y1 = Math.min(o.y1, snapUp(r.y2 + 20));
+      if (vOverlap && og.x1 >= o.x2 && g.x2 > r.x1 - 20) g.x2 = Math.max(o.x2, Math.min(g.x2, snapDown(r.x1 - 20)));
+      if (vOverlap && og.x2 <= o.x1 && g.x1 < r.x2 + 20) g.x1 = Math.min(o.x1, Math.max(g.x1, snapUp(r.x2 + 20)));
+      if (hOverlap && og.y1 >= o.y2 && g.y2 > r.y1 - 20) g.y2 = Math.max(o.y2, Math.min(g.y2, snapDown(r.y1 - 20)));
+      if (hOverlap && og.y2 <= o.y1 && g.y1 < r.y2 + 20) g.y1 = Math.min(o.y1, Math.max(g.y1, snapUp(r.y2 + 20)));
     });
     b.rect = g;
   });
@@ -388,6 +396,7 @@ function placeSchematicComponent(em, project, pl, lib, design) {
     compId: E.randId(),
     partId: sym.partId,
     x: pl.x, y: pl.y, rotation: pl.rotation || 0,
+    extent: pl.extent,
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid,
@@ -752,6 +761,12 @@ function main() {
           log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
         }
       }
+      // the re-layout may have moved a part away from the position its
+      // rotation was scored for; re-check 2-pin parts on the FINAL spot
+      const aligned = T.alignRotations(placements, blocks);
+      if (rotatedNote && aligned.length) {
+        log(`sch-tidy: re-aligned ${aligned.length} part(s) after placement (${aligned.slice(0, 8).join(' ')}${aligned.length > 8 ? ' …' : ''})`);
+      }
     }
     // Circuit pattern macros: a block that is a pure two-pin chain (LED +
     // resistor, RC, divider) is re-laid as a vertical chain with the supply up
@@ -831,9 +846,22 @@ function main() {
   // per-sheet frame: sized around what the packing produced, 明细表 off by
   // default (design.frame.titleBlock opts back in)
   const sheetDocs = new Map();
+  const usedSheetTitles = new Set();
   for (let s = 1; s <= design.sheets; s += 1) {
     const sheetBlocks = blocks.filter((bl) => bl.sheet === s);
     const sheetPls = placements.filter((p) => (p.sheet || 1) === s);
+    // the tab (and the file name) is the page's FUNCTION, not "P3": an explicit
+    // sheetNames[s-1] wins, otherwise the first block on the page names it.
+    // A SINGLE-page design keeps its classic sheet name (P1 unless the design
+    // says otherwise) — there is no page list to tell apart.
+    let sheetTitle = (design.sheetNames && design.sheetNames[s - 1])
+      || (design.sheets <= 1 ? design.sheet : null)
+      || (sheetBlocks.length ? sheetBlocks[0].title : `P${s}`);
+    // a title becomes a FILE name — strip path-hostile characters and cap the
+    // length; a repeated title gets the page number appended to stay unique
+    sheetTitle = String(sheetTitle).replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 40) || `P${s}`;
+    if (usedSheetTitles.has(sheetTitle)) sheetTitle = `${sheetTitle} ${s}`;
+    usedSheetTitles.add(sheetTitle);
     let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
     for (const bl of sheetBlocks) { x1 = Math.min(x1, bl.rect.x1); y1 = Math.min(y1, bl.rect.y1); x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
     for (const p of sheetPls) { const e = p.extent; x1 = Math.min(x1, e.x1); y1 = Math.min(y1, e.y1); x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
@@ -869,7 +897,7 @@ function main() {
       yRegions: Math.max(1, Math.round(fit[2] / 200)),
       titleBlock: design.frame && design.frame.titleBlock === true ? 1 : 0
     };
-    sheetDocs.set(s, project.ensureSheetDocument(design.schematic, s === 1 ? design.sheet : `P${s}`, frame));
+    sheetDocs.set(s, project.ensureSheetDocument(design.schematic, sheetTitle, frame));
     sheetFrames.set(s, { ...frame, wMil: fit[1] * 10, hMil: fit[2] * 10 });
   }
 

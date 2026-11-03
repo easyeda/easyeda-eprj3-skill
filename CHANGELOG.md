@@ -5,6 +5,67 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.36.0] - 2026-11-03
+
+**Module boundaries are net ports where they fit and global net labels on dense
+pin columns; symbol bodies/pins now match what the client draws; pages carry
+functional names.**
+
+### Changed
+- **One net port per module side, labels on dense pins.** A signal net that
+  leaves its block is routed per (sheet, block) group: each module side wires
+  its own pins locally and anchors ONE official port (`PORT_IN`/`PORT_OUT`/
+  `PORT_BI` by direction). A pin in a 100-mil column takes a stub + global net
+  label instead — a port body and its printed name are ~14 units tall, so
+  stacked ports on a multi-unit IC overlapped (H6: 124 overlapping port-name
+  pairs → 1). Same-sheet cross-block nets used to be long L wires across the
+  page (ESP32: USB ↔ reset, USB ↔ LDO); those wires ran through other modules'
+  frames and are gone.
+- **The module frame is the routing boundary** — a wire belongs to the block
+  whose pins it joins.
+
+### Added
+- **Functional page names.** `sheetNames: ["电源与充电", "主控", …]` names each
+  sheet's tab and file; without it a multi-page design names every page after
+  its first block (`USB-C 输入与保护.esch2`), instead of `P1…P9`. A single-page
+  design keeps its classic sheet name.
+- **Datasheet-style package names for auto footprints.** `{ "auto": "QFN",
+  "pins": 24 }` no longer emits a bare "QFN": the name is derived from the
+  generated land pattern (`QFN-24_L5.6-W5.6-P0.50`). An author-supplied name
+  with the official `_L…-W…` form is kept verbatim.
+- **Rotation re-check on the final placement** (`alignRotations`): a 2-pin
+  part is turned 90° when that shortens its connection to same-net partners at
+  the position it actually occupies, as long as the rotated symbol stays inside
+  its module frame and clear of its neighbours.
+
+### Fixed
+- **Chip body rectangles were dropped by the client.** Library symbol graphics
+  carried the literal placeholder `partId: "PART_ID"` instead of the PART
+  record's id, so the client filtered the body out and showed pins only. The
+  body is now bound to the real part id; multi-unit PARTs also carry their
+  BBOX, and their doc/PART titles show the device name (no more `SYM_` prefix
+  in the library).
+- **Designator and value sat inside the body.** They were offset from the
+  component origin; they now sit at the symbol's top-left (designator) and
+  bottom-left (value), outside the body for any rotation.
+- **A label stub could pass over a foreign pin.** The ESP32 GND stub for U1.2
+  ran through an AUD_3V3 pin; when that pin's flag landed on the wire the
+  client merged the two nets and the build failed. Every label/flag stub now
+  rejects a segment carrying a foreign net's pin tip, flag or port, with the
+  perpendicular escape tried next and an on-body label used only after that.
+- **A wire that merely passes over a pin no longer marks it connected.** The
+  "already connected to this net" skip now requires a wire ENDPOINT on the pin
+  tip; a pin crossed mid-span by a same-net escape stub still gets its own
+  stub (H6 U6.P4/P6 had been dropped).
+- **Grown module frames could overlap by 10 units (lint L005).** The text clamp
+  could push a side further out instead of pulling it back and compared against
+  pre-growth rects; it now only pulls a grown side back and uses the
+  neighbour's current rect.
+- **Netlist audit false mismatches on multi-unit parts.** Spec pins were keyed
+  by the unit id (`U34A…G`) while the client stores the base designator
+  (`U34`); spec groups and `spec.parts[]` now fold to the base `ref` (`id`
+  keeps the unit suffix), and the mechanical diff is clean.
+
 ## [1.35.0] - 2026-11-02
 
 **Schematic fidelity: official net ports by signal direction, readable IC
@@ -38,6 +99,35 @@ the `easyeda-schematic-autodraw` skill are now part of SKILL.md.
   exactly one net with it — VIN/VOUT caps, an ESD array, a gate RC — are laid
   out with each satellite beside the anchor pin it belongs to, shared pin
   facing the anchor, so the router draws one short wire per satellite.
+- **Crystal + load-caps pattern**: a three-part triangle (2-pin crystal, one
+  load cap per pin, common declared ground) lays the crystal horizontal with
+  a vertical cap below each pin, ground pins down to one rail; narrow pin
+  pitches nudge the caps apart and every origin snaps to the 10-mil grid.
+- **Composite blocks absorb multiple patterns.** A mixed block no longer stops
+  at one absorbed bank: `tryPatternsOn` walks the catalog on whatever parts
+  remain (bank → hub → crystal → series+shunt → bridge → chain, matched by pin
+  topology and declared power nets — never by part number) and `placeComposite`
+  stacks the matched groups below the parts that stay put, inside one frame and
+  one area gate; a rejected composition restores the generic placement.
+- **Series + shunt stage.** A rail net carries shunt parts (their other pin is
+  a declared supply/ground or another shared net) fed by one or more series
+  elements (their other pin belongs to them alone): the series column sits left
+  of the shunt row — DCDC outputs with two phases, LC and RC filters.
+- **Two-anchor bridge.** Two ICs with two-pin parts spanning them (AC coupling,
+  series resistors) get the anchors side by side and the bridges stacked in the
+  corridor, signal reading left→right.
+- **Hub subsets in multi-IC blocks.** When a block holds several multi-pin
+  parts, one anchor plus the parts sharing its nets is absorbed as a hub subset
+  (repeated until nothing matches), instead of the whole block dropping to the
+  grid; a multi-rail decoupling block is absorbed bank by bank.
+- **`pattern-coverage.js`** (`npm run coverage`): reports every block as `ok`
+  (absorbed) or `gap` (generic grid) with the coverage percentage, and
+  `--fail-under <pct>` turns the 90% target into a CI gate. Lone symbols
+  (multi-pin ICs) and single-pin parts (mounting holes, test points) count as
+  covered — the catalog groups passive two-pin parts.
+- **Link array pattern.** Two-pin parts on entirely independent nets (DNP
+  option straps, AC-coupling arrays) get one aligned column of horizontal
+  links instead of the scattered grid.
 - **Module-clustered PCB placement** (`pcb-plan.js`): every schematic block is
   one cluster around its largest part; each further member takes the free spot
   closest to the pads it shares a non-ground net with (decoupling caps land at

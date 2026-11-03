@@ -373,10 +373,14 @@ function buildSymbolDoc(spec) {
 
   let z = 0;
   const zIndex = () => ++z;
-  const ctx = { partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up', yAxisDirection: 'up' };
+  const ctx = { partId: PART_ID, groupId: '', locked: false, yAxisDirection: 'up' };
 
   for (const g of spec.graphics || []) {
+    // the element's partId must match the PART record above, or the client
+    // drops the graphic (library bodies carry a placeholder from the cache —
+    // that is why chips showed pins with no body rectangle)
     const body = Object.assign({}, ctx, { zIndex: zIndex() }, g.body);
+    body.partId = PART_ID;
     b.addElem(g.type, body);
   }
   for (const p of spec.pins || []) {
@@ -456,16 +460,23 @@ function buildMultiPartSymbolDoc(spec) {
 
   for (const part of spec.parts || []) {
     const pid = part.id;
+    // BBOX = the body rect (the client uses it for the part's extent/hit test;
+    // without it a multi-unit part's bounds fall back to the pins alone)
+    const bodyRect = (part.graphics || []).find((g) => g.type === 'RECT');
+    const bbox = bodyRect
+      ? [bodyRect.body.dotX1, bodyRect.body.dotY1, bodyRect.body.dotX2, bodyRect.body.dotY2]
+      : [0, 0, 0, 0];
     b.add('PART', {
+      BBOX: bbox,
       title: part.title,
       Footprints: [],
       // an in-project PART binds to the device by name only; the reference
       // leaves uuid/source empty (the device doc is the real link)
       DeviceName: { name: spec.name, uuid: '', source: '' }
     }, pid);
-    const ctx = { partId: pid, groupId: '', locked: false, yAxisDirection: 'up', yAxisDirection: 'up' };
+    const ctx = { partId: pid, groupId: '', locked: false, yAxisDirection: 'up' };
     for (const g of part.graphics || []) {
-      b.addElem(g.type, Object.assign({}, ctx, { zIndex: zIndex() }, g.body));
+      b.addElem(g.type, Object.assign({}, ctx, { zIndex: zIndex() }, g.body, { partId: pid }));
     }
     // group captions live inside the body, in the blank band between banks
     for (const txt of part.texts || []) {
@@ -941,21 +952,24 @@ function schComponentBlock(v) {
   line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId), randId());
   line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 2, v.compId), randId());
-  // Designator/value offsets follow the client's own saves: above / below the
-  // body for a horizontal part, beside it for a vertical one — never on the
-  // pin axis, where the value used to sit directly on the wire.
-  const rot = ((v.rotation || 0) % 360 + 360) % 360;
-  const vertical = rot === 90 || rot === 270;
-  const nameOff = vertical ? { x: 16, y: -10 } : { x: -10, y: -15 };
-  const desOff = vertical ? { x: 16, y: 2 } : { x: -10, y: 10 };
+  // Designator/value follow the human convention: the reference sits at the
+  // symbol's TOP-LEFT (just above the body), the name/value at the BOTTOM-LEFT
+  // (just below it). Offsetting from the component ORIGIN put both inside a
+  // large IC's body. The placement's axis-aligned extent is the body+pin text
+  // box, so the offsets hold for any rotation.
+  const ext = v.extent;
+  const desPos = ext ? { x: ext.x1, y: ext.y2 + 8 } : { x: v.x - 10, y: v.y + 10 };
+  const namePos = ext ? { x: ext.x1, y: ext.y1 - 17 } : { x: v.x - 10, y: v.y - 15 };
   line('ATTR', attrStyled({
-    x: v.x + nameOff.x, y: v.y + nameOff.y, fontSize: 6.75, fontWeight: false,
+    x: namePos.x, y: namePos.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: null, valueVisible: true,
+    align: ext ? 'LEFT_BOTTOM' : null,
     key: 'Name', parentId: v.compId, zIndex: nameZ
   }), randId());
   line('ATTR', attrStyled({
-    x: v.x + desOff.x, y: v.y + desOff.y, fontSize: 6.75, fontWeight: false,
+    x: desPos.x, y: desPos.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: v.refdes, valueVisible: true,
+    align: ext ? 'LEFT_BOTTOM' : null,
     key: 'Designator', parentId: v.compId, zIndex: designatorZ
   }), randId());
   line('ATTR', attrNull('Reuse Block', null, 32, v.compId), randId());

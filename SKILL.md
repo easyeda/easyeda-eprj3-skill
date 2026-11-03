@@ -468,7 +468,39 @@ What the builder does on top of that (and what to keep when editing by hand):
 - **Wires inside a module, ports between modules.** Same-block nets are wired
   (L/Z through horizontal or vertical channels); stub + label is the fallback
   only when no clean orthogonal path exists. Do not turn local nets into
-  global labels to save wiring.
+  global labels to save wiring. A net that leaves the block gets ONE port per
+  module side — but a pin in a dense 100-mil column takes a stub + **global net
+  label** instead, because stacked port bodies/names overlap each other (the
+  label joins the same net by name just the same).
+- **Pages carry functional names**: `sheetNames: ["电源与充电","主控",…]`; a
+  multi-page design without it names each page after its first block. A
+  single-page design keeps `sheet.name` (usually `P1`).
+- **Symbol and package names are datasheet names.** An auto footprint is named
+  from its land pattern (`QFN-24_L5.6-W5.6-P0.50`), never a bare `QFN`; an
+  author-supplied descriptive name is kept. Multi-unit symbol docs and their
+  PART titles show the device name (no `SYM_` staging prefix).
+- **Designator at the symbol's top-left, value at its bottom-left**, outside
+  the body — never inside a large IC.
+- **Pattern catalog (template-first, like composing slide layouts).** A block
+  that matches a pattern gets its pinned geometry instead of the generic grid:
+  two-pin **chains** (LED+R, RC, divider), **parallel/pull banks** (decoupling
+  rows), a **sub-bank** beside an IC inside a mixed block, **hub+satellites**
+  (a regulator/connector/button with the caps, ESD or gate-RC beside the pins
+  they belong to), a **crystal + load caps** triangle, a **series + shunt
+  bank** (an inductor/ferrite/0R with the output-cap row beside its far pin —
+  DCDC stages, antenna pi-filters, RC filters), and a **two-anchor bridge**
+  (AC-coupling caps or series resistors strung between two ICs), and a
+  **link array** (two-pin parts on entirely independent nets — DNP straps, AC
+  coupling arrays — one aligned column). A mixed block
+  absorbs several patterns in one pass until nothing matches. Unmatched blocks
+  keep the grid — extend the catalog in `sch-patterns.js` before adding
+  one-off geometry. Measure it with
+  `node scripts/pattern-coverage.js --design <file>` (or `--gen`): every block
+  is reported `ok` (absorbed) or `gap` (falls back to the grid), with the
+  coverage percentage — the target is ≥90%. A block that only holds lone
+  symbols (multi-pin ICs) or single-pin parts (mounting holes, test points)
+  counts as covered: the catalog groups PASSIVE two-pin parts, and the grid is
+  the right place for a lone symbol.
 - **Port kind follows the signal**: Netport-OUT when this module only drives the
   net, Netport-IN when it only receives it, Netport-BI for buses, mixed or
   unknown direction (evidence: declared pin dir → symbol pin type → pin name).

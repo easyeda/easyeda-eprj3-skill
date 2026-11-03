@@ -95,4 +95,79 @@ function tidyRotations(design, lib, placements) {
   return { rotated, score: 0 };
 }
 
-module.exports = { tidyRotations, hotspotAt };
+/**
+ * Second-pass rotation on the FINAL layout. tidyRotations runs before the
+ * second placement pass, so a part can end up rotated for a position it no
+ * longer occupies. This pass re-scores each 2-pin part at its actual spot:
+ * a 90° turn is taken when it shortens the connection to the part's same-net
+ * partners (≤8-pin nets; a ground web would dominate) and the rotated extent
+ * still fits its module frame and does not overlap a neighbour.
+ * Pattern macros run AFTER this pass and keep their own deliberate rotations.
+ * @returns {string[]} rotated part ids
+ */
+function alignRotations(placements, blocks) {
+  if (!placements || !placements.length) return [];
+  const D = require('./design');
+  const tipsOf = (pl) => pl.sym.pins.map((pin) => {
+    const net = pl.part.pins[String(pin.num)];
+    return net ? { net, pin } : null;
+  }).filter(Boolean);
+  const netPoints = new Map();  // sheet|net -> [{x,y}]
+  for (const pl of placements) {
+    for (const t of tipsOf(pl)) {
+      const key = `${pl.sheet || 1}|${t.net}`;
+      if (!netPoints.has(key)) netPoints.set(key, []);
+      const p = G.rotate(t.pin.x, t.pin.y, pl.rotation || 0);
+      netPoints.get(key).push({ x: pl.x + p.x, y: pl.y + p.y, id: pl.part.id, num: String(t.pin.num) });
+    }
+  }
+  const frameOf = (pl) => {
+    if (!blocks || !blocks.length) return null;
+    const b = blocks.find((bl) => (bl.sheet || 1) === (pl.sheet || 1) && (bl.members || []).includes(pl.part.id));
+    return b ? b.rect : null;
+  };
+  const scoreAt = (pl, rot) => {
+    let sum = 0;
+    for (const t of tipsOf(pl)) {
+      const pts = netPoints.get(`${pl.sheet || 1}|${t.net}`) || [];
+      if (pts.length > 8) continue;           // a supply/ground web: no signal
+      const p = G.rotate(t.pin.x, t.pin.y, rot);
+      const hx = pl.x + p.x; const hy = pl.y + p.y;
+      for (const q of pts) {
+        if (q.id === pl.part.id && q.num === String(t.pin.num)) continue;
+        sum += Math.abs(q.x - hx) + Math.abs(q.y - hy);
+      }
+    }
+    return sum;
+  };
+  const rotated = [];
+  for (const pl of placements) {
+    if (pl.part.rotationExplicit) continue;
+    if (!pl.sym || pl.sym.pins.length !== 2) continue;
+    if (tipsOf(pl).length !== 2) continue;
+    const base = pl.rotation || 0;
+    const cur = scoreAt(pl, base);
+    let bestR = base;
+    let best = cur;
+    for (const r of [90, 270]) {
+      const rr = (base + r) % 360;
+      const ext = D.partExtent(pl.sym, pl.x, pl.y, rr);
+      const frame = frameOf(pl);
+      if (frame && !G.rectContainsRect(frame, ext)) continue;
+      if (placements.some((o) => o !== pl && (o.sheet || 1) === (pl.sheet || 1)
+        && o.extent && G.rectsOverlap(ext, o.extent))) continue;
+      const v = scoreAt(pl, rr);
+      if (v < best - 60) { best = v; bestR = rr; }
+    }
+    if (bestR !== base) {
+      pl.rotation = bestR;
+      pl.extent = D.partExtent(pl.sym, pl.x, pl.y, bestR);
+      pl.part.rotation = bestR;
+      pl.part.rotationTidied = true;
+      rotated.push(pl.part.id);
+    }
+  }
+  return rotated;
+}
+
+module.exports = { tidyRotations, alignRotations, hotspotAt };

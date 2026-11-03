@@ -71,6 +71,19 @@ function symbolName(part) {
   return (s && s.name) || (part.ic ? String(part.ic) : 'inline');
 }
 
+/**
+ * Design part id → client designator. Multi-unit parts carry a unit id in the
+ * design (U34A … U34G) while the client stores ONE base designator on every
+ * unit's COMPONENT (U34). Every spec/built comparison must fold to the base.
+ */
+function unitBaseMap(design) {
+  const m = new Map();
+  for (const [base, info] of Object.entries((design && design.multiUnits) || {})) {
+    for (const uid of (info && info.units) || []) m.set(uid, base);
+  }
+  return m;
+}
+
 /** Expected connectivity, straight from the design's pin→net maps. */
 function specGroups(design) {
   const groups = new Map();      // net -> Set("REF.pin")
@@ -78,18 +91,21 @@ function specGroups(design) {
   const pinNet = new Map();      // "REF.pin" -> first declared net
   const partPins = new Map();    // ref -> [pin num]
   if (!design || !Array.isArray(design.parts)) return { groups, pinToNets, pinNet, partPins };
+  const unitBase = unitBaseMap(design);
+  const refOf = (id) => unitBase.get(id) || id;
   for (const part of design.parts) {
+    const ref = refOf(part.id);
     const pins = part.pins && typeof part.pins === 'object' ? part.pins : {};
     for (const [num, net] of Object.entries(pins)) {
-      const pin = pinKey(part.id, num);
+      const pin = pinKey(ref, num);
       const name = String(net);
       if (!groups.has(name)) groups.set(name, new Set());
       groups.get(name).add(pin);
       if (!pinToNets.has(pin)) pinToNets.set(pin, []);
       if (!pinToNets.get(pin).includes(name)) pinToNets.get(pin).push(name);
       if (!pinNet.has(pin)) pinNet.set(pin, name);
-      if (!partPins.has(part.id)) partPins.set(part.id, []);
-      partPins.get(part.id).push(String(num));
+      if (!partPins.has(ref)) partPins.set(ref, []);
+      partPins.get(ref).push(String(num));
     }
   }
   return { groups, pinToNets, pinNet, partPins };
@@ -240,6 +256,7 @@ function buildPackage(dir, design) {
   const twistBuilt = pinsOnTwoNets(built.pinToNets);
   const nc = spec ? ncViolations(spec, built) : [];
   const smell = suspicions(spec, built, design);
+  const unitBase = design ? unitBaseMap(design) : new Map();
 
   const mechanicalOk = netcheck.match
     && built.unconnected.length === 0
@@ -258,6 +275,9 @@ function buildPackage(dir, design) {
       powers: design.powers || {},
       parts: design.parts.map((p) => ({
         id: p.id,
+        // the designator the client prints; multi-unit parts (id U34A) all
+        // fold to one base ref (U34) — compare against this, not id
+        ref: unitBase.get(p.id) || p.id,
         symbol: symbolName(p),
         value: p.value === undefined ? null : p.value,
         pins: Object.assign({}, p.pins)

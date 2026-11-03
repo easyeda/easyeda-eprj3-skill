@@ -529,7 +529,7 @@ function buildInlineSymbolEntry(spec, ctx) {
       name: spec.title || spec.name,
       designator: spec.designator || 'U?',
       bbox: [gx1, gy1, gx2, gy2],
-      graphics: graphics.map((g) => ({ type: g.type, body: Object.assign({}, g.body, { partId: 'PART_ID' }) })),
+      graphics: graphics.map((g) => ({ type: g.type, body: Object.assign({}, g.body) })),
       pins: rawPins
     });
     return {
@@ -621,6 +621,9 @@ function buildMultiPartSymbolEntry(spec, ctx) {
   const uuid = E.uuid16();
   const pitch = spec.pitch || 100;
   const halfW = spec.halfW || DEFAULT_BODY_HALF_W;
+  // the staging key (name) may carry a SYM_ prefix; the doc title and the PART
+  // titles must show the real device name the user reads in the library
+  const display = spec.title || spec.name;
   const parts = (spec.parts || []).map((part, i) => {
     const id = `${spec.name}.${i + 1}`;
     const groups = (part.groups || []).map((g) => ({ name: g.name || '', pins: parseAutoPinSpec(g.pins || []) }));
@@ -629,7 +632,7 @@ function buildMultiPartSymbolEntry(spec, ctx) {
       id,
       // the reference names every PART "<symbol>.<n>"; the client shows the
       // unit suffix from this title (U34.1, U34.2, …)
-      title: id,
+      title: `${display}.${i + 1}`,
       graphics: [{ type: 'RECT', body: {
         dotX1: laid.body.x1, dotY1: laid.body.y1, dotX2: laid.body.x2, dotY2: laid.body.y2,
         radiusX: 0, radiusY: 0, rotation: 0, strokeColor: null, strokeStyle: null,
@@ -644,13 +647,13 @@ function buildMultiPartSymbolEntry(spec, ctx) {
   });
   const doc = E.buildMultiPartSymbolDoc({
     uuid,
-    title: spec.name,
+    title: display,
     description: spec.description || '',
     tags: [],
     source: E.makeSource(E.uuid32(), ctx.ownerUuid),
     client: ctx.client,
     ms: ctx.ms,
-    name: spec.name,
+    name: display,
     designator: spec.designator || 'U?',
     parts
   });

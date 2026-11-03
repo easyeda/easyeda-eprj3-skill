@@ -355,6 +355,121 @@ function main() {
   ok(tight.map((p) => `${p.x},${p.y}`).join('|') === before.join('|'),
     'a rejected sub-bank leaves every placement untouched');
 
+  // crystal + load caps: X on top, one cap below each pin, ground pins down
+  const xtalSym = symOf([
+    { num: 1, x: -10, y: 0, length: 10, rotation: 0 },
+    { num: 2, x: 10, y: 0, length: 10, rotation: 180 }
+  ]);
+  const capV = symOf([
+    { num: 1, x: 0, y: 20, length: 10, rotation: 270 },
+    { num: 2, x: 0, y: -20, length: 10, rotation: 90 }
+  ]);
+  const xtal = [
+    mkPl('X1', xtalSym, { 1: 'XIN', 2: 'XOUT' }, 0, 0),
+    mkPl('C10', capV, { 1: 'XIN', 2: 'GND' }, 120, 0),
+    mkPl('C11', capV, { 1: 'XOUT', 2: 'GND' }, 260, 0)
+  ];
+  const groundDesign = { powers: { GND: 'down' }, powerNets: new Map([['GND', 'down']]) };
+  const cry = PAT.blockCrystal(groundDesign, xtal);
+  ok(cry && cry.anchor.part.id === 'X1', 'crystal pattern recognises X + 2 load caps',
+    cry ? cry.anchor.part.id : 'null');
+  const cryLaid = cry && PAT.layoutCrystal(cry);
+  ok(cryLaid && cryLaid.steps.length === 3, 'crystal layout produces 3 steps',
+    cryLaid ? String(cryLaid.steps.length) : 'null');
+  if (cryLaid) {
+    const capSteps = cryLaid.steps.filter((s) => /^C/.test(s.pl.part.id));
+    ok(capSteps.every((s) => s.y < cryLaid.steps[0].y - 40),
+      'load caps sit below the crystal', JSON.stringify(capSteps.map((s) => s.y)));
+    ok(new Set(capSteps.map((s) => s.rot)).size === 1,
+      'load caps share one orientation');
+  }
+
+  // series + shunt stage (a DCDC output): 2 inductors feed one rail, 4 caps
+  // shunt it to ground — the rail row is found from topology alone.
+  const indSym = symOf([
+    { num: 1, x: 0, y: 20, length: 10, rotation: 270 },
+    { num: 2, x: 0, y: -20, length: 10, rotation: 90 }
+  ]);
+  const dcdc = [
+    mkPl('L1', indSym, { 1: 'SWA', 2: 'VDD_CORE' }, 0, 0),
+    mkPl('L2', indSym, { 1: 'SWB', 2: 'VDD_CORE' }, 100, 0),
+    mkPl('C30', capV, { 1: 'VDD_CORE', 2: 'GND' }, 200, 0),
+    mkPl('C31', capV, { 1: 'VDD_CORE', 2: 'GND' }, 300, 0),
+    mkPl('C32', capV, { 1: 'VDD_CORE', 2: 'GND' }, 400, 0),
+    mkPl('C33', capV, { 1: 'VDD_CORE', 2: 'GND' }, 500, 0)
+  ];
+  const sb = PAT.blockSeriesBank(groundDesign, dcdc);
+  ok(sb && sb.series.length === 2 && sb.shunts.length === 4,
+    'series+shunt stage separates 2 feed elements from 4 shunts',
+    sb ? `${sb.series.length}/${sb.shunts.length}` : 'null');
+  const sbLaid = sb && PAT.layoutSeriesBank(sb);
+  ok(sbLaid && sbLaid.steps.length === 6, 'series+shunt layout places all 6 parts',
+    sbLaid ? String(sbLaid.steps.length) : 'null');
+  if (sbLaid) {
+    const shuntsLaid = sbLaid.steps.filter((s) => /^C/.test(s.pl.part.id));
+    const seriesLaid = sbLaid.steps.filter((s) => /^L/.test(s.pl.part.id));
+    ok(new Set(shuntsLaid.map((s) => s.extent.y1)).size === 1,
+      'shunts share one rail row', JSON.stringify(shuntsLaid.map((s) => s.extent.y1)));
+    ok(seriesLaid.every((s) => s.extent.x2 <= Math.min(...shuntsLaid.map((q) => q.extent.x1))),
+      'series elements sit left of the shunt row');
+  }
+
+  // two-anchor bridge: two ICs with AC-coupling caps between them
+  const ic3 = symOf([
+    { num: 1, x: -30, y: 10, length: 10, rotation: 0 },
+    { num: 2, x: -30, y: -10, length: 10, rotation: 0 },
+    { num: 3, x: 30, y: 0, length: 10, rotation: 180 }
+  ]);
+  const bridged = [
+    mkPl('U1', ic3, { 1: 'IN_L', 2: 'IN_R', 3: 'A_OUT' }, 0, 0),
+    mkPl('U2', ic3, { 1: 'B_IN', 2: 'GND', 3: 'B_OUT' }, 400, 0),
+    mkPl('C40', capV, { 1: 'A_OUT', 2: 'B_IN' }, 200, 0),
+    mkPl('C41', capV, { 1: 'IN_L', 2: 'B_OUT' }, 200, 100)
+  ];
+  const br = PAT.blockBridge(bridged);
+  ok(br && br.links.length === 2, 'bridge pattern finds two anchors + two links',
+    br ? String(br.links.length) : 'null');
+  const brLaid = br && PAT.layoutBridge(br);
+  ok(brLaid && brLaid.steps.length === 4, 'bridge layout places 4 parts',
+    brLaid ? String(brLaid.steps.length) : 'null');
+  if (brLaid) {
+    const anchorsX = brLaid.steps.filter((s) => /^U/.test(s.pl.part.id)).map((s) => s.x);
+    const bridgeX = brLaid.steps.filter((s) => /^C/.test(s.pl.part.id)).map((s) => s.x);
+    ok(anchorsX.length === 2 && Math.abs(anchorsX[1] - anchorsX[0]) > 100,
+      'bridge spans a left and a right anchor',
+      `anchors=${JSON.stringify(anchorsX)} bridges=${JSON.stringify(bridgeX)}`);
+  }
+
+  // two ICs in one block: the whole-block hub cannot match, so one hub is
+  // absorbed as a SUBSET (anchor + the caps that share its nets)
+  const twoIc = [
+    mkPl('U10', ic3, { 1: 'A1', 2: 'A2', 3: 'A3' }, 0, 0),
+    mkPl('C50', capV, { 1: 'A1', 2: 'GND' }, 100, 0),
+    mkPl('C51', capV, { 1: 'A1', 2: 'GND' }, 200, 0),
+    mkPl('U11', ic3, { 1: 'B1', 2: 'B2', 3: 'B3' }, 300, 0)
+  ];
+  const hubSub = PAT.findHubSubset(twoIc);
+  ok(hubSub && hubSub.memberIds.includes('U10') && hubSub.memberIds.length === 3,
+    'hub subset absorbs one IC with its two caps', hubSub ? hubSub.memberIds.join(',') : 'null');
+
+  // independent links (DNP straps / AC coupling arrays): no shared nets, yet
+  // they still get one aligned column instead of a scattered grid
+  const straps = [
+    mkPl('R60', indSym, { 1: 'ALDO_OUT', 2: 'VCC_IO' }, 0, 0),
+    mkPl('R61', indSym, { 1: 'BLDO_OUT', 2: 'VCC_HDMI' }, 0, 100),
+    mkPl('R62', indSym, { 1: 'CLDO_OUT', 2: 'VCC_WIFI' }, 0, 200)
+  ];
+  const la = PAT.blockLinkArray(straps);
+  ok(la && la.links.length === 3, 'link array recognises independent two-pin links',
+    la ? String(la.links.length) : 'null');
+  const laLaid = la && PAT.layoutLinkArray(la);
+  ok(laLaid && laLaid.steps.length === 3, 'link array lays all 3 links',
+    laLaid ? String(laLaid.steps.length) : 'null');
+  if (laLaid) {
+    ok(new Set(laLaid.steps.map((s) => s.extent.x1)).size === 1,
+      'link array keeps one aligned column', JSON.stringify(laLaid.steps.map((s) => s.extent.x1)));
+  }
+
   // --------------------------------------------- local search never regresses
   const nsDir = path.join(TMP, 'blink-nosearch');
   const nsReport = path.join(TMP, 'blink-nosearch.json');

@@ -36,16 +36,20 @@ const G = require('./geom');
 // this dependency direction cannot form a cycle.
 const { readJsonText, parseJsonText } = require('./utils');
 const P = require('./parts');
+const T = require('./sch-tokens');
 
 const DEFAULTS = {
   schematic: 'Schematic1',
   sheet: 'P1',
   pcb: 'PCB1',
   board: { width: 1600, height: 1000 },
-  layout: { cols: 3, cellW: 150, cellH: 110, blockGapX: 160, blockGapY: 140, margin: 70 }
+  layout: {
+    cols: 3, cellW: T.CELL_W, cellH: T.CELL_H,
+    blockGapX: T.BLOCK_GAP_X, blockGapY: T.BLOCK_GAP_Y, margin: T.MARGIN
+  }
 };
 
-const BLOCK_TITLE_H = 60;
+const BLOCK_TITLE_H = T.TITLE_H;
 
 class DesignError extends Error {}
 
@@ -239,6 +243,11 @@ function normalize(raw, file) {
     // sheets in declaration order (or per-block "sheet" overrides). The
     // intake asks 单页/多页 before generating.
     sheets: Math.max(1, Math.floor(Number(raw.sheets) || 1)),
+    // optional functional page titles, one per sheet (tab text + file name).
+    // Without them each sheet is named after its first block.
+    sheetNames: Array.isArray(raw.sheetNames)
+      ? raw.sheetNames.map((x) => String(x)).filter(Boolean)
+      : [],
     expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null,
     // multi-unit components: base designator → {designator, name, footprint, units:[unitIds]}
     multiUnits: expanded.multiUnits
@@ -670,7 +679,7 @@ function layoutSchematic(d, lib) {
     // 40-mil body, and flags print theirs above/below. 36 mil left names
     // outside the black frame (the user's complaint); 110 matches the layered
     // placer and the chain macro.
-    const pad = 110;
+    const pad = T.FRAME_PAD;
     // The client draws Y-UP: the bigger coordinate is the top edge. Reserve the
     // title strip on the TOP so the module caption reads top-left (it used to
     // sit at the bottom because the strip was subtracted from y1).
