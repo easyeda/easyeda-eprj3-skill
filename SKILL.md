@@ -1,6 +1,6 @@
 ---
 name: easyeda-eprj3
-description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — auto schematic layout + wiring, auto PCB PLACEMENT (footprints + pad-net links + board outline; routing, copper pour and manufacturing exports are out of scope — copper and production files come from the client), then ERC + layout lint + DRC gates. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
+description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — offline schematic layout + wiring, PCB placement, four gates, plus a 2.x CLI bridge (client V4.1.94+) for library search, auto layout/route, copper pour, netlist export/compare and screenshots. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
 ---
 
 # EasyEDA Pro eprj3 Skill
@@ -9,15 +9,14 @@ Author **EasyEDA Pro** (嘉立创EDA专业版) folder-format `.eprj3` projects. 
 file in, one validated project out: schematic laid out in signal-flow blocks,
 every net wired, **PCB placed** — then four independent gates.
 
-**Strategy: placement only — never copper.** The delivered PCB carries
-footprints, pad↔net links and the board outline; this skill **never** auto-routes
-and **never** pours. Layout is the machine's job, copper is the human's: machine
-routing sacrifices readability and electrical quality, while the EasyEDA client
-gives a person full interactive control — so the skill's boundary is schematic +
-netlist + placement + checks. `build.js` prints a **rats handoff list** (the nets
-to connect by hand in the client). The DRC never judges `D004` (unrouted nets) or
-`D006` (missing pour) on a board this skill built; imported or client-saved
-boards that carry tracks/pours are still reviewed against the full copper rules.
+**Strategy: the skill places, the client finishes the copper.** 2.x drives the
+desktop client through its CLI for everything the client does best (library
+search, auto layout/route, pour, netlist extraction, screenshots). The skill
+itself still **never implements a router or a pour engine** — it prepares the
+project and the scripts, then lets the client execute. Without the client the
+offline pipeline still produces a placement-only board and prints a **rats
+handoff list**; `D004` (unrouted) and `D006` (missing pour) are never judged on
+a board this skill built.
 
 Format ground truth: [`docs/format-reference.md`](docs/format-reference.md). Deep
 details are load-on-demand — see [Where to read next](#where-to-read-next) instead
@@ -31,9 +30,10 @@ of reading everything up front.
 标准流程共 5 个关键任务：
 
 ```
+- [ ] 0. 环境检查 doctor（用到 2.x CLI 功能时必做：客户端 4.1.94+）
 - [ ] 1. 需求采集 intake（设计文件已给出则跳过）
 - [ ] 2. 生成工程 build（含五道门禁 + netcheck）
-- [ ] 3. 网表审计 audit（全新子 agent 复核）
+- [ ] 3. 网表审计 audit（全新子 agent 复核；2.x 可用 eda.js netlist 导出）
 - [ ] 4. 报告 report（project-report.md + ai-report.md）
 - [ ] 5. 打开客户端 open（可选）
 ```
@@ -93,6 +93,41 @@ node scripts/floorplan.js --design design.json                        # preview 
 node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
 ```
 
+## 2.x — CLI-first workspace (client V4.1.94+)
+
+2.x hands the work the desktop client does best to the client, through its
+command line. **Check the environment first** — every 2.x script refuses to run
+on an older client:
+
+```bash
+node scripts/eda.js doctor        # version / endpoint; non-zero below 4.1.94
+```
+
+Then call a script instead of hand-writing JavaScript:
+
+| Need | Script | Client API |
+| --- | --- | --- |
+| find a device (keyword / LCSC) | `eda.js search --q …` / `--lcsc …` | `lib_Device.search` / `searchByProperties` |
+| netlist for review | `eda.js netlist --dir <p> --out review/netlist.json` | `sch_ManufactureData.getNetlistFile` |
+| schematic ↔ PCB agreement | `eda.js check-net --dir <p>` | sch + pcb `getNetlistFile` |
+| visual check | `eda.js screenshot --dir <p> --out shots` | `getPngFile` / `getCurrentRenderedAreaImage` |
+| client auto layout/route | `eda.js sch-auto`, `eda.js pcb --layout/--route` | `sch_Document` / `pcb_Document` |
+| copper pour borders | `eda.js pour --net GND --outline x1,y1,x2,y2` | `pcb_PrimitivePour.create` |
+
+Rules:
+
+- **Source APIs first.** The `sch_Source*` family edits project source data with
+  no open page and is the fastest route (`sch_SourcePrimitiveComponent.add`,
+  `sch_SourcePrimitiveWire`, …). Document-level APIs are for auto layout /
+  auto route / rendering, which need an open document.
+- **Scripts, not snippets.** The model runs these scripts; it does not write
+  editor JS itself. A new capability means a new `eda.js` subcommand.
+- **Close sessions.** Every command opens a headless session and destroys it;
+  batch loops must not leak editor windows (`--keep` only for debugging).
+- `sch-auto` is the vendor's generic engine and ignores this skill's module
+  frames — use it for repair, not as the default layout.
+- Full flags, API mapping and limitations: [`docs/cli.md`](docs/cli.md).
+
 ## Netlist audit — a fresh reviewer, not you
 
 A green build proves the files are well formed and every gate ran — including
@@ -113,6 +148,23 @@ node scripts/netlist.js --dir <project> --design design.json \
 `make-board.js` already writes this package to `<project>/.tmp/netlist-audit.json`
 and lists it in the digest as `audit: {ok, file}` — hand that `file` straight to
 the reviewer, no extra command.
+
+**2.x variant — review the client's own netlist.** With the desktop client
+openable (V4.1.94+), export the netlist the client itself computed and reduce it
+to the fields the reviewer needs:
+
+```bash
+node scripts/eda.js netlist --dir <project> --out <project>/.tmp/netlist.json
+node scripts/eda.js check-net --dir <project> --out <project>/.tmp/netcheck.json
+```
+
+`netlist.json` is `{ parts:[{ref,name,device,footprint,pins:{num:net}}],
+nets:{name:[ref.pin]} }` — refdes, connections and model names only, no
+geometry. Hand **that** file to the same fresh-subagent review (ask it to check
+each net against the PRD and flag wrong pin numbers / missing parts / shorted
+nets); `check-net.json` proves the schematic and PCB netlists agree. Use this
+path when the client is available; the package path above stays the offline
+fallback.
 
 The package is self-contained (schema `eprj3-netlist-audit/1`):
 

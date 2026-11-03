@@ -1026,7 +1026,10 @@ function main() {
       && pinKeys.has(ptKey(w.segs[0].x2, w.segs[0].y2));
     // a chain's shared net reads from the chain itself; its name only clutters
     const chainNet = patternNets.has(w.net);
-    const nameShown = !hiddenWire.has(i) && !short && !chainNet;
+    // a zero-length anchor (a port/flag sitting on a bare pin) carries no
+    // readable label — the port/flag symbol already prints the net name
+    const anchorOnly = w.segs.every((s) => G.segLen(s) < G.EPS);
+    const nameShown = !hiddenWire.has(i) && !short && !chainNet && !anchorOnly;
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
       net: w.net,

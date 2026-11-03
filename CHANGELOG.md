@@ -5,6 +5,51 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.0.0] - 2026-11-03
+
+**2.x: the skill drives the desktop client through its CLI.** Library search,
+auto layout/route, copper pour, netlist extraction and screenshots now run on
+the client's own `source` APIs; the skill ships the scripts and the offline
+pipeline stays as the no-client fallback. 1.x is frozen at **1.36.1** (the final 1.x patch anchors on-pin ports/flags).
+
+### Added
+- **CLI bridge** (`scripts/lib/cli.js`): finds `lceda-pro` / `easyeda-pro`
+  (env `LCEDA_PRO_CLI` / `EASYEDA_PRO_CLI`, standard install dirs, `PATH`),
+  checks the client version (**4.1.94+**; older clients exit with
+  `CLI_VERSION_TOO_OLD`), opens a headless session, runs source in the editor
+  command space (`invoke`), and always destroys the session.
+- **`scripts/eda.js` toolbox** — one JSON envelope per command:
+  - `doctor` — version/endpoint gate
+  - `search --q|--lcsc` — system-library device search (`lib_Device`)
+  - `netlist --dir --out` — client netlist (JLCEDA JSON) reduced to
+    `parts[{ref,name,device,footprint,pins}]` + `nets{name:[ref.pin]}` for a
+    fresh-subagent design review
+  - `check-net --dir` — schematic ↔ PCB netlist comparison through the client
+    (replaces source parsing for the 2.x path)
+  - `screenshot --dir --out [--doc sch|pcb] [--page N]` — PNG per schematic
+    page + the PCB canvas, for visual correction loops
+  - `sch-auto` / `pcb [--clear] [--layout] [--route]` — client auto layout and
+    auto routing, saved in place
+  - `pour --net --outline --layers` — copper pour borders
+- **Release packaging**: `scripts/pack.js` (git-archive zip) and
+  `.github/workflows/release.yml` — v1.* tags publish automatically (the
+  current 1.x package is built from `v1.36.0`); every 2.x package is a manual
+  workflow run.
+- **Docs**: [`docs/cli.md`](docs/cli.md) + SKILL.md "2.x — CLI-first workspace"
+  and the client-netlist review loop.
+
+### Changed
+- **Copper policy.** The skill still never implements a router or a pour
+  engine; 2.x can hand the board to the client's engine (`pcb --route`,
+  `pour`). The offline build remains placement-only with a rats handoff.
+- **Preferred APIs**: schematic creation/editing uses the `sch_Source*` family
+  (no open page, direct source data, fastest); document APIs are reserved for
+  auto layout/route/rendering.
+- **Engine status**: the vendor schematic auto-layout ignores this skill's
+  module frames, so the offline block layout remains the default; `sch-auto`
+  is for repair work. Moving the remaining layout/wiring logic onto the client
+  source APIs continues in 2.x.
+
 ## [1.36.0] - 2026-11-03
 
 **Module boundaries are net ports where they fit and global net labels on dense

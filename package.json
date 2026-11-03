@@ -1,7 +1,7 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "1.36.0",
-  "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — requirement intake with clarification protocol, auto schematic layout, PCB placement with a rats handoff (the skill NEVER auto-routes or pours copper; copper is finished in the client), V4 format (reads and writes current client saves), then ERC + layout lint + placement DRC/DFM + intent gates (polarity gate live; land patterns calibrated on the official EasyEDA library; evidence-sourced IC pinout library)",
+  "version": "2.0.0",
+  "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — offline schematic layout/placement plus a 2.x CLI bridge (LCEDA/EasyEDA Pro 4.1.94+) for library search, auto layout/route, pour, netlist export/compare and screenshots; zero npm dependencies.",
   "main": "scripts/lib/eprj3.js",
   "repository": {
     "type": "git",
@@ -49,7 +49,9 @@
     "make-board": "node scripts/make-board.js",
     "floorplan": "node scripts/floorplan.js",
     "fetch-lcsc": "node scripts/fetch-lcsc.js",
-    "select": "node scripts/recipe.js devices"
+    "select": "node scripts/recipe.js devices",
+    "eda": "node scripts/eda.js",
+    "pack": "node scripts/pack.js"
   },
   "engines": {
     "node": ">=18"

@@ -1,0 +1,46 @@
+name: release
+
+# 1.x build packages publish automatically on a v1.* tag; every other build
+# (including all 2.x packages) is published by a MANUAL run of this workflow.
+on:
+  push:
+    tags:
+      - 'v1.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to create/update (e.g. v1.36.0, v2.0.0)'
+        required: true
+      ref:
+        description: 'Git ref to package (default: the tag above)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.ref || inputs.tag || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Package the skill
+        run: node scripts/pack.js --ref HEAD
+
+      - name: Publish the release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: ${{ inputs.tag || github.ref_name }}
+          files: dist/*.zip
+          generate_release_notes: true
+          draft: false

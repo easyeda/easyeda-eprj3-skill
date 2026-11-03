@@ -753,11 +753,14 @@ function placeNodePort(node, net, ctx, kind) {
   }
   if (!chosen && fallback) { chosen = fallback.seg; ctx.flagBoxes.push(fallback.labelBox); }
   if (!chosen) {
-    chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y };
+    chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y, anchor: true };
     ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, portDir));
   }
-  const wire = (Math.abs(chosen.x2 - node.tip.x) > G.EPS || Math.abs(chosen.y2 - node.tip.y) > G.EPS) ? [chosen] : [];
-  return { wire, port: { net, x: chosen.x2, y: chosen.y2, dir: portDir, kind: kind || portKind([node]) } };
+  const zero = Math.abs(chosen.x2 - node.tip.x) < G.EPS && Math.abs(chosen.y2 - node.tip.y) < G.EPS;
+  if (zero) chosen.anchor = true;
+  // ALWAYS return the wire: a port dropped directly on the pin needs the
+  // zero-length anchor wire to take effect in the client netlist
+  return { wire: [chosen], port: { net, x: chosen.x2, y: chosen.y2, dir: portDir, kind: kind || portKind([node]) } };
 }
 
 /**
@@ -1104,9 +1107,11 @@ function routeNet(net, nodes, ctx) {
         } else {
           // no clean exit: the flag sits directly ON the pin — co-located, so the
           // netlist unions it as a connection. Never emit a clashing lateral stub
-          // (that would short the pin to a foreign net).
+          // (that would short the pin to a foreign net). The zero-length anchor
+          // wire is still required: a flag on a bare pin does not connect in
+          // the client without a wire endpoint under it.
           placed = { x: node.tip.x, y: node.tip.y };
-          wire = null;
+          wire = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y, anchor: true };
           issues.push(`net "${net}": power flag for ${node.part}.${node.pin} placed on the pin — check for neighbouring wires/flags`);
         }
       }
@@ -1114,7 +1119,7 @@ function routeNet(net, nodes, ctx) {
       flags.push({ net, x: placed.x, y: placed.y, style });
       (ctx.flagPoints || []).push({ net, x: placed.x, y: placed.y });
       if (ctx.flagBoxes) ctx.flagBoxes.push(labelBox(placed));
-      if (wire && (Math.abs(wire.x2 - node.tip.x) > G.EPS || Math.abs(wire.y2 - node.tip.y) > G.EPS)) {
+      if (wire && (wire.anchor || Math.abs(wire.x2 - node.tip.x) > G.EPS || Math.abs(wire.y2 - node.tip.y) > G.EPS)) {
         wires.push([wire]);
         commitSegs([wire], net, used, committed);
       }
@@ -1272,6 +1277,13 @@ function routeSchematic(d, placements, opts) {
             out.ports.push({ net, x: node.tip.x, y: node.tip.y, sheet, dir: portDir, kind: portKind([node]) });
             ctx.portPoints.push({ net, x: node.tip.x, y: node.tip.y });
             ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, portDir));
+            // anchor the on-pin port: the client only connects a net port that
+            // sits on a wire endpoint, so a zero-length wire is mandatory
+            out.wires.push({
+              net,
+              sheet,
+              segs: [{ x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y, anchor: true }]
+            });
           }
         }
         continue;
@@ -1280,7 +1292,10 @@ function routeSchematic(d, placements, opts) {
       for (const segs of r.wires) {
         const seen = new Set();
         const clean = segs.filter((s) => {
-          if (G.segLen(s) < G.EPS) return false;
+          // zero-length segments are dropped EXCEPT anchor wires: a net port
+          // or power flag sitting directly on a pin only connects in the
+          // client when a (zero-length) wire anchors it at that point
+          if (G.segLen(s) < G.EPS && !s.anchor) return false;
           const k = segKey(s);
           if (seen.has(k)) return false;
           seen.add(k);
