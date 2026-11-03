@@ -4,6 +4,22 @@ A compact step-by-step the AI agent follows for each user request. The full mach
 
 All coordinates are **mil** unless a script's help says otherwise.
 
+## 0. Prerequisite — read easyeda-pro-format-skill (MANDATORY GATE)
+
+Before any other step in this document, the AI agent MUST locate and read the companion **easyeda-pro-format-skill** repo (https://github.com/easyeda/easyeda-pro-format-skill). This skill's scripts encode a subset of the format; the companion repo is the authoritative, machine-checkable spec (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). Do **not** generate, edit, or validate any `.eprj3` file based on this skill alone.
+
+1. **Locate** the repo (in order):
+   - `c:\Users\easyeda\.claude\skills\easyeda-pro-format-skill\` (default skill directory)
+   - Any path already registered under that name in the environment
+   - Otherwise: `git clone https://github.com/easyeda/easyeda-pro-format-skill <target-dir>`
+2. **Read** its `SKILL.md`, then the relevant `schemas/*.json`, `primitives/*.md` and `examples/` entries for the record types this session will touch.
+3. **Keep the path** — later cross-checking uses it:
+   ```bash
+   node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
+   ```
+
+**Hard rule:** if the repo cannot be found or cloned, STOP and tell the user it must be installed before any eprj3 authoring proceeds. Never guess record shapes from memory. Where this skill's docs, a schema, and a real record disagree, the real record wins (ground truth: https://github.com/easyeda/easyeda-pro-eprj3-format).
+
 ## 1. Discover
 
 Ask the user:
