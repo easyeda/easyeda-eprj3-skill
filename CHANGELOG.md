@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.36.1] - 2026-11-03
+
+**Final 1.x patch: a net port or power flag sitting directly on a pin is now
+anchored by a zero-length wire.** The client only connects a port/flag at a
+wire endpoint; without the anchor those pins read unconnected in the client
+netlist (the skill's own netlist saw the port and missed it — found by the new
+2.x client-netlist comparison; H6 had three such pins).
+
 ## [1.36.0] - 2026-11-03
 
 **Module boundaries are net ports where they fit and global net labels on dense
