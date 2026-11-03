@@ -5,6 +5,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [1.7.4] - 2026-11-03
+
+### Fixed
+- Corrected the schematic pin-tip rule in `SKILL.md` and `docs/workflow.md`: the symbol PIN record's `(x, y)` is the electrical connection point, and `length` is only the visual line drawn inward toward the body (do not add/subtract it). RES/CAP/DIODE/LED/IND presets connect at `x = ±20` — the previous `±30` / `±17` values put wire endpoints 10 mil past the real tips.
+- Documented the Y sign flip in pin placement (`tip.y = component.y − pin.y`); omitting it silently leaves every wire unconnected.
+- Updated the worked RC low-pass example to use `±20` tips and a correct one-bend wire from the resistor to the rotated capacitor.
+
 ## [1.7.3] - 2026-09-15
 
 ### Changed

@@ -144,7 +144,7 @@ Steps 12–13 are a loop: run, fix, run, fix — until the validator reports `0 
 ### Placement
 
 - All sheet coordinates are mil with Y up. Put everything on the 10 mil grid: component origins on multiples of 100 (`--x 300 --y -400`), wire endpoints on multiples of 10. Aligned rows/columns: share one `y` across a chain, and use row pitch ≥200 mil so the Designator/Name labels (which sit ±25 mil around the origin) never collide.
-- **Connectivity is exact coordinate equality** — a wire touches a pin only when the endpoint coincides with the pin tip. Compute tips from the entry (`load-library show --name <sym>`): a pin `(px, py, length L, rotation r)` has its tip at `(px − L·cos r, py − L·sin r)` relative to the component origin, then rotated CCW by the component's `--rotation`. Do not assume — RES/CAP/DIODE/LED presets use length 10 (tips `(X±30, Y)` at rotation 0, `(X, Y±30)` at 90) but IND uses length 3 (tips `X±17`), TEST_POINT connects at its origin. Power flags and ports connect at their origin point.
+- **Connectivity is exact coordinate equality** — a wire touches a pin only when the endpoint coincides with the pin tip. In the symbol JSON the PIN record's `(x, y)` **is the electrical connection point**; `length` is only the visual pin line drawn inward toward the symbol body (do not add or subtract it). For a component at `(X, Y)` with no rotation the tip is `(X + x, Y − y)` — note the **Y sign flip**: sheet coordinates are Y-up, but the symbol pin `y` is applied with the opposite sign. Rotate the offset `(x, −y)` CCW by the component's `--rotation`. Verified presets: RES/CAP/DIODE/LED have pins at `x = ±20`, `length = 10` (tips `(X±20, Y)` at rotation 0), and IND also has `x = ±20`, `length = 3`; TEST_POINT connects at its origin. Power flags and ports connect at their origin point.
 - Orientation: signal enters the left column and leaves the right (that is the preset/generator convention); rotate 180 only when the flow demands swapping. Series parts horizontal; pull-ups/pull-downs vertical toward the rail they attach to.
 
 ### Wiring — prefer visible copper over labels
@@ -163,13 +163,13 @@ Hard rules:
 - **Never label a pin directly, and never let labels replace wires between nearby pins.** A component whose every pin fans straight into net labels has an unreadable schematic — that is the anti-pattern to avoid.
 - Orthogonal segments only (horizontal/vertical). If wires would cross, move components first; a crossing you cannot route around means the block layout is wrong, not the wiring.
 - Net names: meaningful UPPERCASE (`SPI_CLK`, `LED_PWM`), never auto-style (`N$1`); one name per net everywhere.
-- Worked example — RC low-pass inside its block (RES/CAP presets, tips ±30 mil; GND flag connects at its origin):
+- Worked example — RC low-pass inside its block (RES/CAP presets, tips ±20 mil; GND flag connects at its origin):
   ```bash
-  node scripts/add-symbol.js ... --symbol RES --footprint R0603 --x 300 --y -400   # tips 270/330,-400
-  node scripts/add-symbol.js ... --symbol CAP --footprint C0603 --x 400 --y -430 --rotation 90   # tips 400,-400/-460
-  node scripts/add-wire.js ... --segs "330,-400,470,-400" --net PWM_OUT
-      # one wire: R.right tip → through C.top tip (T-junction) → output label anchor
-  node scripts/add-wire.js ... --segs "400,-460,400,-520"          # C.bottom stub down to GND flag
+  node scripts/add-symbol.js ... --symbol RES --footprint R0603 --x 300 --y -400   # tips 280/320,-400
+  node scripts/add-symbol.js ... --symbol CAP --footprint C0603 --x 400 --y -430 --rotation 90   # tips 400,-410/-450
+  node scripts/add-wire.js ... --segs "320,-400,400,-400,400,-410" --net PWM_OUT
+      # R.right tip → one bend → C.top tip
+  node scripts/add-wire.js ... --segs "400,-450,400,-520"          # C.bottom stub down to GND flag
   node scripts/add-symbol.js ... --symbol GND --x 400 --y -520
   ```
 
