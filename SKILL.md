@@ -1,6 +1,6 @@
 ---
 name: easyeda-eprj3
-description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — offline schematic layout + wiring, PCB placement, four gates, plus a 2.x CLI bridge (client V4.1.94+) for library search, auto layout/route, copper pour, netlist export/compare and screenshots. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
+description: Build EasyEDA Pro / 嘉立创EDA专业版 .eprj3 projects (schematic + PCB) from one design.json — offline schematic layout + wiring, PCB placement, four gates, plus a 2.x CLI bridge (client V4.1.94+) for library search, PCB auto layout/route, copper pour + fill, netlist export/compare and screenshots. Use whenever the user wants to create or edit an eprj3 project, generate symbols/footprints, or validate/repair one.
 ---
 
 # EasyEDA Pro eprj3 Skill
@@ -111,8 +111,8 @@ Then call a script instead of hand-writing JavaScript:
 | netlist for review | `eda.js netlist --dir <p> --out review/netlist.json` | `sch_ManufactureData.getNetlistFile` |
 | schematic ↔ PCB agreement | `eda.js check-net --dir <p>` | sch + pcb `getNetlistFile` |
 | visual check | `eda.js screenshot --dir <p> --out shots` | `getPngFile` / `getCurrentRenderedAreaImage` |
-| client auto layout/route | `eda.js sch-auto`, `eda.js pcb --layout/--route` | `sch_Document` / `pcb_Document` |
-| copper pour borders | `eda.js pour --net GND --outline x1,y1,x2,y2` | `pcb_PrimitivePour.create` |
+| PCB auto layout/route | `eda.js pcb --layout/--route` | `pcb_Document` |
+| copper pour + fill | `eda.js pour --net GND --outline x1,y1,x2,y2` (data units = mil) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
 
 Rules:
 
@@ -124,8 +124,10 @@ Rules:
   editor JS itself. A new capability means a new `eda.js` subcommand.
 - **Close sessions.** Every command opens a headless session and destroys it;
   batch loops must not leak editor windows (`--keep` only for debugging).
-- `sch-auto` is the vendor's generic engine and ignores this skill's module
-  frames — use it for repair, not as the default layout.
+- **Schematic layout and wiring always use the skill's own engine.** The
+  client's schematic auto engine ignores module frames and reads worse; do not
+  delegate schematic placement/routing to it. The client does PCB copper
+  (auto route / pour) and the review/screenshot/netlist work.
 - Full flags, API mapping and limitations: [`docs/cli.md`](docs/cli.md).
 
 ## Netlist audit — a fresh reviewer, not you
@@ -619,13 +621,13 @@ disk — `fetch-lcsc.js` is the only network path, and only on request.
   `validate.js` first, then compare with [`examples/blink`](examples/blink).
   Set `EPRJ3_DETERMINISTIC=1` to build byte-identical projects for golden-file
   diffs.
-- **Cross-module signals are net-port connectors, not wires** (the human pattern from the hand-drawn esp32-s31 sample): any net spanning >1 block or >500 mil is encoded as short stubs + named net ports per pin — long routed wires do not exist. Only short same-block nets get visible wires.
-- No routing, no copper pour — by design. The skill never writes tracks, vias
-  or pours; copper is done by a human in the EasyEDA client. The handoff is the
-  `rats:` line `build.js` prints (nets still to connect, with pad counts), and
-  every `pcb.rules` number you declare is used as the DRC floor when the DRC
-  reviews imported or client-saved copper. Differential pairs, length matching
-  and impedance control are client tasks too. Flat multi-sheet authoring IS
+- **Cross-module signals use net ports where they fit** — one official port per module side for any net that leaves its block; a pin in a dense 100-mil column takes a stub + global net label instead (stacked port bodies overlap). Long wires across the page do not exist.
+- **The skill never implements a router or a pour engine.** The offline build
+  writes no copper; it prints the `rats:` handoff (nets still to connect, with
+  pad counts). 2.x can ask the *client* to do the copper — `eda.js pcb --route`
+  and `eda.js pour` run the vendor engine, then the screenshots and
+  `check-net` verify the result. Differential pairs, length matching and
+  impedance control remain client/human tasks. Flat multi-sheet authoring IS
   supported (`sheets: N` + net ports); hierarchical sheet navigation and
   simulation documents are not — finish those in the client.
 - **Pin definitions of real devices are never invented.** For a part missing

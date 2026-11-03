@@ -14,9 +14,8 @@
  *   node scripts/eda.js netlist --dir <project> --out netlist.json
  *   node scripts/eda.js check-net --dir <project> [--out diff.json]
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
- *   node scripts/eda.js sch-auto --dir <project> [--layout] [--route] [--page 1] [--no-save]
  *   node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--no-save] [--timeout 900000]
- *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 [--layers 1,2] [--no-save]
+ *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 (PCB data units, mil) [--layers 1,2] [--no-save]
  *
  * Requires the client V4.1.94+ (source APIs 4.1.83+). `--cli <path>` overrides
  * discovery; `LCEDA_PRO_CLI` / `EASYEDA_PRO_CLI` env vars also work.
@@ -327,28 +326,6 @@ const pages = await pagesOf(); return pages.map((p) => ({ name: p.name }));`,
   });
 }
 
-function cmdSchAuto(args) {
-  withProject(args, (info, session) => {
-    const pageIdx = args.page ? Number(args.page) - 1 : 0;
-    const wantLayout = !!args.layout || (!args.layout && !args.route);
-    const wantRoute = !!args.route || (!args.layout && !args.route);
-    const code = `
-${READY_HELPER}
-const pages = await pagesOf();
-const p = pages[${pageIdx}];
-if (!p) throw new Error('no such page');
-await eda.dmt_EditorControl.openDocument(p.uuid);
-await new Promise((r) => setTimeout(r, 1200));
-const out = { page: p.name, layout: null, route: null, saved: false };
-if (${wantLayout}) { try { out.layout = await eda.sch_Document.autoLayout(); } catch (e) { out.layoutErr = String(e && e.message || e); } }
-if (${wantRoute}) { try { out.route = await eda.sch_Document.autoRouting(); } catch (e) { out.routeErr = String(e && e.message || e); } }
-if (${!args['no-save']}) { await eda.sch_Document.save(); out.saved = true; }
-return out;
-`;
-    print(CLI.invoke(info.bin, session, code, { timeout: Number(args.timeout) || 600000 }));
-  });
-}
-
 function cmdPcb(args) {
   withProject(args, (info, session) => {
     const timeout = Number(args.timeout) || 900000;
@@ -375,7 +352,7 @@ function cmdPour(args) {
     if (!net) throw new Error('--net <name> is required');
     const box = String(args.outline || '').split(',').map(Number);
     if (box.length !== 4 || box.some((v) => !Number.isFinite(v))) {
-      throw new Error('--outline x1,y1,x2,y2 is required (mm, board coordinates)');
+      throw new Error('--outline x1,y1,x2,y2 is required (PCB data units, mil in EasyEDA Pro)');
     }
     const layers = String(args.layers || '1,2').split(',').map(Number).filter((n) => Number.isFinite(n));
     const name = args.name || `${net} pour`;
@@ -384,14 +361,24 @@ ${READY_HELPER}
 const pcbs = await pcbsOf();
 if (!pcbs.length) throw new Error('no PCB in this project');
 await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
-await new Promise((r) => setTimeout(r, 1200));
+await new Promise((r) => setTimeout(r, 1500));
 const x1 = ${box[0]}, y1 = ${box[1]}, x2 = ${box[2]}, y2 = ${box[3]};
 const w = x2 - x1, h = y2 - y1;
 const out = { pours: [], saved: false };
 for (const layer of ${JSON.stringify(layers)}) {
   const poly = eda.pcb_MathPolygon.createPolygon(['R', Math.min(x1, x2), Math.min(y1, y2), Math.abs(w), Math.abs(h), 0, 0]);
   const p = await eda.pcb_PrimitivePour.create(${JSON.stringify(net)}, layer, poly, 'solid', false, ${JSON.stringify(name)}, 5, 10, false);
-  out.pours.push({ layer, id: p && p.getState_PrimitiveId && p.getState_PrimitiveId() });
+  const id = p && p.getState_PrimitiveId && p.getState_PrimitiveId();
+  const rec = { layer, id, filled: false };
+  // a pour border alone is not copper: rebuildCopperRegion() computes the fill
+  try {
+    await new Promise((r) => setTimeout(r, 600));
+    const border = await eda.pcb_PrimitivePour.get(id);
+    const poured = border && border.rebuildCopperRegion ? await border.rebuildCopperRegion() : null;
+    rec.filled = !!poured;
+    if (poured && poured.getState_PrimitiveId) rec.pouredId = poured.getState_PrimitiveId();
+  } catch (e) { rec.fillErr = String(e && e.message || e); }
+  out.pours.push(rec);
 }
 if (${!args['no-save']}) { await eda.pcb_Document.save(); out.saved = true; }
 return out;
@@ -476,7 +463,6 @@ const COMMANDS = {
   netlist: cmdNetlist,
   'check-net': cmdCheckNet,
   screenshot: cmdScreenshot,
-  'sch-auto': cmdSchAuto,
   pcb: cmdPcb,
   pour: cmdPour
 };

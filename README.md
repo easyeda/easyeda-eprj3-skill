@@ -13,7 +13,7 @@ An AI-agent skill that turns a feature request — or a single `design.json` —
 ### 1.x vs 2.x
 
 - **1.x — offline generator.** Everything (layout, wiring, placement, checks) is self-authored Node, **zero npm dependencies**. The PCB is placement-only; the client finishes the copper.
-- **2.x — the desktop client does the work it owns.** A CLI bridge (`scripts/eda.js`) opens the project in LCEDA Pro / EasyEDA Pro (headless) and runs the client's own **source** APIs for library search, auto layout/route, copper pour, netlist extraction and screenshots. The skill ships the scripts; the model calls them; no hand-written editor JavaScript. Requires client **V4.1.94+** (`node scripts/eda.js doctor`).
+- **2.x — the desktop client does the work it owns.** A CLI bridge (`scripts/eda.js`) opens the project in LCEDA Pro / EasyEDA Pro (headless) and runs the client's own **source** APIs for library search, PCB auto layout/route, copper pour + fill, netlist extraction and screenshots. Schematic layout/wiring stays on the skill's offline engine. The skill ships the scripts; the model calls them; no hand-written editor JavaScript. Requires client **V4.1.94+** (`node scripts/eda.js doctor`).
 - 1.x is frozen at **v1.36.1** (the final patch anchors on-pin net ports/flags); its build package is published from the `v1.36.1` tag by the release workflow. Every 2.x build package is published by a **manual** run of that workflow.
 
 All code is self-authored Node CommonJS. **Zero third-party dependencies** — enforced by `node scripts/depcheck.js`, not just promised.
@@ -24,7 +24,7 @@ All code is self-authored Node CommonJS. **Zero third-party dependencies** — e
 - **Keyword → recipe selection** — `usb`, `单片机/mcu`, `i2c`, `rs485`, `按键/button`… map onto 16 buildable sub-circuit templates (`recipe/`), merged in signal-flow order with de-duplicated ids.
 - **Derived power tree** — a regulator's input lands on the nearest rail *above* its output (12V→buck→5V→LDO→3V3 chains correctly), and a big linear drop prints a heat estimate instead of silently changing your BOM.
 - **Placement by the skill, copper by the client** — the offline build ships footprints placed by block flow with every pad's net linked, plus the board outline, and prints a `rats:` handoff list. 2.x can hand the board to the client's own engine (`eda.js pcb --layout/--route`, `eda.js pour`) — the skill never implements a router or a pour engine itself.
-- **CLI-first in 2.x** — library search, client netlist export (simplified to refdes + pin→net + model for a fresh review), schematic↔PCB netlist comparison, auto layout/route and canvas screenshots all run through the client's `source` APIs; `docs/cli.md` maps every command to its API.
+- **CLI-first in 2.x** — library search, client netlist export (simplified to refdes + pin→net + model for a fresh review), schematic↔PCB netlist comparison, PCB auto layout/route, pour + fill and canvas screenshots all run through the client's `source`/auto APIs; `docs/cli.md` maps every command to its API.
 - **Human confirmation gates before anything is written** — `build.js --plan` rehearses the real build (true scores) into a throwaway dir; `autofix.js --diff` shows a line diff of every automatic edit first.
 - **Five gates** — format / ERC (E001–E007) / layout lint (L001–L010) / DRC + **DFM** (D001–D012: pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles — connectivity `D004` and pour `D006` are never judged on a board this skill built; imported or client-saved boards with copper get the full copper rules) / design intent (I001–I006: polarity, decoupling, divider ratio, diff pairs). Every finding carries a concrete `fix:` line.
 - **Measured, not hoped** — 21-case benchmark (`scripts/eval.js`) tracks seconds and token proxies in `eval/history.jsonl`; a 44-variant legal/illegal corpus (`test/corpus.js`) proves the gates actually catch corruption; `EPRJ3_DETERMINISTIC=1` rebuilds byte-identically for golden-file diffs.
@@ -130,7 +130,7 @@ MIT — see [LICENSE](LICENSE).
 
 > **边界**：交付物是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。2.x 起，布线/铺铜/截图/网表导出交给客户端 CLI（`scripts/eda.js`）执行，skill 自身不实现布线器或铺铜引擎；制造文件导出（BOM / 坐标 / Gerber）仍在客户端完成。
 >
-> **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）调用客户端 source API 完成器件搜索、自动布局/布线、铺铜、网表导出与截图。2.x 构建包一律手动触发发布。
+> **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）调用客户端 source API 完成器件搜索、PCB 自动布局/布线、铺铜与填充、网表导出与截图；原理图布局布线仍由 skill 自带离线引擎完成，不交给客户端。2.x 构建包一律手动触发发布。
 
 **当前版本：2.0.0** · [更新记录](CHANGELOG.md)
 

@@ -5,6 +5,24 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.0.1] - 2026-11-03
+
+**2.x corrections: schematic layout/wiring stays on the skill's own engine; the
+pour command now rebuilds the copper fill.**
+
+### Changed
+- **Schematic layout and routing are never delegated to the client.** The
+  client's schematic auto engine ignores this skill's module frames; the
+  offline engine in `build.js` keeps owning placement and wiring. The `eda.js
+  sch-auto` command was removed.
+
+### Fixed
+- **`eda.js pour` now fills the pour.** After creating the border it calls the
+  client's `rebuildCopperRegion()` and reports `filled` per layer (the border
+  alone is not copper). `--outline` is documented in PCB data units (mil);
+  when the engine cannot build a fill (observed near the board edge) the
+  command reports `filled:false` — inset the outline and retry.
+
 ## [2.0.0] - 2026-11-03
 
 **2.x: the skill drives the desktop client through its CLI.** Library search,
