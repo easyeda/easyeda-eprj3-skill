@@ -34,7 +34,16 @@ jobs:
           node-version: '20'
 
       - name: Package the skill
-        run: node scripts/pack.js --ref HEAD
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          mkdir -p dist
+          # git archive works on ANY checked-out ref — including 1.x tags that
+          # predate scripts/pack.js
+          git archive --format=zip --prefix=easyeda-eprj3-skill/ -o "dist/easyeda-eprj3-skill-${VER}.zip" HEAD
+          ls -la dist
 
       - name: Publish the release asset
         uses: softprops/action-gh-release@v2
