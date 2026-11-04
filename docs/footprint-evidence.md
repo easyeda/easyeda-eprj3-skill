@@ -1,11 +1,10 @@
 # 封装 / 符号证据表（land-pattern & symbol evidence）
 
-> **网络边界：** 构建/校验/渲染只读磁盘上的数据（通用预设 + 本地 IC 缓存），
-> 不在构建时联网。唯一的联网动作是**用户发起的按器件抓取**：
-> `node scripts/fetch-lcsc.js --id C<LCSC> --install`（EasyEDA 官方库，许可
-> 归属嘉立创EDA）——带型号的器件一律这样做，抓不到再自建符号/封装并声明
-> pinoutSource。封装家族（`fp-auto.js`）的批量校准仍是维护会话流程，见
-> [docs/development.md](development.md)。
+> **取数边界：** 构建/校验/渲染只读磁盘上的数据（通用预设）；带型号的器件
+> 在 2.x 通过 **EDA 客户端系统库**（EasyEDA 官方库，许可归属嘉立创EDA）解析，
+> 由客户端放置官方符号/封装，不做本地缓存、不下载文档源码。客户端库确实没有
+> 的器件才自建符号/封装并声明 `pinoutSource`。封装家族（`fp-auto.js`）的批量
+> 校准仍是维护会话流程，见 [docs/development.md](development.md)。
 
 要求：库数据必须**可溯源到外部来源**——不能是"照抄自家 recipe"（那种自证
 闭环确实引入过错误：SOT-23 焊盘内缩 0.35 mm、SOIC 焊盘长轴装反、TSSOP 用错
@@ -69,18 +68,16 @@ Pin Type 属性取值：客户端实测样例中只出现过 `IN` 与 `Undefined
 使用的电气方向存放在 design 上下文（`"num:name:dir"` 引脚 spec / IC 条目），
 **不写入记录**——没有真机样例前不得发明新的 Pin Type 枚举值。
 
-## IC 引脚库（本地缓存，不入库）
+## IC 引脚数据（2.x：来自客户端系统库）
 
-人工维护的数据（不是生成的）——每条必须注明来源：
+带型号的器件不再以条目文件入库或缓存。构建时 `scripts/lib/cli-lib.js` 通过
+EDA 客户端取得器件几何（符号引脚/包围盒、封装焊盘），客户端负责放置官方
+符号与封装实例；引脚号、名称与焊盘坐标都来自官方库本身，因此不需要在仓库里
+维护第二份引脚表。
 
-| 条目 | 引脚 | 来源 |
-| --- | --- | --- |
-| `STM32F103C8T6` | 48（24 L / 24 R，符号 pitch 100 mil；封装为官方 LQFP-48 焊盘逐字坐标） | 符号+封装：EasyEDA 官方库 C8734（`https://easyeda.com/api/products/C8734/components`，pin 号/名称/列位与焊盘坐标逐字；电源类引脚名按确定性命名规则标 W 方向）；datasheet：[ST STM32F103C8](https://www.st.com/resource/en/datasheet/stm32f103c8.pdf) |
-| `AMS1117-3.3` | 4（1=GND 2=VOUT 3=VIN 4=VOUT/tab，官方符号逐字；封装 `{auto:SOT223}` 按官方 SOT-223 坐标生成） | EasyEDA 官方库 C6186（`https://easyeda.com/api/products/C6186/components`）；datasheet：[AMS1117](https://www.advanced-monolithic.com/Pdf/ds1117.pdf) |
-
-**带型号的条目一律不入库**，放本地缓存（`~/.easyeda-eprj3/ic`，见 docs/development.md）。新增条目：先 `node scripts/fetch-lcsc.js --id C<LCSC> --install` 抓官方库
-（输出即条目格式）；官方库没有的器件再按 datasheet 自建并由用户确认引脚
-（流程见 [docs/development.md](development.md)）。
+只有客户端库确实没有的器件才自建，规则不变：按 datasheet 画 inline 符号 +
+`{auto}` 封装，与用户确认引脚后声明 `pinoutSource`（I007 要求），并在
+[footprint-evidence.md] 的家族表中补充可溯源出处。
 
 ## 未经真机客户端验证
 

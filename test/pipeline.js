@@ -251,7 +251,7 @@ function main() {
   // A recipe that names a device CLASS must resolve a real library entry by
   // role coverage, expand roles into pins, and fail loudly when the class has
   // no capable device (report §9). Model-specific entries live in the LOCAL
-  // CACHE (fetch-lcsc), not in the repo — a clean checkout has no devices, so
+  // 2.x has no local device cache (system library via the EDA client), so
   // these checks are skipped rather than failed.
   const devs = JSON.parse(run('scripts/recipe.js', ['devices', '--json']));
   if (devs.length) {
@@ -280,7 +280,7 @@ function main() {
     const i8 = run('scripts/intent.js', ['--design', badRolesFile], 1);
     ok(/I008/.test(i8), 'I008 catches an unbound required role', i8);
   } else {
-    console.log('  note: no cached IC devices — run scripts/fetch-lcsc.js --install (skipping typed-recipe checks)');
+    console.log('  note: no local device entries in 2.x — typed-recipe checks need an explicit "ic" device (skipped)');
   }
 
   // --------------------------------------------------- error handling path

@@ -573,19 +573,25 @@ What the builder does on top of that (and what to keep when editing by hand):
 Presets ship with the skill (`templates/library/{symbol,footprint}/`) and resolve
 first — **only generic, non-model entries live there**: passives, diodes, LEDs,
 test points, power flags, net ports and common packages. Parts with a real
-part number are **not shipped**; they come from the official library on demand
-and are referenced by name (`"ic": "STM32F103C8T6"`):
+part number are **not shipped and not cached**: they are resolved through the
+EDA client at build time and placed by it.
 
-```bash
-node scripts/fetch-lcsc.js --id C8734 --install    # → ~/.easyeda-eprj3/ic/ (cache)
+```json
+{ "id": "U1", "ic": "STM32F103C8T6", "lcsc": "C8734", "pins": { … } }
 ```
+
+`scripts/lib/cli-lib.js` asks the client for the device geometry, writes the
+skeleton around it, then the client places the official symbol
+(`sch_SourcePrimitiveComponent.add`) and footprint
+(`pcb_PrimitiveComponent.create`), sets the designator and the pad nets.
+Requires the client **V4.1.94+** (`node scripts/eda.js doctor`); there is no
+local IC cache and no HTTP fetch in 2.x. Class-based device auto-selection is
+gone — name the device or give its LCSC id.
 
 Generated/inline entries are staged under `<project>/.tmp/library/` during
 authoring and removed by `build.js` or `cleanup.js`; `load-library.js
-list|show|remove` inspects that tier, and `recipe.js devices` lists what the IC
-cache can supply. Inline entries are staged as `SYM_*` / `FP_*` so a symbol and
-footprint sharing a display name cannot collide. Building reads the cache from
-disk — `fetch-lcsc.js` is the only network path, and only on request.
+list|show|remove` inspects that tier. Inline entries are staged as `SYM_*` /
+`FP_*` so a symbol and footprint sharing a display name cannot collide.
 
 ## Where to read next
 
@@ -630,16 +636,14 @@ disk — `fetch-lcsc.js` is the only network path, and only on request.
   impedance control remain client/human tasks. Flat multi-sheet authoring IS
   supported (`sheets: N` + net ports); hierarchical sheet navigation and
   simulation documents are not — finish those in the client.
-- **Pin definitions of real devices are never invented.** For a part missing
-  from the IC library, in order: ① `node scripts/fetch-lcsc.js --id C<LCSC>
-  --install` — pulls the official EasyEDA symbol + footprint verbatim (the ONE
-  sanctioned network call, user-initiated per part); ② fetch fails / part
-  absent → self-build a quality symbol (functional pin grouping) + an `{auto}`
-  footprint, **confirm the pinout with the user against the datasheet**, and
-  declare `pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails
-  any multi-pin inline symbol for a real device without that declaration.
-- **The library is committed data.** Presets and IC entries are read from
-  disk; `fetch-lcsc.js` (above) is the only network path, and only on request.
+- **Pin definitions of real devices are never invented.** Use `"ic": "<device>"`
+  so the client supplies the official pins and places the symbol; if the
+  client library truly lacks the part, self-build a quality symbol (functional
+  pin grouping) + an `{auto}` footprint, **confirm the pinout with the user
+  against the datasheet**, and declare `pinoutSource: "按 datasheet 手工绘制（用户已确认）"`
+  — I007 fails any multi-pin inline symbol for a real device without it.
+- **The system library belongs to the client.** 2.x never caches or downloads
+  library documents; the client resolves devices and places them itself.
 - **The deliverable is the `.eprj3` project itself — nothing else.** No
   manufacturing artifacts: BOM, pick-and-place / coordinate files, Gerber or
   production archives are out of scope; the EasyEDA client exports those. Do

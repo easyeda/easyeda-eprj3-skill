@@ -1,6 +1,6 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — offline schematic layout/placement plus a 2.x CLI bridge (LCEDA/EasyEDA Pro 4.1.94+) for library search, auto layout/route, pour, netlist export/compare and screenshots; zero npm dependencies.",
   "main": "scripts/lib/eprj3.js",
   "repository": {
@@ -48,7 +48,6 @@
     "report": "node scripts/report.js",
     "make-board": "node scripts/make-board.js",
     "floorplan": "node scripts/floorplan.js",
-    "fetch-lcsc": "node scripts/fetch-lcsc.js",
     "select": "node scripts/recipe.js devices",
     "eda": "node scripts/eda.js",
     "pack": "node scripts/pack.js"

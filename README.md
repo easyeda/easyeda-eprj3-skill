@@ -13,7 +13,7 @@ An AI-agent skill that turns a feature request — or a single `design.json` —
 ### 1.x vs 2.x
 
 - **1.x — offline generator.** Everything (layout, wiring, placement, checks) is self-authored Node, **zero npm dependencies**. The PCB is placement-only; the client finishes the copper.
-- **2.x — the desktop client does the work it owns.** A CLI bridge (`scripts/eda.js`) opens the project in LCEDA Pro / EasyEDA Pro (headless) and runs the client's own **source** APIs for library search, PCB auto layout/route, copper pour + fill, netlist extraction and screenshots. Schematic layout/wiring stays on the skill's offline engine. The skill ships the scripts; the model calls them; no hand-written editor JavaScript. Requires client **V4.1.94+** (`node scripts/eda.js doctor`).
+- **2.x — the desktop client does the work it owns.** A CLI bridge (`scripts/eda.js`) opens the project in LCEDA Pro / EasyEDA Pro (headless) and runs the client's own APIs for library search, official symbol/footprint placement, PCB auto layout/route, copper pour + fill, netlist extraction and screenshots (no local library cache). Schematic layout/wiring stays on the skill's offline engine. The skill ships the scripts; the model calls them; no hand-written editor JavaScript. Requires client **V4.1.94+** (`node scripts/eda.js doctor`).
 - 1.x is frozen at **v1.36.1** (the final patch anchors on-pin net ports/flags); its build package is published from the `v1.36.1` tag by the release workflow. Every 2.x build package is published by a **manual** run of that workflow.
 
 All code is self-authored Node CommonJS. **Zero third-party dependencies** — enforced by `node scripts/depcheck.js`, not just promised.
@@ -130,7 +130,7 @@ MIT — see [LICENSE](LICENSE).
 
 > **边界**：交付物是 `.eprj3` 工程本身（原理图 + 布局好的 PCB）。2.x 起，布线/铺铜/截图/网表导出交给客户端 CLI（`scripts/eda.js`）执行，skill 自身不实现布线器或铺铜引擎；制造文件导出（BOM / 坐标 / Gerber）仍在客户端完成。
 >
-> **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）调用客户端 source API 完成器件搜索、PCB 自动布局/布线、铺铜与填充、网表导出与截图；原理图布局布线仍由 skill 自带离线引擎完成，不交给客户端。2.x 构建包一律手动触发发布。
+> **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号/封装放置、PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局布线仍由 skill 自带离线引擎完成。2.x 构建包一律手动触发发布。
 
 **当前版本：2.0.0** · [更新记录](CHANGELOG.md)
 

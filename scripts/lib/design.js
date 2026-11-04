@@ -86,61 +86,23 @@ function readSource(file, isGen) {
 }
 
 // ------------------------------------------------------------ IC pinout library
-// Model-specific parts are NOT committed with the skill (library policy: only
-// generic, non-model entries live in templates/library/). A real IC entry is
-// fetched from the EasyEDA official library into a local cache and referenced
-// by name:
+// Model-specific parts are NOT shipped with the skill. 2.x resolves them
+// through the EDA client CLI at build time: the device is looked up in the
+// system library, its GEOMETRY is read for layout, and the client places the
+// official symbol/footprint instance itself (no local cache, no document
+// download). The design only names the device:
 //
-//   node scripts/fetch-lcsc.js --id C8734 --install   # → ~/.easyeda-eprj3/ic/
-//   { "id": "U1", "ic": "STM32F103C8T6", "pins": { "1": "3V3", ... } }
+//   { "id": "U1", "ic": "STM32F103C8T6" }         // by device name
+//   { "id": "U1", "ic": "STM32F103C8T6", "lcsc": "C8734" }   // exact LCSC id
 //
-// resolveIcPart injects the entry's symbol/footprint into the part BEFORE the
-// normal inline paths run — everything downstream (validation, layout, ERC)
-// sees an ordinary inline part, and `part.ic` only records the provenance.
-const icCache = new Map();
-
-function loadIcEntry(name) {
-  if (icCache.has(name)) return icCache.get(name);
-  const I = require('./icdirs');
-  const hit = I.icFiles(null).find((f) => path.basename(f, '.json') === name);
-  if (!hit) {
-    fail(`part references ic "${name}", but no cached entry exists — fetch it from the official library: `
-      + `node scripts/fetch-lcsc.js --id C<LCSC> --install (cache: ${I.USER_CACHE}); `
-      + 'model-specific parts are never shipped with the skill');
-  }
-  let entry;
-  try {
-    entry = parseJsonText(readJsonText(hit));
-  } catch (e) {
-    fail(`ic entry "${name}" is not valid JSON: ${e.message}`);
-  }
-  const pinsOk = entry && entry.name === name &&
-    (Array.isArray(entry.symbol && entry.symbol.pins) || Array.isArray(entry.rawSymbol && entry.rawSymbol.pins));
-  if (!pinsOk) {
-    fail(`ic entry "${name}" is malformed (needs name + symbol.pins[] or rawSymbol.pins[])`);
-  }
-  icCache.set(name, entry);
-  return entry;
-}
-
+// resolveIcPart keeps that reference until build.js resolves it.
 function resolveIcPart(p) {
   if (!p || typeof p !== 'object' || !p.ic) return p;
-  const entry = loadIcEntry(String(p.ic));
   if (p.symbol) fail(`part "${p.id}": give "ic" OR "symbol", not both`);
-  if (p.footprint) fail(`part "${p.id}": give "ic" OR "footprint", not both (the IC entry ships one)`);
-  const symbolSpec = entry.rawSymbol
-    ? { name: entry.name, designator: entry.designator || 'U', raw: true, pins: entry.rawSymbol.pins, graphics: entry.rawSymbol.graphics }
-    : { name: entry.name, designator: entry.designator || 'U', pitch: entry.pitch || 30, pins: entry.symbol.pins };
-  const out = Object.assign({}, p, {
-    symbol: symbolSpec,
-    footprint: entry.footprint
+  if (p.footprint) fail(`part "${p.id}": give "ic" OR "footprint", not both (the system library ships one)`);
+  return Object.assign({}, p, {
+    libraryRef: { name: String(p.ic), lcsc: p.lcsc === undefined ? null : String(p.lcsc) }
   });
-  // device metadata (optional, used by the role binder and gate I008): the
-  // entry declares its class and which pins play which role
-  if (entry.class) out.deviceClass = entry.class;
-  if (entry.pinRoles) out.pinRoles = entry.pinRoles;
-  if (entry.requiredRoles) out.requiredRoles = entry.requiredRoles;
-  return out;
 }
 
 /** Build the single multi-part symbol spec for a multi-unit component: one
@@ -279,7 +241,7 @@ function normalize(raw, file) {
     if (!id) fail(`parts[${i}] has no "id"`);
     if (seen.has(id)) fail(`duplicate part id "${id}"`);
     seen.add(id);
-    if (!p.symbol) fail(`part "${id}" has no "symbol"`);
+    if (!p.symbol && !p.libraryRef) fail(`part "${id}" has no "symbol"`);
     const pins = {};
     if (p.pins && typeof p.pins === 'object') {
       for (const [k, v] of Object.entries(p.pins)) {
@@ -313,15 +275,10 @@ function normalize(raw, file) {
     const autoNC = p.autoNC === true || d.autoNC === true;
     if (autoNC) {
       let symNums = null;
+      // an "ic" part's pin numbers come from the resolved system-library
+      // device; build.js fills the unmapped pins after the CLI lookup
       if (p.symbol && typeof p.symbol === 'object' && Array.isArray(p.symbol.pins)) {
         symNums = p.symbol.pins.map((s) => String(typeof s === 'string' ? s.split(':')[0] : (s.num || '')));
-      } else if (p.ic) {
-        try {
-          const entry = loadIcEntry(String(p.ic));
-          symNums = entry.rawSymbol
-            ? entry.rawSymbol.pins.map((s) => String(s.num))
-            : entry.symbol.pins.map((s) => String(s.split(':')[0]));
-        } catch { symNums = null; }
       }
       if (symNums) {
         for (const num of symNums) if (pins[num] === undefined) pins[num] = 'NC';
@@ -352,6 +309,10 @@ function normalize(raw, file) {
       // pin definitions source note (datasheet URL / 官方库出处) — required by
       // I007 for multi-pin inline symbols that look like real devices
       pinoutSource: p.pinoutSource === undefined ? null : String(p.pinoutSource),
+      // system-library reference (resolved by build.js through the client CLI)
+      ic: p.ic === undefined ? null : String(p.ic),
+      libraryRef: p.libraryRef || null,
+      autoNC,
       // device metadata + role binding (typed recipes; gate I008)
       deviceClass: p.deviceClass || null,
       pinRoles: p.pinRoles || null,
@@ -452,7 +413,7 @@ function validateDesign(d, lib) {
       }
     }
     if (!d.skipPcb) {
-      if (!p.footprint) {
+      if (!p.footprint && !p.libraryEntry) {
         errors.push(`part "${p.id}": no "footprint" (required unless the design sets "pcb": false)`);
       } else {
         try {

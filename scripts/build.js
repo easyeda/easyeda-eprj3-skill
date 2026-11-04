@@ -253,6 +253,43 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
   const ctx = { ownerUuid: project.index.owner_uuid, client: project.client, ms: project.ms() };
 
   function symbolOf(part) {
+    // system-library part resolved through the CLI: geometry drives the
+    // layout; the client places the official symbol itself (no doc download)
+    if (part.libraryEntry) {
+      const e = part.libraryEntry;
+      const key = `lib:${e.name}`;
+      if (!symbolCache.has(key)) {
+        const sym = e.symbol || {};
+        const b = sym.bodyBBox || sym.fullBBox || null;
+        const pins = (sym.pins || []).map((pin) => {
+          const num = String(pin.pinNumber !== undefined ? pin.pinNumber : pin.num);
+          const x = Number(pin.x) || 0;
+          const y = Number(pin.y) || 0;
+          return {
+            num,
+            name: pin.pinName || pin.name || num,
+            x, y,
+            length: Number(pin.length) || 10,
+            rotation: Number(pin.rotation) || 0,
+            type: pin.direction || null,
+            tip: { x, y }
+          };
+        });
+        symbolCache.set(key, {
+          name: e.name,
+          title: e.symbolName || e.name,
+          designator: e.designator || 'U?',
+          bbox: b ? { x1: b.minX, y1: b.minY, x2: b.maxX, y2: b.maxY } : { x1: -50, y1: -50, x2: 50, y2: 50 },
+          pins,
+          pinByNum: new Map(pins.map((p) => [p.num, p])),
+          library: true,
+          libraryUuid: e.libraryUuid,
+          deviceUuid: e.uuid,
+          entry: { name: e.name, designator: e.designator, libraryUuid: e.libraryUuid, deviceUuid: e.uuid, title: e.symbolName || e.name }
+        });
+      }
+      return Object.assign({}, symbolCache.get(key));
+    }
     if (typeof part.symbol === 'string') {
       const entry = project.loadLibrary(part.symbol);
       if (!entry) die(`part "${part.id}": symbol entry "${part.symbol}" not found (see scripts/load-library.js list)`);
@@ -307,6 +344,33 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
   }
 
   function footprintOf(part) {
+    // system-library part: pads/bbox come from the client's footprint geometry;
+    // the client creates the footprint instance itself during the post-pass
+    if (part.libraryEntry) {
+      const e = part.libraryEntry;
+      const key = `lib:${e.name}`;
+      if (!footprintCache.has(key)) {
+        const fp = e.footprint || {};
+        const pads = (fp.pads || []).map((p) => ({
+          num: String(p.padNumber !== undefined ? p.padNumber : p.num),
+          x: Number(p.x) || 0,
+          y: Number(p.y) || 0,
+          w: Number(p.width) || 20,
+          h: Number(p.height) || 20
+        }));
+        const b = fp.fullBBox || fp.bodyBBox || null;
+        footprintCache.set(key, {
+          name: fp.name || e.footprintName || e.name,
+          pads,
+          bbox: b ? { x1: b.minX, y1: b.minY, x2: b.maxX, y2: b.maxY } : null,
+          library: true,
+          libraryUuid: e.libraryUuid,
+          deviceUuid: e.uuid,
+          entry: { name: fp.name || e.footprintName || e.name, libraryUuid: e.libraryUuid, deviceUuid: e.uuid }
+        });
+      }
+      return Object.assign({}, footprintCache.get(key));
+    }
     if (!part.footprint) return null;
     if (typeof part.footprint === 'string') {
       const entry = project.loadLibrary(part.footprint);
@@ -555,6 +619,39 @@ function main() {
   const declaredH = design.board.height;
   const t0 = Date.now();                  // report.elapsed_ms
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
+
+  // ---- system-library devices, resolved through the client CLI (2.x) -------
+  // No local cache and no document download: the client returns the device
+  // geometry (layout) and later places the official symbol/footprint instances
+  // itself. See lib/cli-lib.js.
+  const libRefs = design.parts.filter((p) => p.libraryRef);
+  if (libRefs.length) {
+    const CLI_LIB = require('./lib/cli-lib');
+    const uniq = new Map();
+    for (const p of libRefs) if (!uniq.has(p.libraryRef.name)) uniq.set(p.libraryRef.name, p.libraryRef);
+    let resolved;
+    try {
+      resolved = CLI_LIB.resolveDevices([...uniq.values()].map((r) => ({ key: r.name, name: r.name, lcsc: r.lcsc || undefined })));
+    } catch (e) {
+      die(`resolving system-library device(s) needs the LCEDA/EasyEDA Pro CLI (V4.1.94+): ${e.message}`);
+    }
+    const byKey = new Map((resolved || []).map((e) => [e.key, e]));
+    for (const p of libRefs) {
+      const e = byKey.get(p.libraryRef.name);
+      if (!e || e.error || !e.symbol) {
+        die(`part "${p.id}": device "${p.libraryRef.name}" was not found in the client's system library`
+          + `${e && e.error ? ` (${e.error})` : ''} — check the name or add "lcsc": "C<id>"`);
+      }
+      p.libraryEntry = e;
+      p.ic = e.name;
+      if (p.autoNC) {
+        for (const pin of e.symbol.pins || []) {
+          const num = String(pin.pinNumber !== undefined ? pin.pinNumber : pin.num);
+          if (p.pins[num] === undefined) p.pins[num] = 'NC';
+        }
+      }
+    }
+  }
   // Strategy: the skill NEVER lays copper — no auto routing, no pours, no flags
   // to turn them on. The deliverable is footprints placed with pad-net links
   // bound and the board outline; copper is finished in the EasyEDA client by a
@@ -590,14 +687,14 @@ function main() {
   }
   // Library fidelity: a real multi-pin device drawn from an inline pin list is
   // NOT the official symbol (shape, pin order and names differ from the
-  // library). Name every such part so the author fetches the official entry
-  // (`fetch-lcsc.js --id C<LCSC> --install`, then `"ic": "<name>"`).
+  // library). Name every such part so the author pins the system-library
+  // device instead (`"ic": "<name>"`, placed by the client).
   const inlineIcs = design.parts.filter((p) => p.symbol && typeof p.symbol === 'object'
     && !p.symbol.raw && !p.symbol.multipart && !p.ic
     && Array.isArray(p.symbol.pins) && p.symbol.pins.length > 4);
   if (inlineIcs.length) {
     log(`library: ${inlineIcs.length} multi-pin part(s) use a self-drawn inline symbol, not the official library`
-      + ` — fetch the official entry and reference it with "ic": ${inlineIcs.slice(0, 10).map((p) => p.id).join(' ')}`
+      + ` — reference the system-library device with "ic": ${inlineIcs.slice(0, 10).map((p) => p.id).join(' ')}`
       + `${inlineIcs.length > 10 ? ' …' : ''}`);
   }
 
@@ -847,6 +944,7 @@ function main() {
   // default (design.frame.titleBlock opts back in)
   const sheetDocs = new Map();
   const usedSheetTitles = new Set();
+  const sheetTitleBySheet = new Map();
   for (let s = 1; s <= design.sheets; s += 1) {
     const sheetBlocks = blocks.filter((bl) => bl.sheet === s);
     const sheetPls = placements.filter((p) => (p.sheet || 1) === s);
@@ -862,6 +960,7 @@ function main() {
     sheetTitle = String(sheetTitle).replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 40) || `P${s}`;
     if (usedSheetTitles.has(sheetTitle)) sheetTitle = `${sheetTitle} ${s}`;
     usedSheetTitles.add(sheetTitle);
+    sheetTitleBySheet.set(s, sheetTitle);
     let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
     for (const bl of sheetBlocks) { x1 = Math.min(x1, bl.rect.x1); y1 = Math.min(y1, bl.rect.y1); x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
     for (const p of sheetPls) { const e = p.extent; x1 = Math.min(x1, e.x1); y1 = Math.min(y1, e.y1); x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
@@ -934,7 +1033,24 @@ function main() {
     }
   }
 
-  for (const pl of placements) placeSchematicComponent(emitters.get(pl.sheet || 1), project, pl, lib, design);
+  const librarySch = [];
+  const libraryPcb = [];
+  for (const pl of placements) {
+    if (pl.part.libraryEntry) {
+      librarySch.push({
+        schematicName: design.schematic,
+        pageName: sheetTitleBySheet.get(pl.sheet || 1),
+        deviceName: pl.part.libraryEntry.name,
+        libraryUuid: pl.part.libraryEntry.libraryUuid,
+        designator: pl.part.multiUnitBase || pl.part.id,
+        x: pl.x,
+        y: pl.y,
+        rotation: pl.rotation || 0
+      });
+      continue;
+    }
+    placeSchematicComponent(emitters.get(pl.sheet || 1), project, pl, lib, design);
+  }
 
   const powerEntries = new Map();
   for (const flag of routed.flags) {
@@ -1052,36 +1168,77 @@ function main() {
   let ratNets = [];
   if (doPcb) {
     const { planPcb } = require('./lib/pcb-plan');
-    // Board size settles here: an explicit `board` is honoured as a floor and
-    // grown if the placer needs more; an UNDECLARED board shrinks/grows to
-    // exactly fit the parts (required already carries the edge margin), so a
-    // 3-part board no longer ships on a 1600×1000 mil blank. Iterates because
-    // resizing the board can re-trigger row wrapping, which changes `required`
-    // again; it stabilises after at most a couple of rounds.
+    // Board size settles here. A DECLARED board is honoured as a floor and
+    // grown if the placer needs more. An UNDECLARED board takes the aggregate
+    // footprint bbox of the natural placement, gives it 1.35× area, reshapes
+    // that to a 4:3 rectangle and re-packs the parts inside it (the placer
+    // wraps rows at the new width, so the board itself drives the layout).
     const MIN_W = 400;
     const MIN_H = 300;
+    const snap10 = (v) => Math.round(v / 10) * 10;
     let plan = planPcb(design, lib, placements);
-    for (let round = 0; round < 4; round += 1) {
-      let targetW = Math.max(design.boardDeclared ? design.board.width : 0, plan.required.width, MIN_W);
-      const targetH = Math.max(design.boardDeclared ? design.board.height : 0, plan.required.height, MIN_H);
-      // aspect guard (report 5.5): an undeclared board must not collapse into
-      // a 1:5 sliver — keep the area, clamp the aspect to 1:2.5 and replan
-      if (!design.boardDeclared && targetH > targetW * 2.5 && round < 2) {
-        targetW = Math.ceil(Math.sqrt((targetW * targetH) / 2.5) / 10) * 10;
+    if (!design.boardDeclared) {
+      const naturalW = Math.max(plan.required.width, MIN_W);
+      const naturalH = Math.max(plan.required.height, MIN_H);
+      const area = naturalW * naturalH * 1.35;
+      let H = Math.max(MIN_H, snap10(Math.sqrt((area * 3) / 4)));
+      let W = Math.max(MIN_W, snap10((H * 4) / 3));
+      for (let round = 0; round < 4; round += 1) {
+        design.board.width = W;
+        design.board.height = H;
+        plan = planPcb(design, lib, placements);
+        const needW = Math.max(plan.required.width, MIN_W);
+        const needH = Math.max(plan.required.height, MIN_H);
+        if (needW <= W && needH <= H) break;
+        // grow the 4:3 rectangle (keeping the aspect) until the packing fits
+        const f = Math.max(needW / W, needH / H) * 1.02;
+        H = snap10(H * f);
+        W = snap10((H * 4) / 3);
       }
-      if (targetW === design.board.width && targetH === design.board.height) break;
-      log(`board set to ${targetW}×${targetH} mil to fit ${design.parts.length} parts`
-        + (design.boardDeclared ? ' (declared size kept as a floor)' : ' (auto-fit)'));
-      design.board.width = targetW;
-      design.board.height = targetH;
+      log(`board set to ${W}×${H} mil (4:3, 1.35× the natural ${naturalW}×${naturalH} footprint bbox)`);
+    } else {
+      for (let round = 0; round < 4; round += 1) {
+        const targetW = Math.max(design.board.width, plan.required.width, MIN_W);
+        const targetH = Math.max(design.board.height, plan.required.height, MIN_H);
+        if (targetW === design.board.width && targetH === design.board.height) break;
+        log(`board set to ${targetW}×${targetH} mil to fit ${design.parts.length} parts (declared size kept as a floor)`);
+        design.board.width = targetW;
+        design.board.height = targetH;
+        plan = planPcb(design, lib, placements);
+      }
+    }
+    {
+      const targetW = design.board.width;
+      const targetH = design.board.height;
       E.updateRecord(pcbDoc.file,
         (r) => r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE',
         (r) => { r.body.path = E.rectPath(0, 0, targetW, targetH); });
-      plan = planPcb(design, lib, placements);
     }
     const placementPlan = plan.placements;
     const pcbEm = new Emitter(pcbDoc.file);
     for (const pl of placementPlan) {
+      if (pl.part.libraryEntry) {
+        // the client places the official footprint in the post-pass; we only
+        // record the planned position and the pad nets
+        const fp = lib.footprintOf(pl.part);
+        const [px, py, angle] = pl.pcbPos;
+        const nets = {};
+        for (const [num, net] of Object.entries(pl.part.pins || {})) nets[String(num)] = net;
+        const designator = pl.part.multiUnitBase || pl.part.id;
+        libraryPcb.push({
+          deviceUuid: pl.part.libraryEntry.uuid,
+          libraryUuid: pl.part.libraryEntry.libraryUuid,
+          x: px,
+          y: py,
+          rotation: angle || 0,
+          designator,
+          nets
+        });
+        const geo = fp ? P.placedPads(fp, px, py, angle || 0) : [];
+        for (const g of geo) pcbGeoPads.push({ ref: designator, num: g.num, net: nets[g.num] || "", x: g.x, y: g.y, w: g.w, h: g.h });
+        pcbParts.push({ part: pl.part, x: px, y: py, angle: angle || 0, library: true });
+        continue;
+      }
       const placed = placePcbComponent(pcbEm, project, design, pl, lib);
       if (placed) {
         pcbParts.push(Object.assign({ part: pl.part }, placed));
@@ -1117,6 +1274,30 @@ function main() {
       log(`  pcb.place: ${explicitCount}/${design.parts.length} placed explicitly — auto-placed: ${autoIds.join(' ')}`);
     }
     log(`  rats: ${ratNets.length} net(s) to connect by hand in the client — ${ratNets.map(([n, c]) => `${n}(${c}p)`).join(' ') || 'none'}`);
+  }
+
+  // ---- client placement for system-library instances (2.x) -----------------
+  // The official symbol/footprint documents are never downloaded or spliced:
+  // the client places its own instances at the coordinates the offline engine
+  // computed, then everything below (validate/ERC/lint/DRC/netcheck) reads the
+  // client-saved project.
+  if (librarySch.length || libraryPcb.length) {
+    if (rehearsal) {
+      log(`library: ${librarySch.length} symbol(s) + ${libraryPcb.length} footprint(s) would be placed by the client (skipped in --plan/--dry-run)`);
+    } else {
+      const CLI_LIB = require('./lib/cli-lib');
+      log(`library: placing ${librarySch.length} symbol(s) + ${libraryPcb.length} footprint(s) through the EDA client`);
+      let placed;
+      try {
+        placed = CLI_LIB.placeInstances(dir, { sch: librarySch, pcb: libraryPcb });
+      } catch (e) {
+        die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
+      }
+      const bad = [...((placed && placed.symbols) || []), ...((placed && placed.footprints) || [])].filter((x) => !x.ok);
+      if (bad.length) {
+        die(`client placement failed for ${bad.length} part(s): ${bad.slice(0, 8).map((b) => `${b.ref}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
+      }
+    }
   }
 
   // ------------------------------------------------------------ validate

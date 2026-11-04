@@ -79,7 +79,7 @@ function cmdDevices(opts) {
   const rows = S.listDevices({ class: opts.class });
   if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return; }
   if (!rows.length) {
-    console.log('no device entries declare a "class" yet — add them with fetch-lcsc --class, or curate an ic entry');
+    console.log('class-based device selection is gone in 2.x — pin "ic": "<system-library device>" (or "lcsc": "Cxxxx") in the recipe');
     return;
   }
   console.log(`${'device'.padEnd(22)} ${'class'.padEnd(20)} roles`);

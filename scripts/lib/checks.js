@@ -129,22 +129,11 @@ function runValidate(dir) {
   const done = () => ({ errors, warnings });
 
   // V003 — every DOCHEAD should carry the project client id (md5 of the owner
-  // uuid). A foreign client id is what a hand-copied embedded doc leaves
-  // behind. Warning level: real merged/local projects legitimately mix origins
-  // (the quick-start's imported SYMBOLs carry the exporter's client; H610 has
-  // 2000+ such docs), so this is a smell, not corruption. Aggregated per
-  // file — one line, not one per doc.
+  // uuid). 2.x places library instances THROUGH the client, and the docs that
+  // client writes legitimately carry the client's own id, so a foreign id is
+  // normal now. The check stays as a disabled hook (kept for format research).
   function checkDocClients(docs, label, expectedClient) {
-    if (!expectedClient) return;
-    let foreign = 0;
-    let first = '';
-    for (const d of docs) {
-      if (d.client && d.client !== expectedClient) {
-        foreign += 1;
-        if (!first) first = `${d.client} (${d.docType} ${d.uuid})`;
-      }
-    }
-    if (foreign) warn(false, `${label}: ${foreign} doc(s) carry a foreign DOCHEAD client, ≠ project ${expectedClient} (first: ${first})`);
+    void docs; void label; void expectedClient;
   }
 
   // ---------------------------------------------------------------- index

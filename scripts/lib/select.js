@@ -3,8 +3,10 @@
  * select.js — device selection by CLASS + PIN ROLES (typed recipes).
  *
  * A typed recipe says what it needs ("an I2C sensor with VDD/VSS/SDA/SCL"),
- * not which chip to use. This module answers that question from the IC
- * cache: every cached IC entry (see lib/icdirs.js) may declare
+ * not which chip to use. 2.x resolves model devices through the EDA client
+ * (the local IC cache is gone), so class-based auto-selection needs an explicit
+ * device: recipes must pin `ic` (device name) or `lcsc` (Cxxxx). The helpers
+ * stay for API compatibility and report that requirement.
  *
  *   "class": "sensor.i2c",
  *   "pinRoles": { "VDD": "5", "VSS": "8", "SDA": "1", "SCL": "4" },   // pin(s)
@@ -17,19 +19,12 @@
  *   bindDevice({ class, roles, prefer }) → { name, binding, missing, candidates }
  *   deviceNames()                     → every library entry that has a class
  */
-const fs = require('fs');
-const path = require('path');
 
-const I = require('./icdirs');
 
 function loadEntries() {
-  // model-specific entries live in the local cache (fetch-lcsc), never in the
-  // shipped templates — see icdirs.js for the search order
-  return I.icFiles(null)
-    .map((f) => {
-      try { return JSON.parse(require('fs').readFileSync(f, 'utf8')); } catch { return null; }
-    })
-    .filter(Boolean);
+  // no local cache in 2.x: the system library is read through the EDA client
+  // at build time, and a recipe must name the device it wants
+  return [];
 }
 
 function rolesOf(entry) { return entry.pinRoles ? Object.keys(entry.pinRoles) : []; }
@@ -62,7 +57,7 @@ function bindDevice(want) {
   const wanted = w.roles || [];
   const all = listDevices({ class: w.class });
   if (!all.length) {
-    throw new Error(`no device in the library has class "${w.class}" — add one with fetch-lcsc --class or curate an entry`);
+    throw new Error(`class-based device selection is gone in 2.x (no local library cache): pin the device with "ic": "<system-library name>" (or "lcsc": "Cxxxx") for class "${w.class}"`);
   }
   const scored = all.map((d) => {
     const missing = wanted.filter((r) => !d.roles.includes(r));

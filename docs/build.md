@@ -72,7 +72,7 @@ cells for large inline symbols so blocks keep their gutters.
 | --- | --- | --- |
 | `id` | yes | reference designator and part key; unique |
 | `symbol` | yes | preset entry name, or `{ name, designator, pins:[…] }` |
-| `ic` | no | name of a cached IC entry, fetched from the official library (`scripts/fetch-lcsc.js --install`) — replaces `symbol`+`footprint`; see below |
+| `ic` | no | system-library device name (optionally with `lcsc: "Cxxxx"`); resolved and PLACED through the EDA client CLI (V4.1.94+) — replaces `symbol`+`footprint`; see below |
 | `footprint` | yes unless `pcb:false` | preset name, `{ auto: "LQFP48" }`, or `{ name, designator, pads, outline }` |
 | `pins` | yes | `{ "1": "NET", … }` or `["1:NET","2:NET"]`; `"NC"` marks an intentional no-connect |
 | `polarity` | no | `{ "1": "+", "2": "-" }` — the intent gate flags a "+" pin on a ground net (a reversed LED / electrolytic) |
@@ -176,30 +176,27 @@ AI-authored schematics:
   "pins": { "1": "3V3", "23": "GND", "24": "3V3", "34": "SWDIO", "37": "SWCLK" } }
 ```
 
-The entry is **fetched from the EasyEDA official library into a local cache**
-— model-specific parts are deliberately NOT shipped with the skill
-(`templates/library/` holds only generic, non-model entries: passives, diodes,
-LEDs, test points, power flags and net ports):
+2.x resolves model-specific devices **through the EDA client** — there is no
+local library cache and no document download. The client returns the device
+geometry for layout (`lib_Symbol.getGeometry` / `lib_Footprint.getGeometry`),
+the skill writes the project skeleton, and the client then places the official
+symbol and footprint instances itself (`sch_SourcePrimitiveComponent.add` /
+`pcb_PrimitiveComponent.create`) at the planned coordinates and links the pad
+nets. The flow needs the desktop client **V4.1.94+**; without it the build
+stops with a clear message.
 
-```bash
-node scripts/fetch-lcsc.js --id C8734 --install   # → ~/.easyeda-eprj3/ic/
+```json
+{ "id": "U1", "ic": "STM32F103C8T6", "lcsc": "C8734",
+  "pins": { "1": "3V3", "23": "GND", "24": "3V3", "34": "SWDIO", "37": "SWCLK" } }
 ```
 
-The entry ships the
-evidence-sourced symbol pin list (`num:name:dir:side` — pin numbers, names,
-electrical directions and column layout) and the footprint spec, each with a
-citable `evidence` block (symbol source, footprint source, datasheet URL).
-Map only the pins the design actually uses; everything else becomes `"NC"`.
-An IC entry replaces `symbol` + `footprint` — give one or the other, never
-both. Entries are cached locally, never committed with the skill. For a part
-NOT in the cache, in order: ① `node scripts/fetch-lcsc.js --id C<LCSC>
---install` — pulls the official EasyEDA symbol + footprint verbatim (the one
-sanctioned network call, user-initiated per part); ② if the fetch fails,
-self-build the inline symbol (functional pin grouping) + an `{auto}`
-footprint, CONFIRM the pinout with the user against the datasheet, and declare
-`pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails undeclared
-real-device pinouts. Never hand-type a real chip's pins from memory without
-either step.
+Map only the pins the design actually uses; `autoNC: true` fills the rest as
+`"NC"` from the resolved pin list. An `ic` part replaces `symbol` +
+`footprint` — give one or the other, never both. If the client library cannot
+find the device, self-build the inline symbol (functional pin grouping) + an
+`{auto}` footprint, CONFIRM the pinout with the user against the datasheet,
+and declare `pinoutSource: "按 datasheet 手工绘制（用户已确认）"` — I007 fails
+undeclared real-device pinouts. Never hand-type a real chip's pins from memory.
 
 ### Typed recipes (`"bind"`)
 

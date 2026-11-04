@@ -68,7 +68,7 @@ function materialise(file, name) {
     fs.writeFileSync(out, JSON.stringify(merged.design, null, 2), 'utf8');
     return out;
   } catch (e) {
-    // model-specific devices live in the local cache (fetch-lcsc); a clean
+    // model-specific devices are resolved through the EDA client (2.x); a clean
     // checkout cannot build a typed recipe, so the case is skipped, not failed
     console.log(`  note: skipping typed recipe ${name} — ${e.message.split('—')[0].trim()}`);
     return null;

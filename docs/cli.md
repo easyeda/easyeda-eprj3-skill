@@ -38,6 +38,24 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 `--keep` keeps the session open (debugging); by default every command closes
 and destroys its headless session so batch runs do not leak editor windows.
 
+## Library instances
+
+`build.js` itself drives the client for any part written as `"ic": "<device>"`
+(+ optional `"lcsc"`): `scripts/lib/cli-lib.js` resolves the device geometry
+(`lib_Symbol.getGeometry` / `lib_Footprint.getGeometry`) so the offline engine
+can plan positions, writes the project skeleton, then opens the project and:
+
+- places each official symbol with `sch_SourcePrimitiveComponent.add`;
+- creates each official footprint with `pcb_PrimitiveComponent.create`, sets
+  its designator with `pcb_PrimitiveComponent.modify` and links the pad nets
+  with `PCB_PrimitivePad.modify`;
+- saves, after which validate / ERC / lint / DRC / netcheck read the
+  client-written project.
+
+There is no library document download and no local cache. If a device name is
+not found, pass its LCSC id (`"lcsc": "C12345"`) or fall back to an inline
+symbol + `{auto}` footprint with a declared `pinoutSource`.
+
 ## Why "source" APIs
 
 The client exposes two families of schematic APIs. The `source` family

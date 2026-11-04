@@ -5,6 +5,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.0.2] - 2026-11-04
+
+**Library devices come from the client; the board outline follows the 1.35× /
+4:3 rule.**
+
+### Changed
+- **System library, client-owned.** A part written as `"ic": "<device>"` (plus
+  optional `"lcsc"`) is resolved at build time through the EDA client: the
+  skill reads the device geometry for layout (`lib_Symbol.getGeometry` /
+  `lib_Footprint.getGeometry`), writes the project skeleton, then the client
+  places the official symbol (`sch_SourcePrimitiveComponent.add`) and footprint
+  (`pcb_PrimitiveComponent.create`), sets the designator and links the pad
+  nets. No library document is downloaded or spliced.
+- **Board outline from the footprint bbox.** An undeclared board takes the
+  natural placement's aggregate footprint bbox, gives it 1.35× area, reshapes
+  it to a 4:3 rectangle (keeping the aspect when it must grow) and re-packs the
+  parts inside it. A declared board is still a floor.
+
+### Removed
+- `scripts/fetch-lcsc.js`, `scripts/lib/icdirs.js` and the local IC cache
+  (`.cache/ic`, `~/.easyeda-eprj3/ic`) — no cache-first lookup, no HTTP fetch.
+- Class-based device auto-selection (`select.js` now reports that a recipe must
+  name its device or LCSC id). Typed-recipe tests that needed cached entries
+  were dropped (pipeline 120→110, dfm 97→93 checks in a clean checkout).
+- The foreign-DOCHEAD-client warning in validate: docs written by the client
+  for placed instances legitimately carry the client's id.
+
 ## [2.0.1] - 2026-11-03
 
 **2.x corrections: schematic layout/wiring stays on the skill's own engine; the

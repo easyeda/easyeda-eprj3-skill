@@ -31,7 +31,6 @@ easyeda-eprj3-skill/
 │   ├── open.js
 │   └── lib/               ← 共享读写模块
 ├── templates/library/     ← 通用预设（符号/封装，无型号）
-├── .cache/ic/             ← 本地 IC 缓存（gitignored，fetch-lcsc 写入）
 ├── examples/              ← 示例工程
 ├── docs/                  ← 格式说明
 └── test/                  ← 回归测试
@@ -188,50 +187,30 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 | 构建前想给用户过目？ | `build.js --plan`：真实预演（lint/drc 分数是真的），目标目录零写入 |
 | 怎么证明零第三方依赖？ | `node scripts/depcheck.js`（`npm run depcheck`，已串进 `npm test`） |
 
-## 库数据维护（抓取按需，构建不联网）
+## 库数据（2.x：没有本地缓存，全部走客户端）
 
 > **库策略（用户规定）：** `templates/library/` 只放通用、高频、**无型号**的条目
-> （电阻/电容/电感/二极管/LED/测试点/电源标志/网络端口/常见封装）。任何带具体
-> 型号的器件都不作为文件入库，一律用官方接口抓取后放本地缓存。
+> （电阻/电容/电感/二极管/LED/测试点/电源标志/网络端口/常见封装）。带具体型号的
+> 器件不再下载、不再缓存：构建时通过 EDA 客户端 CLI 解析器件几何，并由客户端
+> 放置官方符号/封装实例。
 >
-> 构建只读本地缓存，不在构建时联网；抓取是**按器件、用户发起**的动作
-> （`fetch-lcsc.js`），也是唯一的联网路径。
+> 因此 `fetch-lcsc.js`、`icdirs.js`、`.cache/ic`、`~/.easyeda-eprj3/ic` 已在 2.x
+> 移除；构建需要 LCEDA Pro / EasyEDA Pro **V4.1.94+** 在运行（`eda.js doctor`）。
 
-| 位置 | 用途 |
+| 需要 | 做法 |
 |---|---|
-| `<项目>/.tmp/library/ic` | 工程内暂存（构建结束清理） |
-| `<skill>/.cache/ic` | 仓库本地缓存（gitignored，开发/CI 预置） |
-| `~/.easyeda-eprj3/ic` | 用户缓存，`fetch-lcsc --install` 默认写入 |
+| 按型号找器件 | 设计里写 `"ic": "<系统库器件名>"`，或用 `node scripts/eda.js search --q/--lcsc` 查名字与编号 |
+| 精确 LCSC 编号 | 设计里加 `"lcsc": "C12345"` |
+| 库都查不到 | 自建 inline 符号 + `{auto}` 封装，按 datasheet 与用户确认，并声明 `pinoutSource` |
 
-新增 IC 条目优先用现成脚本抓取并转换（输出即条目格式，evidence 三来源自动填写）：
+实现位置：`scripts/lib/cli-lib.js`（`resolveDevices` 取几何、`placeInstances`
+在客户端放符号/封装并连焊盘网络），`build.js` 在写完骨架后调用一次。
 
-```bash
-node scripts/fetch-lcsc.js --id C8734 --install        # 官方库逐字 → 用户缓存
-node scripts/fetch-lcsc.js --id C8734 --install-local  # 写入仓库 .cache/ic（开发用）
-node scripts/fetch-lcsc.js --id C8734             # 仅打印转换结果
-```
-
-脚本不可达（器件不在官方库/网络受限）时再按以下手动流程从官方库抓取样例器件数据：
-
-```
-https://easyeda.com/api/products/{LCSC}/components
-```
-
-- 返回 `result.packageDetail.dataStr`（封装）与 `result.dataStr`（符号），
-  `shape` 数组内是 `PAD~…` / `P~…` 记录（单位 10 mil，y 向下；换算到本 skill
-  的 mil/Y-up）。
-- 符号引脚记录 `P~show~<electric>~<num>~<dotX>~<dotY>~<rot>~…`：官方库
-  electric 字段恒为 Unspecified，**方向由确定性命名规则标注**（VDD/VSS/GND/
-  VIN/VOUT/VBAT/VDDA/VSSA → W；其余不标）。
-- 封装焊盘逐字转换（IC 条目），或回填 `fp-auto.js` 家族公式常数；引用块
-  （evidence）必须同时给出：官方库 part id + API URL、封装出处、datasheet
-  URL，三项缺一不可。
-- 同一提交内：更新 [footprint-evidence.md](footprint-evidence.md) 出处表 +
-  `test/dfm.js` 断言（引脚数/关键尺寸）。
-
-已按此流程固化的样例：C2145（SOT-23）、C82942（SOT-23-5）、C7950（SOIC-8）、
-C6186（SOT-223 + AMS1117 条目）、C8734（LQFP-48 + STM32 条目）、C24112
-（QFN-24）、C165948（USB-C）、C21190（R0603）。
+自建条目只用于“客户端库里确实没有”的器件：按 datasheet 画 inline 符号 +
+`{auto}` 封装，与用户确认后写入设计并声明 `pinoutSource`。不再直接访问
+LCSC/EasyEDA 的 HTTP 接口，也不再生成/维护本地 IC 条目文件；同一提交内若
+新增了自建封装家族常数，仍要更新 [footprint-evidence.md](footprint-evidence.md)
+出处表与 `test/dfm.js` 断言。
 
 ## 进阶文档
 
