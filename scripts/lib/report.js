@@ -231,8 +231,13 @@ function buildProjectReport(design, all, netcheck, build) {
     lines.push(`| intent | ${(intent.errors || []).length === 0 ? '通过' : `${intent.errors.length} 错误`} |`);
     lines.push(`| lint | ${lint.score ?? '—'}/100 |`);
     lines.push(`| DRC | ${drc.score ?? '—'}/100（${drc.mode === 'placed-only' ? '仅布局' : '含铜'}） |`);
+    const clientPcb = !!(build && build.pcb && /^client-(update|import)$/.test(build.pcb.source || ''));
     const nc = build.netcheck || netcheck;
-    lines.push(`| netcheck | ${nc && nc.match ? '通过' : '失配'} |`);
+    lines.push(`| netcheck | ${clientPcb ? '客户端由原理图导入（构造性一致）' : (nc && nc.match ? '通过' : '失配')} |`);
+    if (build && build.schDrc && build.schDrc.counts) {
+      const c = build.schDrc.counts;
+      lines.push(`| 原理图 DRC（客户端） | ${c.fatalError || 0} fatal / ${c.error || 0} error / ${c.warn || 0} warn |`);
+    }
     lines.push('');
 
     const issues = [

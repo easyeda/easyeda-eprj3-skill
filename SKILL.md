@@ -32,7 +32,7 @@ of reading everything up front.
 ```
 - [ ] 0. 环境检查 doctor（用到 2.x CLI 功能时必做：客户端 4.1.94+）
 - [ ] 1. 需求采集 intake（设计文件已给出则跳过）
-- [ ] 2. 生成工程 build（含五道门禁 + netcheck）
+- [ ] 2. 生成工程 build（含门禁；客户端建板时 PCB 由原理图导入，离线建板再跑 netcheck）
 - [ ] 3. 网表审计 audit（全新子 agent 复核；2.x 可用 eda.js netlist 导出）
 - [ ] 4. 报告 report（project-report.md + ai-report.md）
 - [ ] 5. 打开客户端 open（可选）
@@ -84,7 +84,7 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 node scripts/netlist.js --dir <project dir> --design design.json --audit <project dir>/.tmp/netlist-audit.json
 #    netlist audit package → a FRESH sub-agent reviews it (mandatory; see the
 #    "Netlist audit" section below, not an optional nicety)
-node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build already ran it; re-run after client edits)
+node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (offline-placed boards; build runs it when no client import)
 node scripts/report.js --dir <project dir> --design design.json --report <dir>/build.json
 #    project-report.md (概述/功能特性/信号框架图/电路框架图/网络/门禁/遗留/建议)
 #    then write ai-report.md yourself — model/tokens/times, see "Reports" below
@@ -109,7 +109,7 @@ Then call a script instead of hand-writing JavaScript:
 | --- | --- | --- |
 | find a device (keyword / LCSC) | `eda.js search --q …` / `--lcsc …` | `lib_Device.search` / `searchByProperties` |
 | netlist for review | `eda.js netlist --dir <p> --out review/netlist.json` | `sch_ManufactureData.getNetlistFile` |
-| schematic ↔ PCB agreement | `eda.js check-net --dir <p>` | sch + pcb `getNetlistFile` |
+| schematic DRC | `eda.js sch-drc --dir <p>` | `sch_Drc.check` |
 | visual check | `eda.js screenshot --dir <p> --out shots` | `getPngFile` / `getCurrentRenderedAreaImage` |
 | PCB auto layout/route | `eda.js pcb --layout/--route` | `pcb_Document` |
 | copper pour + fill | `eda.js pour --net GND --outline x1,y1,x2,y2` (data units = mil) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
@@ -126,6 +126,18 @@ Rules:
   session, so layout stays deterministic and all five gates run offline.
 - **Scripts, not snippets.** The model runs these scripts; it does not write
   editor JS itself. A new capability means a new `eda.js` subcommand.
+- **The client builds the PCB from the schematic.** When a build uses the
+  client, `build.js` places the official symbols, then calls
+  `pcb_Document.importChanges(schUuid, true)` and moves the imported footprints
+  to the planned positions. Footprints and pad nets come from the client's own
+  update, so the PCB netlist is complete by construction — no schematic ↔ PCB
+  comparison step. The offline `netcheck` gate still covers no-client builds.
+- **Schematic DRC after drawing.** With the client, the build also runs
+  `sch_Drc.check(true, false, true)` on the finished sheet: the report is
+  `schDrc` in `build.json` (rule / net / designator / pin), fatal/error items
+  fail the build (`--allow-sch-drc` overrides), and `eda.js sch-drc` re-runs it
+  for the repair loop. Router vertices, flags, ports and net labels are snapped
+  to the 50-mil grid so NETOBJECTONGRID stays at zero.
 - **Close sessions.** Every command opens a headless session and destroys it;
   batch loops must not leak editor windows (`--keep` only for debugging).
 - **Schematic layout and wiring always use the skill's own engine.** The
@@ -161,16 +173,15 @@ to the fields the reviewer needs:
 
 ```bash
 node scripts/eda.js netlist --dir <project> --out <project>/.tmp/netlist.json
-node scripts/eda.js check-net --dir <project> --out <project>/.tmp/netcheck.json
 ```
 
 `netlist.json` is `{ parts:[{ref,name,device,footprint,pins:{num:net}}],
 nets:{name:[ref.pin]} }` — refdes, connections and model names only, no
 geometry. Hand **that** file to the same fresh-subagent review (ask it to check
 each net against the PRD and flag wrong pin numbers / missing parts / shorted
-nets); `check-net.json` proves the schematic and PCB netlists agree. Use this
-path when the client is available; the package path above stays the offline
-fallback.
+nets). The PCB side needs no separate check: the client builds it from this
+same schematic. Use this path when the client is available; the package path
+above stays the offline fallback.
 
 The package is self-contained (schema `eprj3-netlist-audit/1`):
 
@@ -446,7 +457,7 @@ real override rather than a find-and-replace in your head.
 | layout | `node scripts/lint-layout.js --dir <p>` | overlapping symbols, wires through bodies, parts outside their block, off-grid |
 | copper | `node scripts/drc.js --dir <p>` | spacing, edge clearance + DFM: min drill / annular ring / silk-on-pad / acute track angle (D009–D012). A board this skill built is always `placed-only` — `D004` (unrouted) and `D006` (no pour) are never judged on it; imported or client-saved boards that carry tracks/pours get the full copper rules |
 | intent | `node scripts/intent.js --design design.json` | polarity reversed, decoupling/pair/divider/value-range violations, **unverified pinouts** (I007: a multi-pin inline symbol for a real device without `pinoutSource`) — mistakes *inside* design.json |
-| netlist | `node scripts/netcheck.js --dir <p>` | schematic ↔ PCB netlist mismatch, pin by pin (missing pads, retagged nets, floating pins). `build.js` runs it every build; re-run it standalone after hand edits in the client |
+| netlist | `node scripts/netcheck.js --dir <p>` | schematic ↔ PCB netlist mismatch, pin by pin (missing pads, retagged nets, floating pins). `build.js` runs it for boards the skill places itself (no client); client-imported PCBs are complete by construction. Re-run it standalone after hand edits on an offline board |
 | netlist audit | `node scripts/netlist.js --dir <p> --design design.json --audit <out>` | spec ↔ built disagreement, floating pins, NC violations, PCB mismatch — judged by a fresh sub-agent against the package's `rubric`, not by you (see [Netlist audit](#netlist-audit--a-fresh-reviewer-not-you)) |
 
 `--json` on any of them gives machine-readable output (every finding carries a
@@ -635,8 +646,8 @@ list|show|remove` inspects that tier. Inline entries are staged as `SYM_*` /
 - **The skill never implements a router or a pour engine.** The offline build
   writes no copper; it prints the `rats:` handoff (nets still to connect, with
   pad counts). 2.x can ask the *client* to do the copper — `eda.js pcb --route`
-  and `eda.js pour` run the vendor engine, then the screenshots and
-  `check-net` verify the result. Differential pairs, length matching and
+  and `eda.js pour` run the vendor engine, then the screenshots show the
+  result. Differential pairs, length matching and
   impedance control remain client/human tasks. Flat multi-sheet authoring IS
   supported (`sheets: N` + net ports); hierarchical sheet navigation and
   simulation documents are not — finish those in the client.

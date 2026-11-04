@@ -40,6 +40,7 @@ const SCHEMA = [
   { name: 'allow-intent', desc: 'do not fail the build on design-intent errors', hasValue: false },
   { name: 'allow-lint', desc: 'do not fail the build on layout errors', hasValue: false },
   { name: 'allow-drc', desc: 'do not fail the build on DRC errors', hasValue: false },
+  { name: 'allow-sch-drc', desc: 'do not fail the build on client schematic DRC errors', hasValue: false },
   { name: 'dry-run', desc: 'build into a throwaway directory, report, then delete it', hasValue: false },
   { name: 'report', desc: 'write the machine-readable build report to this file' },
   { name: 'digest', desc: 'print a one-page design digest (counts, gates, rats) — for resuming a session without re-reading logs', hasValue: false },
@@ -140,6 +141,27 @@ function shiftSheetsIntoPage(placements, blocks) {
  * margin, and never let a grown side come closer than 20 units to another
  * frame on the same sheet.
  */
+/**
+ * The client's NETOBJECTONGRID rule requires every net object on the 50-mil
+ * grid (5 schematic units; the official example has every component at
+ * 0/5 mod 10, and the DRC flags only the few routed jogs that end up off it).
+ * Pin tips are already on the grid; the odd vertices come from router margins
+ * (e.g. +18 / +53). Snap every wire vertex, flag and port with the same
+ * mapping, so shared endpoints stay shared and connections survive.
+ */
+function snapNetObjectsToGrid(routed, grid) {
+  const g = grid || 5;
+  const snap = (v) => Math.round(v / g) * g;
+  for (const w of routed.wires || []) {
+    for (const s of w.segs) {
+      s.x1 = snap(s.x1); s.y1 = snap(s.y1);
+      s.x2 = snap(s.x2); s.y2 = snap(s.y2);
+    }
+  }
+  for (const f of routed.flags || []) { f.x = snap(f.x); f.y = snap(f.y); }
+  for (const p of routed.ports || []) { p.x = snap(p.x); p.y = snap(p.y); }
+}
+
 function growFramesToLabels(blocks, routed) {
   const textW = (s) => Math.max(20, String(s).length * 5.5);
   const boxes = [];
@@ -938,6 +960,7 @@ function main() {
   const patternNets = best.patternNets || new Set();
   const blocks = best.blocks;
   const routed = best.routed;
+  snapNetObjectsToGrid(routed);
   growFramesToLabels(blocks, routed);
   const sheetFrames = new Map();
   // per-sheet frame: sized around what the packing produced, 明细表 off by
@@ -1034,7 +1057,6 @@ function main() {
   }
 
   const librarySch = [];
-  const libraryPcb = [];
   for (const pl of placements) {
     if (pl.part.libraryEntry) {
       librarySch.push({
@@ -1225,15 +1247,6 @@ function main() {
         const nets = {};
         for (const [num, net] of Object.entries(pl.part.pins || {})) nets[String(num)] = net;
         const designator = pl.part.multiUnitBase || pl.part.id;
-        libraryPcb.push({
-          deviceUuid: pl.part.libraryEntry.uuid,
-          libraryUuid: pl.part.libraryEntry.libraryUuid,
-          x: px,
-          y: py,
-          rotation: angle || 0,
-          designator,
-          nets
-        });
         const geo = fp ? P.placedPads(fp, px, py, angle || 0) : [];
         for (const g of geo) pcbGeoPads.push({ ref: designator, num: g.num, net: nets[g.num] || "", x: g.x, y: g.y, w: g.w, h: g.h });
         pcbParts.push({ part: pl.part, x: px, y: py, angle: angle || 0, library: true });
@@ -1278,24 +1291,59 @@ function main() {
 
   // ---- client placement for system-library instances (2.x) -----------------
   // The official symbol/footprint documents are never downloaded or spliced:
-  // the client places its own instances at the coordinates the offline engine
-  // computed, then everything below (validate/ERC/lint/DRC/netcheck) reads the
-  // client-saved project.
-  if (librarySch.length || libraryPcb.length) {
+  // the client places its symbols, then its own "schematic → PCB" update
+  // (importChanges, forced) creates every footprint and links every pad net.
+  // The planned positions are applied afterwards; validate/ERC/lint/DRC/
+  // netcheck then read the client-saved project.
+  const pcbPlan = [];
+  let pcbImported = false;   // the client built the PCB from the schematic
+  let schDrcResult = null;   // client schematic DRC (2.x, client builds only)
+  if (doPcb) {
+    const seenPcbRefs = new Set();
+    for (const p of pcbParts) {
+      const designator = p.part.multiUnitBase || p.part.id;
+      if (seenPcbRefs.has(designator)) continue;
+      seenPcbRefs.add(designator);
+      pcbPlan.push({ designator, x: p.x, y: p.y, rotation: p.angle || 0 });
+    }
+  }
+  if (librarySch.length) {
     if (rehearsal) {
-      log(`library: ${librarySch.length} symbol(s) + ${libraryPcb.length} footprint(s) would be placed by the client (skipped in --plan/--dry-run)`);
+      log(`library: ${librarySch.length} symbol(s) + PCB import would run through the client (skipped in --plan/--dry-run)`);
     } else {
       const CLI_LIB = require('./lib/cli-lib');
-      log(`library: placing ${librarySch.length} symbol(s) + ${libraryPcb.length} footprint(s) through the EDA client`);
+      log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client`);
       let placed;
       try {
-        placed = CLI_LIB.placeInstances(dir, { sch: librarySch, pcb: libraryPcb });
+        placed = CLI_LIB.placeInstances(dir, {
+          sch: librarySch,
+          pcbPlan,
+          schematicName: design.schematic
+        });
       } catch (e) {
         die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
+      }
+      if (pcbPlan.length && !placed.imported) {
+        die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`);
+      }
+      pcbImported = !!(pcbPlan.length && placed.imported);
+      if (pcbPlan.length) {
+        log(`  client: schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); removed ${placed.removed} stale footprint(s), moved ${placed.moved}`);
+        if (placed.missing && placed.missing.length) {
+          log(`  client: import did not create ${placed.missing.length} part(s): ${placed.missing.slice(0, 8).join(' ')}${placed.missing.length > 8 ? ' …' : ''}`);
+        }
       }
       const bad = [...((placed && placed.symbols) || []), ...((placed && placed.footprints) || [])].filter((x) => !x.ok);
       if (bad.length) {
         die(`client placement failed for ${bad.length} part(s): ${bad.slice(0, 8).map((b) => `${b.ref}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
+      }
+      // Schematic DRC: the client checks the finished sheet (unconnected pins,
+      // near-but-not-connected points, off-grid net objects, …). Its report is
+      // the repair list for the next design/layout iteration.
+      try {
+        schDrcResult = CLI_LIB.schDrc(dir);
+      } catch (e) {
+        if (!opts.quiet) console.log(`  note: schematic DRC skipped — ${e.message}`);
       }
     }
   }
@@ -1325,11 +1373,25 @@ function main() {
         }
       }
     },
-    pcb: { parts: pcbParts.length, mode: doPcb ? 'placed-only' : null, rats: ratNets.length },
+    pcb: {
+      parts: pcbParts.length,
+      mode: doPcb ? 'placed-only' : null,
+      source: doPcb ? (pcbImported ? 'client-update' : 'skill-placement') : null,
+      rats: ratNets.length
+    },
     elapsed_ms: Date.now() - t0,
     generatedAt: new Date().toISOString(),
     issues: routed.issues
   };
+  if (schDrcResult) {
+    const vs = schDrcResult.violations || [];
+    report.schDrc = {
+      passed: !!schDrcResult.passed,
+      counts: schDrcResult.counts || null,
+      total: vs.length,
+      violations: vs.slice(0, 80)
+    };
+  }
 
   // The staging area is authoring metadata: drop it once the project is built
   // and validated, so the deliverable is self-contained (cleanup.js does the
@@ -1355,7 +1417,10 @@ function main() {
   // agree. Full detail in report.netcheck; `scripts/netcheck.js` re-runs it
   // standalone (e.g. after hand edits in the client).
   let netcheck = null;
-  if (doPcb) {
+  // A PCB the client built from the schematic (importChanges) is complete by
+  // construction — the client's own update is the consistency proof. The
+  // offline pin diff only runs for boards the skill placed itself.
+  if (doPcb && !pcbImported) {
     const NC = require('./lib/netcheck');
     netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir), D.multiUnitBaseOf(design.multiUnits));
     report.netcheck = { match: netcheck.match, summary: netcheck.summary, issues: netcheck.issues };
@@ -1430,6 +1495,18 @@ function main() {
       for (const f of drc.findings) console.log(`  drc ${f.code}: ${f.msg}${f.fix ? `\n      fix: ${f.fix}` : ''}`);
       console.log(`drc score ${drc.score}/100 (${drc.errors} error(s), ${drc.warnings} warning(s))`);
     }
+    if (report.schDrc) {
+      const c = report.schDrc.counts || {};
+      console.log(`sch drc (client): ${c.fatalError || 0} fatal / ${c.error || 0} error / ${c.warn || 0} warn`);
+      for (const v of report.schDrc.violations.slice(0, 20)) {
+        const where = (v.primitives || [])
+          .map((p) => (p.designator ? `${p.designator}${p.name ? `.${p.name}` : ''}` : (p.name || '')))
+          .filter(Boolean)
+          .join(', ');
+        console.log(`  sch drc ${v.type || '?'} ${v.rule || ''}: ${v.net ? `[${v.net}] ` : ''}${where}${v.message ? ` ${v.message}` : ''}`);
+      }
+      if (report.schDrc.total > 20) console.log(`  … ${report.schDrc.total - 20} more in the report`);
+    }
     if (netcheck) {
       console.log(netcheck.match
         ? `netcheck: OK — schematic ↔ PCB netlists match (${netcheck.summary.schematic.pins} pins)`
@@ -1449,6 +1526,7 @@ function main() {
     console.log(`门禁 validate ${v.errors.length}/${v.warnings.length} · erc ${erc.errors.length}/${erc.warnings.length}`
       + `${intent ? ` · intent ${intent.errors.length}/${intent.warnings.length}` : ''}`
       + ` · lint ${lint.score} · drc ${drc ? drc.score : '-'}`
+      + `${report.schDrc ? ` · sch drc ${report.schDrc.counts ? `${report.schDrc.counts.error || 0}E/${report.schDrc.counts.warn || 0}W` : '?'}` : ''}`
       + `${netcheck ? ` · netcheck ${netcheck.match ? 'OK' : `${netcheck.issues.length} 失配`}` : ''}`);
     if (ratNets.length) console.log(`布线交接 rats ${ratNets.length} 网络 → ${ratNets.slice(0, 12).map(([n, c]) => `${n}(${c}p)`).join(' ')}${ratNets.length > 12 ? ' …' : ''}`);
     console.log('— end digest —');
@@ -1474,6 +1552,13 @@ function main() {
   }
   if (drc && drc.errors && !opts['allow-drc']) {
     console.error(`build finished with ${drc.errors} DRC error(s) — fix the design rules or pass --allow-drc`);
+    process.exit(1);
+  }
+  const schDrcErrors = report.schDrc && report.schDrc.counts
+    ? (report.schDrc.counts.fatalError || 0) + (report.schDrc.counts.error || 0)
+    : 0;
+  if (schDrcErrors && !opts['allow-sch-drc']) {
+    console.error(`build finished with ${schDrcErrors} schematic DRC error(s) — fix the schematic or pass --allow-sch-drc`);
     process.exit(1);
   }
   const extra = [];

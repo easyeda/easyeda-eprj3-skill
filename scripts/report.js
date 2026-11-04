@@ -54,7 +54,8 @@ function main() {
   }
 
   const all = N.projectNetlist(opts.dir);
-  const netcheck = compare(all);
+  const clientPcb = !!(build && build.pcb && /^client-(update|import)$/.test(build.pcb.source || ''));
+  const netcheck = clientPcb ? null : compare(all);
   const designStub = {
     name: path.basename(path.resolve(opts.dir)),
     powerNets: new Map(),

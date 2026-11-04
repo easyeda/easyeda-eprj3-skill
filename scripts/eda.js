@@ -12,7 +12,7 @@
  *   node scripts/eda.js search --q "ESP32-S3" [--limit 10] [--page 1]
  *   node scripts/eda.js search --lcsc C2913202
  *   node scripts/eda.js netlist --dir <project> --out netlist.json
- *   node scripts/eda.js check-net --dir <project> [--out diff.json]
+ *   node scripts/eda.js sch-drc --dir <project>
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
  *   node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--no-save] [--timeout 900000]
  *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 (PCB data units, mil) [--layers 1,2] [--no-save]
@@ -149,13 +149,14 @@ function refKey(ref) {
   return m ? [m[1], Number(m[2]), ref] : [ref || '', 0, ref || ''];
 }
 
+/** Reduce the client's JLCEDA netlist JSON to what the reviewer needs. */
 function simplifyNetlist(raw) {
   const parts = [];
   const nets = new Map();
   const byRef = new Map();
   for (const [uid, c] of Object.entries((raw && raw.components) || {})) {
     const p = c.props || {};
-    const ref = p.Designator || p['Designator'] || null;
+    const ref = p.Designator || null;
     if (!ref) continue;
     let part = byRef.get(ref);
     if (!part) {
@@ -387,73 +388,22 @@ return out;
   });
 }
 
-function cmdCheckNet(args) {
-  withProject(args, (info, session) => {
-    const code = `
-${READY_HELPER}
-const pages = await pagesOf();
-for (const p of pages) {
-  await eda.dmt_EditorControl.openDocument(p.uuid);
-  await new Promise((r) => setTimeout(r, 500));
-}
-await eda.dmt_EditorControl.openDocument(pages[pages.length - 1].uuid);
-await new Promise((r) => setTimeout(r, 800));
-async function netFile(fn) {
-  let last;
-  for (let i = 0; i < 6; i += 1) {
-    try { const f = await fn(); if (f) return f; } catch (e) { last = e; }
-    await new Promise((r) => setTimeout(r, 800));
-  }
-  if (last) throw last;
-  return null;
-}
-const sf = await netFile(() => eda.sch_ManufactureData.getNetlistFile('sch', 'JLCEDA'));
-if (!sf) throw new Error('schematic netlist unavailable');
-const schText = await sf.text();
-const pcbs = await pcbsOf();
-if (!pcbs.length) throw new Error('no PCB in this project');
-await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
-await new Promise((r) => setTimeout(r, 800));
-const pf = await netFile(() => eda.pcb_ManufactureData.getNetlistFile('pcb', 'JLCEDA'));
-if (!pf) throw new Error('PCB netlist unavailable');
-return { schText, pcbText: await pf.text() };
-`;
-    const res = CLI.invoke(info.bin, session, code, { timeout: Number(args.timeout) || 300000 });
-    const sch = simplifyNetlist(JSON.parse(res.schText));
-    const pcb = simplifyNetlist(JSON.parse(res.pcbText));
-    const mapOf = (s) => {
-      const m = new Map();
-      for (const p of s.parts) for (const [num, net] of Object.entries(p.pins)) m.set(`${p.ref}.${num}`, net || '');
-      return m;
-    };
-    const a = mapOf(sch);
-    const b = mapOf(pcb);
-    const keys = new Set([...a.keys(), ...b.keys()]);
-    const missing = [];   // on the schematic, absent on the PCB
-    const extra = [];     // on the PCB, absent on the schematic
-    const differ = [];
-    for (const k of [...keys].sort()) {
-      if (!b.has(k)) { missing.push(k); continue; }
-      if (!a.has(k)) { extra.push(k); continue; }
-      if (a.get(k) !== b.get(k)) differ.push({ pin: k, schematic: a.get(k), pcb: b.get(k) });
-    }
-    const match = missing.length === 0 && extra.length === 0 && differ.length === 0;
-    if (args.out) {
-      fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
-      fs.writeFileSync(path.resolve(args.out), `${JSON.stringify({ match, summary: { schematic: sch.stats, pcb: pcb.stats }, missing, extra, differ }, null, 2)}\n`);
-    }
-    print({
-      match,
-      schematic: sch.stats,
-      pcb: pcb.stats,
-      missingPins: missing.length,
-      extraPins: extra.length,
-      netDiffs: differ.length,
-      sample: { missing: missing.slice(0, 5), extra: extra.slice(0, 5), differ: differ.slice(0, 5) },
-      out: args.out ? path.resolve(args.out) : null
-    });
-    if (!match) process.exitCode = 1;
+function cmdSchDrc(args) {
+  if (!args.dir) throw new Error('--dir <project folder> is required');
+  const CLI_LIB = require('./lib/cli-lib');
+  const r = CLI_LIB.schDrc(args.dir, {
+    cli: args.cli,
+    timeout: Number(args.timeout) || 180000
   });
+  if (r && r.error) throw new Error(r.error);
+  const violations = (r && r.violations) || [];
+  print({
+    passed: !!(r && r.passed),
+    counts: (r && r.counts) || null,
+    total: violations.length,
+    violations: violations.slice(0, 200)
+  });
+  if (!r || !r.passed) process.exitCode = 1;
 }
 
 // --------------------------------------------------------------------- main
@@ -461,7 +411,7 @@ const COMMANDS = {
   doctor: cmdDoctor,
   search: cmdSearch,
   netlist: cmdNetlist,
-  'check-net': cmdCheckNet,
+  'sch-drc': cmdSchDrc,
   screenshot: cmdScreenshot,
   pcb: cmdPcb,
   pour: cmdPour

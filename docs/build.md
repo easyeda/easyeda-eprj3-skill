@@ -31,6 +31,12 @@ the skill never routes and never pours, so passing any of them is an
 Exit 0 means **every gate passed**. Non-zero means the described error count;
 the printed codes point at the rule that failed.
 
+When the build drives the client (any `"ic"` part), it also runs the client's
+schematic DRC (`sch_Drc.check`) on the finished sheet. The report lands in
+`build.json` as `schDrc` (counts + violations with rule / net / designator);
+`fatalError`/`error` items fail the build unless `--allow-sch-drc` is passed.
+`node scripts/eda.js sch-drc --dir <project>` re-runs the same check standalone.
+
 ## Top-level fields
 
 | Field | Type | Default | Notes |

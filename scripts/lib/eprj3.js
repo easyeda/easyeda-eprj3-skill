@@ -1188,6 +1188,12 @@ function wireBlock(v) {
     midY = last.endY;
     netAlign = leftward ? 'RIGHT_MIDDLE' : 'LEFT_MIDDLE';
   }
+  // The client's NETOBJECTONGRID rule wants net objects on the 50-mil grid
+  // (5 schematic units). Snap the label anchor — the text does not carry the
+  // connection, so a ≤2-unit move is safe and keeps the schematic DRC clean.
+  const snap5 = (n) => Math.round(n / 5) * 5;
+  midX = snap5(midX);
+  midY = snap5(midY);
   const lines = [];
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));

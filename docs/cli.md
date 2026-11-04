@@ -30,7 +30,7 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 | `node scripts/eda.js search --q "LM358" [--limit 10] [--page 1]` | fuzzy device search in the system library | `lib_Device.search` |
 | `node scripts/eda.js search --lcsc C7950` | exact device by LCSC id (symbol/footprint names included) | `lib_Device.searchByProperties` |
 | `node scripts/eda.js netlist --dir <project> --out netlist.json` | export the schematic netlist as the EDA JSON, then simplify it to `parts[{ref,name,device,footprint,pins}]` + `nets{name:[ref.pin]}` | `sch_ManufactureData.getNetlistFile` |
-| `node scripts/eda.js check-net --dir <project>` | export both netlists and compare schematic ↔ PCB pin-by-pin | sch + pcb `ManufactureData.getNetlistFile` |
+| `node scripts/eda.js sch-drc --dir <project>` | run the client's schematic DRC; print counts and every violation (rule, net, designator/pin) | `sch_Drc.check` |
 | `node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch\|pcb] [--page N]` | write PNGs of every schematic page, or the PCB canvas | `sch_ManufactureData.getPngFile`, `dmt_EditorControl.getCurrentRenderedAreaImage` |
 | `node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route]` | PCB auto layout / auto route / clear routing and save | `pcb_Document.autoLayout` / `autoRouting` / `clearRouting` |
 | `node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 --layers 1,2` | create copper pour borders **and rebuild their fill**; `--outline` is in PCB data units (mil; the board rectangle is the board-outline path in the `.epcb2`) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
@@ -45,16 +45,36 @@ and destroys its headless session so batch runs do not leak editor windows.
 (`lib_Symbol.getGeometry` / `lib_Footprint.getGeometry`) so the offline engine
 can plan positions, writes the project skeleton, then opens the project and:
 
-- places each official symbol with `sch_SourcePrimitiveComponent.add`;
-- creates each official footprint with `pcb_PrimitiveComponent.create`, sets
-  its designator with `pcb_PrimitiveComponent.modify` and links the pad nets
-  with `PCB_PrimitivePad.modify`;
-- saves, after which validate / ERC / lint / DRC / netcheck read the
-  client-written project.
+- places each official symbol with `sch_SourcePrimitiveComponent.add` (one
+  session), then reopens the project in a fresh session — the client only
+  exposes newly placed primitives to its netlist engine after a reload;
+- calls `pcb_Document.importChanges(schUuid, true)` — the client's own
+  "schematic → PCB" update. It creates every footprint and links every pad net;
+  the skill's pre-placed instances of the same designators are removed first so
+  the import takes its clean create path (4.1.94 drops a few multi-part
+  footprints when updating them in place);
+- moves every footprint to the position the offline engine planned
+  (`pcb_PrimitiveComponent.modify`);
+- saves, after which validate / ERC / lint / DRC read the client-written
+  project. The PCB netlist is complete by construction, so there is no
+  schematic ↔ PCB comparison step, and the offline `netcheck` gate is skipped
+  for these boards (it still guards boards the skill places without a client).
 
 There is no library document download and no local cache. If a device name is
 not found, pass its LCSC id (`"lcsc": "C12345"`) or fall back to an inline
 symbol + `{auto}` footprint with a declared `pinoutSource`.
+
+## Schematic DRC
+
+After the sheet is written, `build.js` runs `sch_Drc.check(true, false, true)`
+on the finished schematic (client builds only). The report lands in
+`build.json` as `schDrc` (counts + violations with rule / net / designator /
+pin); `fatalError`/`error` items fail the build unless `--allow-sch-drc` is
+passed. `eda.js sch-drc --dir <p>` re-runs it, which is the repair list.
+
+The layout snaps every wire vertex, flag, port and net label to the 50-mil
+grid (5 schematic units): the client's NETOBJECTONGRID rule wants net objects
+there, and router margins (+18, +53) otherwise leave a few jogs off it.
 
 ## Why "source" APIs
 
@@ -82,8 +102,10 @@ do: official symbols/footprints, PCB copper, netlist export and screenshots.
 2. Hand `review/netlist.json` to a fresh sub-agent (no inherited context) — it
    checks the net relationships against the PRD and reports design errors.
 3. Fix `design.json` / the generator, rebuild, repeat.
-4. `node scripts/eda.js check-net --dir <project>` proves the schematic and
-   PCB netlists agree after every change.
+4. When the client builds the PCB (`importChanges`), the schematic ↔ PCB
+   netlist is consistent by construction — no separate diff step is needed.
+   `scripts/netcheck.js` stays available for boards the skill places itself
+   (no client).
 
 ## Visual loop (screenshots)
 
@@ -106,6 +128,9 @@ Client-side limitations (4.1.94):
   schematic auto layout ignores this skill's module frames and reads worse.
   The offline engine (`build.js`) owns it; 2.x only adds client-side review,
   netlist and PCB copper.
+- `netcheck.js` reads the skill's own pad records. Client-imported boards store
+  pads in the client's layout (e.g. one logical pad as several PAD records), so
+  the offline diff is skipped for them; the import itself proves the netlist.
 
 ## Version check
 

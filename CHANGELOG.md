@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.1.0] - 2026-11-04
+
+**The client builds the PCB from the schematic; the skill only places it.**
+
+### Changed
+- **PCB via the client's own "schematic → PCB" update.** When a build uses the
+  client (any `"ic"` part), `scripts/lib/cli-lib.js` now places the official
+  symbols in one session, then in a fresh session calls
+  `pcb_Document.importChanges(schUuid, true)`. The client creates every
+  footprint and links every pad net from the schematic; the planned positions
+  are then applied with `pcb_PrimitiveComponent.modify`. The per-footprint
+  `pcb_PrimitiveComponent.create` + `PCB_PrimitivePad.modify` loop is gone, so
+  the PCB netlist is complete by construction.
+- **No schematic ↔ PCB netlist comparison.** `eda.js check-net` and the client
+  netlist check in `build.js` were removed; the import is the consistency
+  proof. The offline `netcheck.js` gate still runs for boards the skill places
+  itself (no client), and is skipped for client-imported boards, whose pad
+  records use the client's own layout.
+- The PCB import needs two sessions (symbols, then import): the client only
+  exposes freshly placed source primitives to its netlist engine after a
+  project reload.
+- **Schematic DRC after drawing.** Client builds now finish by running
+  `sch_Drc.check(true, false, true)` on the finished sheet. The report is
+  `schDrc` in `build.json` (counts + rule / net / designator / pin), printed in
+  the build log; `fatalError`/`error` items fail the build unless
+  `--allow-sch-drc`. `node scripts/eda.js sch-drc --dir <project>` re-runs the
+  same check standalone for the repair loop.
+- **Grid alignment.** Router vertices, power flags, net ports and wire net
+  labels are snapped to the client's 50-mil net-object grid (5 schematic
+  units). `NETOBJECTONGRID` warnings on the ESP32 board went from 29 to 0
+  without changing connectivity.
+
 ## [2.0.2] - 2026-11-04
 
 **Library devices come from the client; the board outline follows the 1.35× /
