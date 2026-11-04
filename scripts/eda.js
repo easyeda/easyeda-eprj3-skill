@@ -47,11 +47,6 @@ function print(value, extra) {
   process.stdout.write(`${JSON.stringify(Object.assign({ ok: true, value }, extra || {}), null, 2)}\n`);
 }
 
-function num(v) {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 /** Run the command with an open session; always closes the session. */
 function withProject(args, fn) {
   const info = CLI.requireCli({ cli: args.cli });
@@ -205,17 +200,27 @@ function cmdDoctor(args) {
   const bin = CLI.findCli(args.cli);
   if (!bin) return fail('CLI_NOT_FOUND', 'LCEDA Pro / EasyEDA Pro CLI not found. Install V4.1.94+ or set LCEDA_PRO_CLI.');
   const info = CLI.versionOf(bin);
-  const doc = CLI.run(bin, ['doctor'], { timeout: 30000 });
-  const ok = CLI.atLeast(info.version, args['min-version'] || CLI.MIN_VERSION);
+  const min = args['min-version'] || CLI.MIN_VERSION;
   const value = {
     bin,
     version: info.version,
     rawVersion: info.raw,
-    connected: !!(doc && doc.value && doc.value.connected),
-    minVersion: args['min-version'] || CLI.MIN_VERSION,
-    ok
+    connected: !!info.connected,
+    minVersion: min,
+    ok: false
   };
-  if (!ok) return fail('CLI_VERSION_TOO_OLD', `client ${info.version || '(unknown)'} is below ${value.minVersion}`, { value });
+  if (!info.connected) {
+    return fail('CLI_NOT_CONNECTED', 'the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.', { value });
+  }
+  // The editor's own version API is authoritative; bridgeVersion is the fallback.
+  const v = CLI.editorVersion(info) || info.version;
+  value.version = v;
+  if (!v) {
+    return fail('CLI_VERSION_UNKNOWN', 'cannot determine the client version (the bridge returned none).', { value });
+  }
+  const ok = CLI.atLeast(v, min);
+  value.ok = ok;
+  if (!ok) return fail('CLI_VERSION_TOO_OLD', `client ${v} is below ${min}`, { value });
   print(value);
 }
 

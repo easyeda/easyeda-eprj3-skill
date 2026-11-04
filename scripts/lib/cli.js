@@ -89,17 +89,40 @@ function run(bin, args, opts) {
 function versionOf(bin) {
   const doc = run(bin, ['doctor'], { timeout: 30000 });
   const v = doc && doc.value && doc.value.bridgeVersion;
-  if (v) return { version: String(v).split(/[.+-]/).slice(0, 3).join('.'), raw: String(v), connected: !!doc.value.connected };
-  // fall back to the install folder's `version` file
+  const connected = !!(doc && doc.value && doc.value.connected);
+  // The editor version is only available through the running bridge. The
+  // install folder also ships a `version` file, but that is the installer's
+  // packaging string ("v41.2.1-jlc-sa-win-x64.6"), NOT the editor version — it
+  // must never be used as the client version.
+  if (!v) return { version: null, raw: null, connected };
+  return {
+    version: String(v).split(/[.+-]/).slice(0, 3).join('.'),
+    raw: String(v),
+    connected
+  };
+}
+
+const _editorVersionCache = new Map();
+
+/** Authoritative editor version from the running client, via
+ *  `eda.sys_Environment.getEditorCurrentVersion(true)`. Requires a connected
+ *  client; returns null when the API is unavailable. Cached per binary. */
+function editorVersion(info, opts) {
+  if (_editorVersionCache.has(info.bin)) return _editorVersionCache.get(info.bin);
+  let v = null;
   try {
-    const dir = path.dirname(fs.realpathSync(bin));
-    const f = path.join(dir, 'version');
-    if (fs.existsSync(f)) {
-      const raw = fs.readFileSync(f, 'utf8').trim();
-      return { version: raw.split(/[.+-]/).slice(0, 3).join('.'), raw, connected: false };
+    const session = openProject(info.bin, null);
+    try {
+      const res = invoke(info.bin, session,
+        `return { version: eda.sys_Environment.getEditorCurrentVersion(true) };`,
+        { timeout: Number((opts && opts.timeout) || 60000) });
+      v = (res && typeof res.version === 'string' && res.version) || null;
+    } finally {
+      closeSession(info.bin, session);
     }
-  } catch (e) { /* ignore */ }
-  return { version: null, raw: null, connected: false };
+  } catch (e) { /* leave null; caller falls back to the bridge version */ }
+  _editorVersionCache.set(info.bin, v);
+  return v;
 }
 
 function atLeast(version, min) {
@@ -126,18 +149,26 @@ function requireCli(opts) {
   }
   const info = versionOf(bin);
   const min = o.minVersion || MIN_VERSION;
-  if (!info.version) {
+  if (!info.connected) {
+    const e = new Error('the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.');
+    e.code = 'CLI_NOT_CONNECTED';
+    throw e;
+  }
+  // The editor's own version API is authoritative; the bridge version is only
+  // a fallback for clients that predate the API (irrelevant at ≥4.1.94).
+  const v = editorVersion(info, o) || info.version;
+  if (!v) {
     const e = new Error(`cannot determine the client version from ${bin}. Run "lceda-pro doctor" manually and make sure the client is running.`);
     e.code = 'CLI_VERSION_UNKNOWN';
     throw e;
   }
-  if (!atLeast(info.version, min)) {
-    const e = new Error(`LCEDA Pro / EasyEDA Pro ${info.version} is too old — this skill needs ${min}+ (the source/auto APIs used here are 4.1.83+; 4.1.94 is the verified build).`);
+  if (!atLeast(v, min)) {
+    const e = new Error(`LCEDA Pro / EasyEDA Pro ${v} is too old — this skill needs ${min}+ (the source/auto APIs used here are 4.1.83+; 4.1.94 is the verified build).`);
     e.code = 'CLI_VERSION_TOO_OLD';
-    e.version = info.version;
+    e.version = v;
     throw e;
   }
-  return { bin, version: info.version, rawVersion: info.raw, connected: info.connected };
+  return { bin, version: v, rawVersion: info.raw, connected: info.connected };
 }
 
 /** Resolve a project folder to its .eprj3 index (the CLI opens the index). */
@@ -214,6 +245,7 @@ module.exports = {
   findCli,
   run,
   versionOf,
+  editorVersion,
   atLeast,
   requireCli,
   openProject,

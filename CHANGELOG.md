@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.1.1] - 2026-11-04
+
+**The client version comes from the editor API, not the installer file.**
+
+### Fixed
+- `versionOf` no longer reads the install folder's `version` file — that is an
+  installer packaging string (`v41.2.1-jlc-sa-win-x64.6`), not the editor
+  version. The editor version now comes from
+  `eda.sys_Environment.getEditorCurrentVersion`, with `doctor`'s `bridgeVersion`
+  as a fallback; an offline client reports `CLI_NOT_CONNECTED` instead of a
+  bogus `CLI_VERSION_TOO_OLD`.
+
+### Changed
+- `scripts/lib/cli-lib.js` shares one `READY_HELPER` across its snippets, and
+  the schematic DRC opens every page before checking.
+- Removed a dead `num()` helper in `scripts/eda.js`.
+
 ## [2.1.0] - 2026-11-04
 
 **The client builds the PCB from the schematic; the skill only places it.**

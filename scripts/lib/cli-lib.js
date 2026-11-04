@@ -18,7 +18,10 @@
  * resulting PCB netlist is complete by construction — no netlist comparison is
  * needed afterwards.
  *
- * Everything runs inside one headless CLI session.
+ * Placement uses two headless sessions: one places the symbols (and saves), a
+ * second reopens the project for the PCB import — the client only exposes
+ * freshly placed primitives to its netlist engine after a reload. The DRC check
+ * runs in its own session.
  */
 const CLI = require('./cli');
 
@@ -29,6 +32,27 @@ async function try2(fn) {
     try { return await fn(); } catch (e) { last = e; await new Promise((r) => setTimeout(r, 800)); }
   }
   throw last;
+}
+`;
+
+// Shared readiness helpers: waitReady, pagesOf (schematic pages), pcbsOf (PCB
+// documents). Every snippet that touches the editor waits for the project to
+// load and polls the document tree until it is populated.
+const READY_HELPER = `
+async function waitReady() {
+  try { await eda.dmt_Project.waitForReady(); } catch (e) { /* older builds */ }
+}
+async function pagesOf() {
+  await waitReady();
+  let p = await eda.dmt_Schematic.getAllSchematicPagesInfo();
+  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Schematic.getAllSchematicPagesInfo(); }
+  return p;
+}
+async function pcbsOf() {
+  await waitReady();
+  let p = await eda.dmt_Pcb.getAllPcbsInfo();
+  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Pcb.getAllPcbsInfo(); }
+  return p;
 }
 `;
 
@@ -170,15 +194,7 @@ function placeInstances(projectDir, placement, opts) {
 }
 
 const PLACE_SYMBOLS = `
-async function waitReady() {
-  try { await eda.dmt_Project.waitForReady(); } catch (e) { /* older builds */ }
-}
-async function pagesOf() {
-  await waitReady();
-  let p = await eda.dmt_Schematic.getAllSchematicPagesInfo();
-  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Schematic.getAllSchematicPagesInfo(); }
-  return p;
-}
+${READY_HELPER}
 const plan = __CLI__.args.plan;
 const out = { symbols: [] };
 const pages = await pagesOf();
@@ -211,21 +227,7 @@ return out;
 `;
 
 const IMPORT_PCB = `
-async function waitReady() {
-  try { await eda.dmt_Project.waitForReady(); } catch (e) { /* older builds */ }
-}
-async function pagesOf() {
-  await waitReady();
-  let p = await eda.dmt_Schematic.getAllSchematicPagesInfo();
-  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Schematic.getAllSchematicPagesInfo(); }
-  return p;
-}
-async function pcbsOf() {
-  await waitReady();
-  let p = await eda.dmt_Pcb.getAllPcbsInfo();
-  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Pcb.getAllPcbsInfo(); }
-  return p;
-}
+${READY_HELPER}
 const plan = __CLI__.args.plan;
 const out = { imported: false, removed: 0, schematicParts: 0 };
 
@@ -298,15 +300,7 @@ return out;
 `;
 
 const MOVE_FOOTPRINTS = `
-async function waitReady() {
-  try { await eda.dmt_Project.waitForReady(); } catch (e) { /* older builds */ }
-}
-async function pcbsOf() {
-  await waitReady();
-  let p = await eda.dmt_Pcb.getAllPcbsInfo();
-  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Pcb.getAllPcbsInfo(); }
-  return p;
-}
+${READY_HELPER}
 const pcbs = await pcbsOf();
 await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
 await new Promise((r) => setTimeout(r, 800));
@@ -352,18 +346,14 @@ function schDrc(projectDir, opts) {
 }
 
 const SCH_DRC = `
-async function waitReady() {
-  try { await eda.dmt_Project.waitForReady(); } catch (e) { /* older builds */ }
-}
-async function pagesOf() {
-  await waitReady();
-  let p = await eda.dmt_Schematic.getAllSchematicPagesInfo();
-  for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Schematic.getAllSchematicPagesInfo(); }
-  return p;
-}
+${READY_HELPER}
 const pages = await pagesOf();
-await eda.dmt_EditorControl.openDocument(pages[0].uuid);
-await new Promise((r) => setTimeout(r, 1500));
+for (const p of pages) {
+  await eda.dmt_EditorControl.openDocument(p.uuid);
+  await new Promise((r) => setTimeout(r, 300));
+}
+if (pages.length) await eda.dmt_EditorControl.openDocument(pages[pages.length - 1].uuid);
+await new Promise((r) => setTimeout(r, 900));
 let raw;
 try {
   raw = await eda.sch_Drc.check(true, false, true);
