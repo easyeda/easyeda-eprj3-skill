@@ -116,10 +116,14 @@ Then call a script instead of hand-writing JavaScript:
 
 Rules:
 
-- **Source APIs first.** The `sch_Source*` family edits project source data with
-  no open page and is the fastest route (`sch_SourcePrimitiveComponent.add`,
-  `sch_SourcePrimitiveWire`, …). Document-level APIs are for auto layout /
-  auto route / rendering, which need an open document.
+- **Source APIs first — for the work the client owns.** When the skill drives
+  the client it uses the `sch_Source*` family (project-source edits with no open
+  page, the fastest route; e.g. `sch_SourcePrimitiveComponent.add`). Document
+  APIs are only for auto layout / auto route / rendering, which need an open
+  document. Schematic wires, net labels and frames are the exception: the
+  offline engine writes those records straight into the `.esch2` source — the
+  same data `sch_SourcePrimitiveWire.add` would create, but without a client
+  session, so layout stays deterministic and all five gates run offline.
 - **Scripts, not snippets.** The model runs these scripts; it does not write
   editor JS itself. A new capability means a new `eda.js` subcommand.
 - **Close sessions.** Every command opens a headless session and destroys it;

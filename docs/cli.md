@@ -67,6 +67,13 @@ because it runs on the editor command space without rendering. The classic
 Prefer the source family for creation/editing; use the document family for
 auto layout / auto route / rendering, which are document-scoped by design.
 
+Schematic wiring is the one exception: `build.js` writes the wire, net-label
+and frame records straight into the `.esch2` source. That is the same data
+`sch_SourcePrimitiveWire.add` / `sch_SourcePrimitiveAttribute.addNetLabel`
+would create, but it needs no client session, keeps the layout deterministic
+and lets the five gates run offline. The client is used for what only it can
+do: official symbols/footprints, PCB copper, netlist export and screenshots.
+
 ## Review loop (netlist)
 
 1. `node scripts/eda.js netlist --dir <project> --out review/netlist.json`
