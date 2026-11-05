@@ -149,7 +149,20 @@ function sheetNetlist(file) {
   for (const r of recs) {
     if (r.type !== 'ATTR' || !r.body || r.body.key !== 'NET' || !r.body.parentId) continue;
     if (!wireIds.has(r.body.parentId)) continue;
+    // an empty value names nothing: grouping unnamed wires would short every
+    // unnamed stub into one net (the client writes value:"" on wire.add calls
+    // that carry no net)
+    if (!r.body.value) continue;
     wireNets.push({ wire: r.body.parentId, net: r.body.value });
+  }
+  // Net labels (`_NETLABEL_` atoms, as written by the client's addNetLabel)
+  // name the wire they sit on, exactly like a wire NET value.
+  for (const r of recs) {
+    if (r.type !== 'ATTR' || !r.body || r.body.key !== '_NETLABEL_' || !r.body.value) continue;
+    if (!Number.isFinite(r.body.x) || !Number.isFinite(r.body.y)) continue;
+    const pt = { x: r.body.x, y: r.body.y };
+    const seg = segments.find((s) => G.pointSegDist(pt, s.seg) < 0.01);
+    if (seg) wireNets.push({ wire: seg.wire, net: r.body.value });
   }
 
   // label semantics: every wire of the same net is one net

@@ -149,17 +149,15 @@ function requireCli(opts) {
   }
   const info = versionOf(bin);
   const min = o.minVersion || MIN_VERSION;
-  if (!info.connected) {
-    const e = new Error('the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.');
-    e.code = 'CLI_NOT_CONNECTED';
-    throw e;
-  }
-  // The editor's own version API is authoritative; the bridge version is only
-  // a fallback for clients that predate the API (irrelevant at ≥4.1.94).
+  // The editor version API opens a bare headless session, so it also boots the
+  // client when no server is running yet; try it before declaring the client
+  // offline. `doctor`'s bridgeVersion is only a fallback.
   const v = editorVersion(info, o) || info.version;
   if (!v) {
-    const e = new Error(`cannot determine the client version from ${bin}. Run "lceda-pro doctor" manually and make sure the client is running.`);
-    e.code = 'CLI_VERSION_UNKNOWN';
+    const e = info.connected
+      ? new Error(`cannot determine the client version from ${bin}. Run "lceda-pro doctor" manually.`)
+      : new Error('the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.');
+    e.code = info.connected ? 'CLI_VERSION_UNKNOWN' : 'CLI_NOT_CONNECTED';
     throw e;
   }
   if (!atLeast(v, min)) {

@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.1.2] - 2026-11-05
+
+**Version probing boots the client; netlist parsing accepts client net labels.**
+
+### Fixed
+- `doctor` / `requireCli` now use `eda.sys_Environment.getEditorCurrentVersion`
+  and open a bare headless session, so a stopped client is started on demand
+  instead of being reported as a bogus version failure.
+- `scripts/lib/netlist.js` ignores empty `NET` values (unnamed wires must not
+  be merged into one net) and resolves `_NETLABEL_` atoms by position, the same
+  way the client names wires.
+
 ## [2.1.1] - 2026-11-04
 
 **The client version comes from the editor API, not the installer file.**

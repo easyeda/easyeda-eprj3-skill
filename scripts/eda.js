@@ -209,14 +209,15 @@ function cmdDoctor(args) {
     minVersion: min,
     ok: false
   };
-  if (!info.connected) {
-    return fail('CLI_NOT_CONNECTED', 'the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.', { value });
-  }
-  // The editor's own version API is authoritative; bridgeVersion is the fallback.
+  // The version API opens a bare headless session, so it also boots the client
+  // when no server is running — doctor then reports the real editor version.
   const v = CLI.editorVersion(info) || info.version;
   value.version = v;
+  value.connected = !!v || value.connected;
   if (!v) {
-    return fail('CLI_VERSION_UNKNOWN', 'cannot determine the client version (the bridge returned none).', { value });
+    return info.connected
+      ? fail('CLI_VERSION_UNKNOWN', 'cannot determine the client version (the bridge returned none).', { value })
+      : fail('CLI_NOT_CONNECTED', 'the EDA client is not running — start LCEDA Pro / EasyEDA Pro, then retry.', { value });
   }
   const ok = CLI.atLeast(v, min);
   value.ok = ok;
