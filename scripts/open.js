@@ -3,6 +3,10 @@
 /**
  * open.js — Launch the EasyEDA Pro / LCEDA Pro offline client on a given .eprj3 file.
  *
+ * This is the ONLY script that shows the client GUI. Generation, verification
+ * and the 2.x CLI work run in headless sessions (`open --headless`) and never
+ * call this script; run it only when the user asks to see the board.
+ *
  * Usage:
  *   node scripts/open.js open --dir <projectDir> [--client <path-to-exe>]
  *   node scripts/open.js where                       # print the path the script would launch
@@ -205,6 +209,7 @@ async function main() {
       die('Pass --client <path-to-exe>, or run `node scripts/open.js set --client <path>` to persist.');
     }
     console.log(`Launching ${r.path} ${indexFile} (from ${r.source})`);
+    console.log('This opens the GUI (the normal final step after a build). Build/CLI work itself is headless.');
     const child = spawn(r.path, [indexFile], { stdio: 'ignore', detached: true });
     child.unref();
     return;

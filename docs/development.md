@@ -68,7 +68,7 @@ easyeda-eprj3-skill/
 | `node scripts/eval.js` | 回归基准（`--diff` 对比历史、`--design` 度量新设计；逐案记录 ~tokens 与秒数） |
 | `node scripts/depcheck.js` | 自研合规扫描：全部 require/import 必须是 Node 内置或本仓库相对路径（`npm run depcheck`） |
 | `node scripts/cleanup.js` | 清理临时生成的库文件 |
-| `node scripts/open.js` | 打开工程：默认交给系统文件关联（等价双击 `.eprj3`），`--client` 可指定 exe |
+| `node scripts/open.js` | 打开工程：默认交给系统文件关联（等价双击 `.eprj3`），`--client` 可指定 exe。**唯一会弹出客户端界面的脚本**——它是构建完成后的默认最后一步；构建过程本身无头 |
 
 ## 脚本用法示例
 

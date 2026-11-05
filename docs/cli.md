@@ -15,7 +15,16 @@ own offline engine (the client's schematic auto engine ignores module frames).
 - The CLI executable is `lceda-pro` / `easyeda-pro`. The scripts find it at the
   standard install locations or on `PATH`; override with `--cli <path>` or the
   `LCEDA_PRO_CLI` / `EASYEDA_PRO_CLI` environment variable.
-- The client must be running for `invoke`/sessions (`doctor` tells you).
+- The local bridge must be reachable for `invoke`/sessions. When no client is
+  running, the scripts boot it in hidden mode themselves (see below); `doctor`
+  reports the state either way.
+- **Headless while generating.** Every session these scripts open is headless
+  (`open --headless true`) and every command closes + destroys its session.
+  The bridge itself is booted in **hidden mode** (`lceda-pro --owner`, tray
+  only): plain `open` on a cold client would start the full GUI, because
+  `--headless` hides the project render, not the app that the command
+  launches. `node scripts/open.js` is the only visible step — it is the
+  intended final step of a build.
 
 Every script checks the version first and refuses to continue with a clear
 message when the client is older or missing.

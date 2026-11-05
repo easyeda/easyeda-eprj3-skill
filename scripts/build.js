@@ -1485,7 +1485,7 @@ function main() {
       log(`library: ${librarySch.length} symbol(s) + PCB import would run through the client (skipped in --plan/--dry-run)`);
     } else {
       const CLI_LIB = require('./lib/cli-lib');
-      log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client`);
+      log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client (headless — no window opens)`);
       let placed;
       try {
         placed = CLI_LIB.placeInstances(dir, {
@@ -1542,6 +1542,45 @@ function main() {
         schDrcResult = CLI_LIB.schDrc(dir);
       } catch (e) {
         if (!opts.quiet) console.log(`  note: schematic DRC skipped — ${e.message}`);
+      }
+    }
+  }
+
+  // The client's auto layout arranges for spacing, so it can park a footprint
+  // just outside the planned outline (the DRC edge rule then rejects it).
+  // Grow the board to contain what the engine actually placed: the planned
+  // size stays the floor, the origin stays at 0 when possible.
+  if (clientPlacement && clientPlacement.layout && clientPlacement.layout.ok
+    && Array.isArray(clientPlacement.layout.components) && clientPlacement.layout.components.length) {
+    const byRef = new Map(pcbParts.map((p) => [String(p.part.multiUnitBase || p.part.id), p]));
+    let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
+    for (const c of clientPlacement.layout.components) {
+      const p = byRef.get(String(c.designator));
+      if (!p) continue;
+      const fp = lib.footprintOf(p.part);
+      const pads = fp ? P.placedPads(fp, c.x, c.y, c.rotation || 0) : [];
+      const boxes = pads.length
+        ? pads.map((g) => [g.x - g.w / 2, g.y - g.h / 2, g.x + g.w / 2, g.y + g.h / 2])
+        : [[c.x - 50, c.y - 50, c.x + 50, c.y + 50]];
+      for (const [a, b, cc, d] of boxes) {
+        x1 = Math.min(x1, a); y1 = Math.min(y1, b);
+        x2 = Math.max(x2, cc); y2 = Math.max(y2, d);
+      }
+    }
+    if (x1 < x2) {
+      const MARGIN = 50;
+      const nx = Math.min(0, Math.floor(x1 - MARGIN));
+      const ny = Math.min(0, Math.floor(y1 - MARGIN));
+      const nw = Math.max(design.board.width, Math.ceil(x2 + MARGIN)) - nx;
+      const nh = Math.max(design.board.height, Math.ceil(y2 + MARGIN)) - ny;
+      if (nx !== 0 || ny !== 0 || nw !== design.board.width || nh !== design.board.height) {
+        const { resizeBoardOutline } = require('./lib/cli-lib');
+        const files = resizeBoardOutline(dir, { x: nx, y: ny, w: nw, h: nh });
+        if (files) {
+          design.board.width = nw;
+          design.board.height = nh;
+          log(`  client: board grown to ${nw}×${nh} mil to contain the auto-laid footprints`);
+        }
       }
     }
   }

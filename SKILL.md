@@ -35,8 +35,14 @@ of reading everything up front.
 - [ ] 2. 生成工程 build（含门禁；客户端建板时 PCB 由原理图导入，离线建板再跑 netcheck）
 - [ ] 3. 网表审计 audit（全新子 agent 复核；2.x 可用 eda.js netlist 导出）
 - [ ] 4. 报告 report（project-report.md + ai-report.md）
-- [ ] 5. 打开客户端 open（可选）
+- [ ] 5. 打开客户端 open（完成后默认打开，便于查看；生成过程本身全程无头，不弹窗）
 ```
+
+**Headless while generating, GUI at the end.** Every client interaction during
+generation (symbol placement, schematic → PCB import, auto layout, DRC) runs in
+a headless session and the bridge is booted in `serve-hidden` mode — generating
+a project never opens the client window. Only the final `node scripts/open.js`
+shows the GUI, which is the intended last step.
 
 运行时约定：
 
@@ -96,7 +102,7 @@ node scripts/report.js --dir <project dir> --design design.json --report <dir>/b
 #    totals, see "Reports" below
 node scripts/make-board.js --design design.json --dir <dir> --force   # one-shot: build → digest + audit package + project-report.md
 node scripts/floorplan.js --design design.json                        # preview the PCB placement map (no build; --write pins it into pcb.place)
-node scripts/open.js open --dir <project dir>   # open the .eprj3 via the OS file association (same as double-clicking it)
+node scripts/open.js open --dir <project dir>   # final step: open the .eprj3 in the client GUI (generation itself is headless)
 ```
 
 ## 2.x — CLI-first workspace (client V4.1.94+)

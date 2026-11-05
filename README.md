@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v2.2.0** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v2.2.1** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -81,7 +81,7 @@ The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md))
    - netlist audit: `netlist.js --audit` writes a self-contained package — spec (the pin→net map in design.json) next to built (the netlist recovered from the schematic) — and a sub-agent with **no inherited context** reviews it with a fixed rubric; any mismatch goes back into the repair loop ([`SKILL.md`](SKILL.md#netlist-audit--a-fresh-reviewer-not-you))
    - reports: `project-report.md` (auto — overview, functional description, feature list, **BOM**, signal-flow + power-tree diagrams, net overview, gate results, limitations, suggestions) and `ai-report.md` (the agent fills model / tokens / timings for **every agent** plus the totals)
 4. On failure, the printed `fix:` lines say exactly what to change (usually: edit the design, re-run `build.js --force`); mechanical fixes go through `scripts/autofix.js`.
-5. `node scripts/open.js` opens the project in the EasyEDA Pro client.
+5. `node scripts/open.js` opens the project in the EasyEDA Pro client — the intended last step. Generation itself is headless: the bridge is booted in hidden mode (`--owner`) and every import / auto-layout / DRC session is closed afterwards, so nothing pops up while the build runs.
 
 The agent runs all of this — you don't type it.
 
@@ -95,7 +95,7 @@ After a build the agent reports:
 - verification: all five gates with 0 errors, e.g. `blink.eprj3 at /path — 4 components, 15 wire segments, lint 100/100, drc 100/100 (placed-only).`
 - netlist audit: the independent reviewer's verdict (`ok` + its one-line summary)
 - reports: `project-report.md` (功能描述 / 功能特性 / BOM / diagrams / gates / suggestions) + `ai-report.md` (per-agent tokens and times with totals)
-- whether the client was opened
+- whether the client was opened (the final step opens it; nothing pops up while the build runs)
 
 A clean `build.js` exit plus a green independent netlist audit *is* the quality
 proof. Review and fine-tune in EasyEDA Pro.
@@ -133,7 +133,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号放置、原理图 → PCB 导入（封装与焊盘网络由客户端生成）、**PCB 自动布局**、原理图 DRC 检查、按需 PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局仍由 skill 自带离线引擎完成；客户端构建时导线由 source API 绘制。2.x 构建包一律手动触发发布。
 
-**当前版本：2.2.0** · [更新记录](CHANGELOG.md)
+**当前版本：2.2.1** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -188,7 +188,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
    - 网表审计：`netlist.js --audit` 写出自包含审计包——「设计要求」（design.json 的引脚→网络）与「实际网表」（从原理图反解）并排——交给一个**不继承任何上下文**的子 agent 按固定清单复核；不一致就回到修复循环（[`SKILL.md`](SKILL.md#netlist-audit--a-fresh-reviewer-not-you)）
    - 报告：`project-report.md`（自动——概述/功能描述/功能特性/BOM/信号框架图/电源树/网络/门禁/遗留/建议）+ `ai-report.md`（由 agent 填写**每个 agent** 的模型/token/耗时，并给出全部 agent 的合计）
 4. 失败时按错误信息里的 `fix:` 提示修改 design 后重跑（机械修复可交给 `scripts/autofix.js`）
-5. `node scripts/open.js` 在 EasyEDA Pro 客户端打开
+5. `node scripts/open.js` 在 EasyEDA Pro 客户端打开——这是默认的最后一步。生成过程本身无头：桥接服务以隐藏模式（`--owner`）启动，导入 / 自动布局 / DRC 会话用完即关，构建期间不会弹窗
 
 这些命令由 AI 自动运行；你不需要手动敲。
 
@@ -201,7 +201,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
 - PCB：多少封装与焊盘网络、板框尺寸、客户端自动布局是否执行（只管布局；不含走线/过孔/铺铜——铜皮在客户端人工完成）
 - 验证结果：五道门禁 0 错误 + 网表独立审计通过（附审计员的一句话结论）
 - 报告：`project-report.md`（功能描述/功能特性/BOM/框架图/门禁/建议）+ `ai-report.md`（全部 agent 的 token 与耗时明细及合计）
-- 是否已自动打开客户端
+- 是否打开了客户端（最后一步会打开；构建期间不会弹窗）
 
 你只需在 EasyEDA Pro 里检查、微调即可。
 

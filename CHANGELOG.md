@@ -5,6 +5,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.2.1] - 2026-11-05
+
+**Starting a build no longer pops the client window; only the final open step does.**
+
+### Fixed
+- Root cause: `lceda-pro open` on a **cold** client boots the full editor GUI
+  (`serve-gui`). `--headless` hides the project render, not the application the
+  command launches, so the first client call of a build (the version probe /
+  library resolution) opened the client early.
+- `lib/cli.js` now boots the bridge with `lceda-pro --owner` — `serve-hidden`
+  mode (tray only, no window) — and waits for `doctor` to report `connected`
+  before any `open`. When a server is already running `--owner` exits at once,
+  so the warm path is unchanged. Every generation session stays headless and is
+  closed/destroyed afterwards.
+- The final `scripts/open.js` GUI launch remains the **default last step** and
+  is documented as such (generation headless → open at the end).
+- Client auto layout can arrange a footprint just outside the tight planned
+  outline (the engine spaces for clearance, not for our 1.25× bbox); the build
+  now grows the board outline to contain every placed pad (+50 mil, planned
+  size stays the floor) and logs `board grown to W×H mil`, so the DRC edge rule
+  no longer fails a valid auto-laid board.
+- `build.js` logs the headless client pass; `open.js` says it is the final GUI
+  step.
+
 ## [2.2.0] - 2026-11-05
 
 **Client auto layout on every client build, and reports that explain the board

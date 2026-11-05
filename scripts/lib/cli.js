@@ -18,7 +18,7 @@
  *
  * Zero dependencies: child_process + fs only.
  */
-const { spawnSync } = require('child_process');
+const { spawnSync, spawn } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -195,9 +195,52 @@ function projectIndex(p) {
   return abs;
 }
 
+/** Synchronous sleep — every CLI helper here is synchronous by design. */
+function sleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** Make sure the local bridge runs WITHOUT a GUI window.
+ *
+ *  `lceda-pro open` on a cold client boots the full editor UI (`serve-gui`),
+ *  even with `--headless`: that flag hides the render of the opened project,
+ *  not the application the command starts. `lceda-pro --owner` starts the
+ *  resident bridge in `serve-hidden` mode instead (tray only, no window), and
+ *  exits immediately when a server is already up. Every open therefore goes
+ *  through ensureServer() → open, so generating a project never pops the UI.
+ */
+function ensureServer(bin) {
+  const up = () => {
+    const d = run(bin, ['doctor'], { timeout: 20000 });
+    return !!(d && d.value && d.value.connected);
+  };
+  if (up()) return true;
+  try {
+    const child = spawn(bin, ['--owner'], {
+      stdio: 'ignore',
+      detached: true,
+      windowsHide: true,
+      cwd: scratchDir()
+    });
+    child.unref();
+  } catch (e) {
+    return false;
+  }
+  for (let i = 0; i < 40; i += 1) {
+    sleep(750);
+    if (up()) return true;
+  }
+  return false;
+}
+
 /** Open a project headless; returns the session id. No path = a bare editor. */
 function openProject(bin, projectPath, opts) {
   const o = opts || {};
+  // Boot order matters: `open` on a cold client starts the full GUI
+  // (`serve-gui`) — `--headless` only hides the project render, not the app
+  // that gets launched. `--owner` starts the resident bridge in `serve-hidden`
+  // mode (tray only) and exits at once when a server already exists.
+  ensureServer(bin);
   const args = ['open'];
   if (projectPath) args.push('--path', projectIndex(projectPath));
   args.push('--headless', String(o.headless !== false));

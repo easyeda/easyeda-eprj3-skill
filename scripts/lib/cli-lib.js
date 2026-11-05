@@ -169,6 +169,47 @@ function stripEmptyShells(projectDir) {
   return removed;
 }
 
+/** Rewrite the BOARD_OUTLINE rectangle in the project's main PCB document.
+ *  Used after the client's auto layout when its arrangement needs more room
+ *  than the planned outline (the engine may park a part just outside the
+ *  board, which the DRC's edge rule rejects). Returns the number of files
+ *  changed. */
+function resizeBoardOutline(projectDir, rect) {
+  let changed = 0;
+  const visit = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const ent of entries) {
+      const file = path.join(dir, ent.name);
+      if (ent.isDirectory()) { visit(file); continue; }
+      if (!/\.epcb2$/i.test(ent.name)) continue;
+      const raw = fs.readFileSync(file, 'utf8');
+      const lines = raw.split(/\r?\n/);
+      let hit = false;
+      for (let i = 0; i < lines.length; i += 1) {
+        const line = lines[i];
+        const sep = line.indexOf('||');
+        if (sep <= 0) continue;
+        let head;
+        try { head = JSON.parse(line.slice(0, sep)); } catch (e) { continue; }
+        if (!head || head.type !== 'POLY') continue;
+        let body;
+        try { body = JSON.parse(line.slice(sep + 2).replace(/\|+$/, '')); } catch (e) { continue; }
+        if (!body || body.polyType !== 'BOARD_OUTLINE') continue;
+        body.path = ['R', rect.x, rect.y + rect.h, rect.w, rect.h, 0, 0];
+        lines[i] = line.slice(0, sep + 2) + JSON.stringify(body) + '|';
+        hit = true;
+      }
+      if (hit) {
+        fs.writeFileSync(file, lines.join('\n'), 'utf8');
+        changed += 1;
+      }
+    }
+  };
+  visit(projectDir);
+  return changed;
+}
+
 /** Place library instances in an EXISTING project (already on disk).
  *  - symbols: sch_SourcePrimitiveComponent.add, per size-bounded batch;
  *  - PCB: importChanges(force) once, then planned positions per batch. */
@@ -514,6 +555,17 @@ try {
 }
 // the engine commits asynchronously; give it a moment before persisting
 await new Promise((r) => setTimeout(r, 2000));
+// read the arranged positions: the build grows the board outline when the
+// engine's layout needs more room than the planned outline
+try {
+  const comps = await eda.pcb_PrimitiveComponent.getAll();
+  out.components = comps.map((c) => ({
+    designator: c.getState_Designator ? c.getState_Designator() : null,
+    x: c.getState_X ? c.getState_X() : null,
+    y: c.getState_Y ? c.getState_Y() : null,
+    rotation: c.getState_Rotation ? c.getState_Rotation() : 0
+  })).filter((c) => c.designator && typeof c.x === 'number' && typeof c.y === 'number');
+} catch (e) { out.components = []; }
 try { await eda.pcb_Document.save(); out.saved = true; } catch (e) { /* save error is not fatal */ }
 return out;
 `;
@@ -574,5 +626,5 @@ for (const v of arr) {
 return { passed: counts.fatalError === 0 && counts.error === 0, counts, violations };
 `;
 
-module.exports = { resolveDevices, placeInstances, schDrc, stripEmptyShells };
+module.exports = { resolveDevices, placeInstances, schDrc, stripEmptyShells, resizeBoardOutline };
 

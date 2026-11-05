@@ -299,8 +299,13 @@ engine is unavailable or reports a failure, the build keeps them and logs it.
   placement instead (connectors on the edge, decoupling caps beside their IC).
 - `build.json` records `pcb.layout` (`"client-auto"` / `"skill-placement"`) and
   `pcb.autoLayout` (engine duration, failed count, error).
+- The engine arranges for spacing, not for our tight outline, so it can park a
+  footprint just outside it. The build then **grows the board outline** to
+  contain every placed pad (+50 mil) and logs
+  `board grown to W×H mil`; the planned 1.25× size stays the floor, the origin
+  stays at 0 where possible.
 - The DRC/DFM gates then judge the arranged board, so an auto layout that
-  overflows the outline fails the build the same way a hand placement would.
+  still spills fails the build the same way a hand placement would.
 
 The **schematic** side gets the same treatment: the build verifies the routed
 sheet for cross-net contacts (where the client would merge two nets) and, if
