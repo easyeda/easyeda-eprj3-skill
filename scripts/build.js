@@ -162,6 +162,54 @@ function snapNetObjectsToGrid(routed, grid) {
   for (const p of routed.ports || []) { p.x = snap(p.x); p.y = snap(p.y); }
 }
 
+/** System-library power-flag type for a net name (addNetFlag enum). */
+function powerFlagKind(net) {
+  const n = String(net).toUpperCase();
+  if (/(^|[_-])(AGND|GNDA|ANALOG)/.test(n)) return 'AnalogGround';
+  if (/(^|[_-])(PGND|GNDP|CHASSIS|SHIELD|EARTH)/.test(n)) return 'ProtectGround';
+  if (/(^|[_-])(GND|VSS|0V)([_-]|$)/.test(n)) return 'Ground';
+  return 'Power';
+}
+
+/** Split a wire group's segments into connected polylines (one per chain).
+ *  The client's `sch_SourcePrimitiveWire.add` accepts one connected polyline
+ *  per call; a branch (T) becomes several chains that the client merges. */
+function segChains(segs) {
+  const eps = 0.01;
+  const same = (a, b) => Math.abs(a - b) < eps;
+  const remaining = (segs || []).filter((s) => !(same(s.x1, s.x2) && same(s.y1, s.y2)));
+  const chains = [];
+  while (remaining.length) {
+    const first = remaining.shift();
+    const pts = [first.x1, first.y1, first.x2, first.y2];
+    let grew = true;
+    while (grew) {
+      grew = false;
+      let ex = pts[pts.length - 2];
+      let ey = pts[pts.length - 1];
+      let idx = remaining.findIndex((s) => (same(s.x1, ex) && same(s.y1, ey)) || (same(s.x2, ex) && same(s.y2, ey)));
+      if (idx >= 0) {
+        const s = remaining.splice(idx, 1)[0];
+        if (same(s.x1, ex) && same(s.y1, ey)) pts.push(s.x2, s.y2);
+        else pts.push(s.x1, s.y1);
+        grew = true;
+        continue;
+      }
+      const sx = pts[0];
+      const sy = pts[1];
+      idx = remaining.findIndex((s) => (same(s.x1, sx) && same(s.y1, sy)) || (same(s.x2, sx) && same(s.y2, sy)));
+      if (idx >= 0) {
+        const s = remaining.splice(idx, 1)[0];
+        if (same(s.x2, sx) && same(s.y2, sy)) pts.unshift(s.x1, s.y1);
+        else pts.unshift(s.x2, s.y2);
+        grew = true;
+      }
+    }
+    chains.push(pts);
+  }
+  return chains;
+}
+
 function growFramesToLabels(blocks, routed) {
   const textW = (s) => Math.max(20, String(s).length * 5.5);
   const boxes = [];
@@ -960,6 +1008,9 @@ function main() {
   const patternNets = best.patternNets || new Set();
   const blocks = best.blocks;
   const routed = best.routed;
+  // Client builds draw the wiring and the power flags through the source API;
+  // offline builds keep the record emitters below.
+  const clientBuild = !rehearsal && placements.some((p) => p.part && p.part.libraryEntry);
   snapNetObjectsToGrid(routed);
   growFramesToLabels(blocks, routed);
   const sheetFrames = new Map();
@@ -1075,7 +1126,19 @@ function main() {
   }
 
   const powerEntries = new Map();
+  const flagPlan = [];
   for (const flag of routed.flags) {
+    if (clientBuild) {
+      flagPlan.push({
+        pageName: sheetTitleBySheet.get(flag.sheet || 1) || `P${flag.sheet || 1}`,
+        net: flag.net,
+        x: flag.x,
+        y: flag.y,
+        type: powerFlagKind(flag.net),
+        rotation: 0
+      });
+      continue;
+    }
     if (!powerEntries.has(flag.net)) {
       const entry = require('./lib/entries').buildPowerEntry(project, flag.net, flag.style);
       project.saveLibrary(entry);
@@ -1156,6 +1219,11 @@ function main() {
     }
   }
 
+  // Client builds draw the wires through the source API (layout still belongs
+  // to the offline engine); offline builds keep the record emitter.
+  const wirePlan = [];
+  const flagPointKeys = new Set((routed.flags || []).map((f) => `${f.sheet || 1}|${f.net}|${ptKey(f.x, f.y)}`));
+  const portPointKeys = new Set((routed.ports || []).map((p) => `${p.sheet || 1}|${p.net}|${ptKey(p.x, p.y)}`));
   routed.wires.forEach((w, i) => {
     const em = emitters.get(w.sheet || 1);
     const pinKeys = pinKeysBySheet.get(w.sheet || 1) || new Set();
@@ -1167,6 +1235,28 @@ function main() {
     // a zero-length anchor (a port/flag sitting on a bare pin) carries no
     // readable label — the port/flag symbol already prints the net name
     const anchorOnly = w.segs.every((s) => G.segLen(s) < G.EPS);
+    if (clientBuild && !anchorOnly) {
+      const sheet = w.sheet || 1;
+      let touchesPort = false;
+      let touchesFlag = false;
+      for (const s of w.segs) {
+        const k1 = `${sheet}|${w.net}|${ptKey(s.x1, s.y1)}`;
+        const k2 = `${sheet}|${w.net}|${ptKey(s.x2, s.y2)}`;
+        if (portPointKeys.has(k1) || portPointKeys.has(k2)) touchesPort = true;
+        if (flagPointKeys.has(k1) || flagPointKeys.has(k2)) touchesFlag = true;
+      }
+      const chains = segChains(w.segs);
+      if (chains.length) {
+        wirePlan.push({
+          pageName: sheetTitleBySheet.get(w.sheet || 1) || `P${w.sheet || 1}`,
+          // Power flags name the net in the client's netlister; net ports do
+          // not, so port-named wires must carry the name themselves.
+          net: touchesPort || !touchesFlag ? w.net : null,
+          chains
+        });
+      }
+      return;
+    }
     const nameShown = !hiddenWire.has(i) && !short && !chainNet && !anchorOnly;
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
@@ -1317,6 +1407,8 @@ function main() {
       try {
         placed = CLI_LIB.placeInstances(dir, {
           sch: librarySch,
+          flagPlan,
+          wirePlan,
           pcbPlan,
           schematicName: design.schematic
         });
@@ -1324,7 +1416,8 @@ function main() {
         die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
       }
       if (pcbPlan.length && !placed.imported) {
-        die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`);
+        die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`
+          + ` (schematic ${placed.schematicParts}/${pcbPlan.length} part(s), ${placed.wires.length} wire chain(s) drawn, ${placed.removed} stale footprint(s) removed)`);
       }
       pcbImported = !!(pcbPlan.length && placed.imported);
       if (pcbPlan.length) {
@@ -1333,9 +1426,20 @@ function main() {
           log(`  client: import did not create ${placed.missing.length} part(s): ${placed.missing.slice(0, 8).join(' ')}${placed.missing.length > 8 ? ' …' : ''}`);
         }
       }
-      const bad = [...((placed && placed.symbols) || []), ...((placed && placed.footprints) || [])].filter((x) => !x.ok);
+      if (placed.flags && placed.flags.length) {
+        log(`  client: placed ${placed.flags.length} power flag(s) through the source API`);
+      }
+      if (placed.wires && placed.wires.length) {
+        log(`  client: drew ${placed.wires.length} wire chain(s) through the source API`);
+      }
+      const bad = [
+        ...((placed && placed.symbols) || []),
+        ...((placed && placed.flags) || []),
+        ...((placed && placed.wires) || []),
+        ...((placed && placed.footprints) || [])
+      ].filter((x) => !x.ok);
       if (bad.length) {
-        die(`client placement failed for ${bad.length} part(s): ${bad.slice(0, 8).map((b) => `${b.ref}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
+        die(`client placement failed for ${bad.length} item(s): ${bad.slice(0, 8).map((b) => `${b.ref || b.net}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
       }
       // Schematic DRC: the client checks the finished sheet (unconnected pins,
       // near-but-not-connected points, off-grid net objects, …). Its report is
@@ -1357,6 +1461,7 @@ function main() {
     schematic: {
       parts: placements.length,
       blocks: blocks.map((b) => b.title),
+      wiring: clientBuild ? 'client-source-api' : 'skill-emitter',
       ...routed.stats,
       layout: {
         strategy: best.kind,

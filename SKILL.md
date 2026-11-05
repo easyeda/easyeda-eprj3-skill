@@ -108,6 +108,7 @@ Then call a script instead of hand-writing JavaScript:
 | Need | Script | Client API |
 | --- | --- | --- |
 | find a device (keyword / LCSC) | `eda.js search --q …` / `--lcsc …` | `lib_Device.search` / `searchByProperties` |
+| official pin table | `eda.js pins --lcsc …` / `--q …` / `--device …` | `lib_Symbol.getGeometry` |
 | netlist for review | `eda.js netlist --dir <p> --out review/netlist.json` | `sch_ManufactureData.getNetlistFile` |
 | schematic DRC | `eda.js sch-drc --dir <p>` | `sch_Drc.check` |
 | visual check | `eda.js screenshot --dir <p> --out shots` | `getPngFile` / `getCurrentRenderedAreaImage` |
@@ -118,16 +119,23 @@ Rules:
 
 - **Source APIs first — for the work the client owns.** When the skill drives
   the client it uses the `sch_Source*` family (project-source edits with no open
-  page, the fastest route; e.g. `sch_SourcePrimitiveComponent.add`). Document
-  APIs are only for auto layout / auto route / rendering, which need an open
-  document. Schematic wires, net labels and frames are the exception: the
-  offline engine writes those records straight into the `.esch2` source — the
-  same data `sch_SourcePrimitiveWire.add` would create, but without a client
-  session, so layout stays deterministic and all five gates run offline.
+  page, the fastest route; e.g. `sch_SourcePrimitiveComponent.add`,
+  `sch_SourcePrimitiveWire.add`). Document APIs are only for auto layout / auto
+  route / rendering, which need an open document. On client builds the routed
+  wires are drawn through `sch_SourcePrimitiveWire.add` and power/ground flags
+  through `sch_SourcePrimitiveComponent.addNetFlag`; the offline record emitter
+  remains for no-client builds, zero-length anchor wires (the API rejects those,
+  and the PCB import needs them) and net ports (`netport-*` via `add` gets a
+  designator and a different orientation).
 - **Scripts, not snippets.** The model runs these scripts; it does not write
-  editor JS itself. A new capability means a new `eda.js` subcommand.
+  editor JS itself. A new capability means a new `eda.js` subcommand. Never
+  create ad-hoc dump/explore scripts in the project (e.g. `tmp/dump-pins.js`)
+  that `require` the skill's `scripts/lib/*` — official pin tables come from
+  `eda.js pins`, everything else from the shipped commands; report a missing
+  command instead of improvising one.
 - **The client builds the PCB from the schematic.** When a build uses the
-  client, `build.js` places the official symbols, then calls
+  client, `build.js` places the official symbols, draws the routed wires
+  through `sch_SourcePrimitiveWire.add`, then calls
   `pcb_Document.importChanges(schUuid, true)` and moves the imported footprints
   to the planned positions. Footprints and pad nets come from the client's own
   update, so the PCB netlist is complete by construction — no schematic ↔ PCB

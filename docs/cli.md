@@ -29,6 +29,7 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 | `node scripts/eda.js doctor` | locate the CLI, print version / endpoint / version gate | `doctor` |
 | `node scripts/eda.js search --q "LM358" [--limit 10] [--page 1]` | fuzzy device search in the system library | `lib_Device.search` |
 | `node scripts/eda.js search --lcsc C7950` | exact device by LCSC id (symbol/footprint names included) | `lib_Device.searchByProperties` |
+| `node scripts/eda.js pins --lcsc C7950` / `--q "LM358"` / `--device "LM358DR2G"` | official symbol pin table (number, name, side, position, electrical direction) for net mapping | `lib_Symbol.getGeometry` |
 | `node scripts/eda.js netlist --dir <project> --out netlist.json` | export the schematic netlist as the EDA JSON, then simplify it to `parts[{ref,name,device,footprint,pins}]` + `nets{name:[ref.pin]}` | `sch_ManufactureData.getNetlistFile` |
 | `node scripts/eda.js sch-drc --dir <project>` | run the client's schematic DRC; print counts and every violation (rule, net, designator/pin) | `sch_Drc.check` |
 | `node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch\|pcb] [--page N]` | write PNGs of every schematic page, or the PCB canvas | `sch_ManufactureData.getPngFile`, `dmt_EditorControl.getCurrentRenderedAreaImage` |
@@ -87,12 +88,16 @@ because it runs on the editor command space without rendering. The classic
 Prefer the source family for creation/editing; use the document family for
 auto layout / auto route / rendering, which are document-scoped by design.
 
-Schematic wiring is the one exception: `build.js` writes the wire, net-label
-and frame records straight into the `.esch2` source. That is the same data
-`sch_SourcePrimitiveWire.add` / `sch_SourcePrimitiveAttribute.addNetLabel`
-would create, but it needs no client session, keeps the layout deterministic
-and lets the five gates run offline. The client is used for what only it can
-do: official symbols/footprints, PCB copper, netlist export and screenshots.
+Schematic wiring now follows the same rule on client builds: the routed chains
+are drawn with `sch_SourcePrimitiveWire.add` (one connected polyline per chain)
+and power/ground flags with `sch_SourcePrimitiveComponent.addNetFlag` (the
+system library's `power-*` / `Ground-*` special symbols) after the official
+symbols are placed. Zero-length anchor wires (a power flag or net port sitting
+on a bare pin) and net ports stay in the record emitter — the API rejects
+zero-length geometry, and `netport-*` devices added via `add` get a component
+designator and a different orientation. Offline builds (no client) keep the
+record emitter. Project files, frames, self-drawn library documents and
+component placement remain skill-authored.
 
 ## Review loop (netlist)
 

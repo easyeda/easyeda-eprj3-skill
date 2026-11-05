@@ -11,6 +11,7 @@
  *   node scripts/eda.js doctor
  *   node scripts/eda.js search --q "ESP32-S3" [--limit 10] [--page 1]
  *   node scripts/eda.js search --lcsc C2913202
+ *   node scripts/eda.js pins --lcsc C2913202 | --q "ESP32-S3" | --device "ESP32-S3"
  *   node scripts/eda.js netlist --dir <project> --out netlist.json
  *   node scripts/eda.js sch-drc --dir <project>
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
@@ -412,10 +413,43 @@ function cmdSchDrc(args) {
   if (!r || !r.passed) process.exitCode = 1;
 }
 
+/** Official symbol pin table for one device — the replacement for ad-hoc
+ *  "dump pins" scripts: network mapping for an `"ic"` part reads from here. */
+function cmdPins(args) {
+  const CLI_LIB = require('./lib/cli-lib');
+  const lcsc = args.lcsc ? String(args.lcsc) : undefined;
+  const name = args.device || args.q || undefined;
+  if (!lcsc && !name) throw new Error('--lcsc Cxxxx, --q <keyword> or --device <name> is required');
+  const rows = CLI_LIB.resolveDevices([{ key: lcsc || name, name, lcsc }], { cli: args.cli });
+  const d = rows && rows[0];
+  if (!d || d.error) return fail('DEVICE_NOT_FOUND', (d && d.error) || 'device not found', { value: d || null });
+  const sym = d.symbol || {};
+  const pins = (sym.pins || []).map((p) => ({
+    num: p.pinNumber != null ? p.pinNumber : (p.num != null ? p.num : null),
+    name: p.pinName != null ? p.pinName : (p.name != null ? p.name : null),
+    x: p.x,
+    y: p.y,
+    rotation: p.rotation,
+    length: p.length,
+    side: p.side || null,
+    type: p.direction || p.electricType || p.type || null
+  }));
+  print({
+    device: d.name,
+    lcsc: d.supplierId || null,
+    designator: d.designator || null,
+    symbolName: d.symbolName || null,
+    footprintName: d.footprintName || null,
+    pinCount: pins.length,
+    pins
+  });
+}
+
 // --------------------------------------------------------------------- main
 const COMMANDS = {
   doctor: cmdDoctor,
   search: cmdSearch,
+  pins: cmdPins,
   netlist: cmdNetlist,
   'sch-drc': cmdSchDrc,
   screenshot: cmdScreenshot,

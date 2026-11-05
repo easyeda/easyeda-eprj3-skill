@@ -48,6 +48,12 @@ async function pagesOf() {
   for (let i = 0; i < 40 && (!Array.isArray(p) || !p.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); p = await eda.dmt_Schematic.getAllSchematicPagesInfo(); }
   return p;
 }
+async function schsOf() {
+  await waitReady();
+  let s = await eda.dmt_Schematic.getAllSchematicsInfo();
+  for (let i = 0; i < 40 && (!Array.isArray(s) || !s.length); i += 1) { await new Promise((r) => setTimeout(r, 750)); s = await eda.dmt_Schematic.getAllSchematicsInfo(); }
+  return s;
+}
 async function pcbsOf() {
   await waitReady();
   let p = await eda.dmt_Pcb.getAllPcbsInfo();
@@ -125,6 +131,8 @@ function placeInstances(projectDir, placement, opts) {
   const info = CLI.requireCli(opts);
   const results = {
     symbols: [],
+    flags: [],
+    wires: [],
     footprints: [],
     imported: false,
     importError: null,
@@ -136,13 +144,15 @@ function placeInstances(projectDir, placement, opts) {
   };
   const timeout = Number((opts && opts.timeout) || 600000);
 
-  // Phase 1 — place the official symbols and save. The client only exposes the
-  // new primitives to its netlist engine after the project is (re)loaded, so
-  // the PCB import gets a fresh session in phase 2.
-  if ((placement.sch || []).length) {
+  // Phase 1 — place the official symbols and draw the wiring through the
+  // source API, then save. The client only exposes these source edits to its
+  // netlist engine after the project is (re)loaded, so the PCB import gets a
+  // fresh session in phase 2.
+  if ((placement.sch || []).length || (placement.flagPlan || []).length
+    || (placement.wirePlan || []).length) {
     const session = CLI.openProject(info.bin, projectDir);
     try {
-      for (const chunk of chunkBySize(placement.sch, 9000)) {
+      for (const chunk of chunkBySize(placement.sch || [], 9000)) {
         const res = CLI.invoke(info.bin, session, PLACE_SYMBOLS, {
           args: { plan: { sch: chunk } },
           timeout
@@ -150,17 +160,35 @@ function placeInstances(projectDir, placement, opts) {
         results.symbols.push(...((res && res.symbols) || []));
         results.batches += 1;
       }
+      // flags and ports first: they name the nets the wires connect to
+      for (const chunk of chunkBySize(placement.flagPlan || [], 9000)) {
+        const fl = CLI.invoke(info.bin, session, ADD_FLAGS, {
+          args: { plan: { schematicName: placement.schematicName, flags: chunk } },
+          timeout
+        });
+        results.flags.push(...((fl && fl.flags) || []));
+        results.batches += 1;
+      }
+      for (const chunk of chunkBySize(placement.wirePlan || [], 9000)) {
+        const wr = CLI.invoke(info.bin, session, DRAW_WIRES, {
+          args: { plan: { schematicName: placement.schematicName, wires: chunk } },
+          timeout
+        });
+        results.wires.push(...((wr && wr.wires) || []));
+        results.batches += 1;
+      }
     } finally {
       CLI.closeSession(info.bin, session);
     }
   }
 
-  // Phase 2 — let the client build the PCB from the schematic, then apply the
+  // Phase 2 — let the client build the PCB from the schematic and apply the
   // planned positions.
   if ((placement.pcbPlan || []).length) {
     const session = CLI.openProject(info.bin, projectDir);
     try {
-      const imp = CLI.invoke(info.bin, session, IMPORT_PCB, {
+      if ((placement.pcbPlan || []).length) {
+        const imp = CLI.invoke(info.bin, session, IMPORT_PCB, {
         args: {
           plan: {
             schematicName: placement.schematicName,
@@ -186,6 +214,7 @@ function placeInstances(projectDir, placement, opts) {
         results.footprints.push(...((mv && mv.footprints) || []));
         results.batches += 1;
       }
+      }
     } finally {
       CLI.closeSession(info.bin, session);
     }
@@ -193,12 +222,68 @@ function placeInstances(projectDir, placement, opts) {
   return results;
 }
 
+const DRAW_WIRES = `
+${READY_HELPER}
+const plan = __CLI__.args.plan;
+const schs = await schsOf();
+const projectId = schs[0].parentProjectUuid;
+const sch = schs.find((x) => x.name === plan.schematicName) || schs[0];
+const out = { wires: [] };
+for (const w of plan.wires || []) {
+  for (const pts of w.chains || []) {
+    const line = [];
+    for (let i = 0; i + 1 < pts.length; i += 2) line.push([pts[i], pts[i + 1]]);
+    if (line.length < 2) continue;
+    try {
+      const opts = { projectId, schematicName: sch.name, pageName: w.pageName, line };
+      if (w.net) opts.net = w.net;
+      const r = await eda.sch_SourcePrimitiveWire.add(opts);
+      out.wires.push({ net: w.net, ok: !!(r && r.ok !== false), id: r && r.value && r.value.primitiveId });
+      if (!r || r.ok === false) out.wires[out.wires.length - 1].error = r && r.error;
+    } catch (e) {
+      out.wires.push({ net: w.net, ok: false, error: String(e && e.message || e) });
+    }
+  }
+}
+await eda.sch_Document.save().catch(() => {});
+return out;
+`;
+
+const ADD_FLAGS = `
+${READY_HELPER}
+const plan = __CLI__.args.plan;
+const schs = await schsOf();
+const projectId = schs[0].parentProjectUuid;
+const sch = schs.find((x) => x.name === plan.schematicName) || schs[0];
+const out = { flags: [] };
+for (const f of plan.flags || []) {
+  try {
+    const r = await eda.sch_SourcePrimitiveComponent.addNetFlag({
+      projectId,
+      schematicName: sch.name,
+      pageName: f.pageName,
+      type: f.type || 'Power',
+      net: f.net,
+      x: f.x,
+      y: f.y,
+      rotation: f.rotation || 0
+    });
+    out.flags.push({ net: f.net, ok: !!(r && r.ok !== false), id: r && r.value && r.value.primitiveId });
+    if (!r || r.ok === false) out.flags[out.flags.length - 1].error = r && r.error;
+  } catch (e) {
+    out.flags.push({ net: f.net, ok: false, error: String(e && e.message || e) });
+  }
+}
+await eda.sch_Document.save().catch(() => {});
+return out;
+`;
+
 const PLACE_SYMBOLS = `
 ${READY_HELPER}
 const plan = __CLI__.args.plan;
 const out = { symbols: [] };
 const pages = await pagesOf();
-const schs = await eda.dmt_Schematic.getAllSchematicsInfo();
+const schs = await schsOf();
 const projectId = schs[0].parentProjectUuid;
 const sys = await eda.lib_LibrariesList.getSystemLibraryUuid();
 for (const s of plan.sch || []) {
@@ -276,7 +361,7 @@ if (stale.length) {
 }
 await eda.pcb_Document.save();
 await new Promise((r) => setTimeout(r, 800));
-const schs = await eda.dmt_Schematic.getAllSchematicsInfo();
+const schs = await schsOf();
 const sch = schs.find((x) => x.name === plan.schematicName) || schs[0];
 try {
   out.imported = await eda.pcb_Document.importChanges(sch.uuid, true);

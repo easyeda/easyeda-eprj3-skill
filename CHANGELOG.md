@@ -5,6 +5,55 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.1.5] - 2026-11-05
+
+**Official pin tables come from a shipped command.**
+
+### Added
+- `node scripts/eda.js pins --lcsc Cxxxx | --q <keyword> | --device <name>`
+  prints the official symbol pin table (number, name, side, position, length,
+  electrical direction) through `lib_Symbol.getGeometry` — the data needed to
+  map an `"ic"` part's nets. Models had been improvising `tmp/dump-pins.js`
+  scripts for this and crashing; SKILL.md now forbids ad-hoc dump scripts.
+
+## [2.1.4] - 2026-11-05
+
+**Power flags come from the system library.**
+
+### Changed
+- Client builds place power/ground flags with
+  `sch_SourcePrimitiveComponent.addNetFlag` (type `Power` / `Ground` /
+  `AnalogGround` / `ProtectGround`), which embeds the system library's
+  `power-*` / `Ground-*` special symbols. The skill's self-drawn power symbols
+  remain for offline builds. Net names still come from the flag, so the wire
+  netlist is unchanged.
+
+### Known
+- Net ports are **not** migrated yet: adding `netport-*` devices through
+  `sch_SourcePrimitiveComponent.add` assigns a component designator, and the
+  symbol orientation did not match the planned port sites (overlapping
+  symbols). They stay on the skill's Netport symbol for now.
+
+## [2.1.3] - 2026-11-05
+
+**Schematic wiring is drawn through the client's source API.**
+
+### Changed
+- On client builds `build.js` no longer emits WIRE/LINE records: the routed
+  chains are drawn with `sch_SourcePrimitiveWire.add` (one connected polyline
+  per chain) after the official symbols are placed. Zero-length anchor wires
+  (a power flag / net port sitting on a bare pin) stay in the emitter — the API
+  rejects zero-length geometry, and the PCB import fails without them.
+- Power-flag wires omit the explicit net name (the flag names the net), so the
+  client does not print a second label; net-port wires keep it (ports do not
+  name the net in 4.1.94). Offline builds keep the record emitter.
+- Build reports say `schematic.wiring: "client-source-api" | "skill-emitter"`.
+
+### Known
+- The API places a wire's net name at the group's bbox centre, so a few short
+  stubs get an L009 label-on-part warning (ESP32 1, H6 2); netlist, ERC, DRC
+  and the client schematic DRC stay clean.
+
 ## [2.1.2] - 2026-11-05
 
 **Version probing boots the client; netlist parsing accepts client net labels.**

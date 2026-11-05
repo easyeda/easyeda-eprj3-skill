@@ -71,7 +71,11 @@ function run(bin, args, opts) {
     encoding: 'utf8',
     timeout: o.timeout || 120000,
     maxBuffer: 64 * 1024 * 1024,
-    windowsHide: true
+    windowsHide: true,
+    // Run inside the skill's tmp dir: the client occasionally materialises its
+    // "current project" as a file in the working directory, and that must never
+    // land in the repository root.
+    cwd: scratchDir()
   });
   if (res.error) {
     return { ok: false, error: { code: 'SPAWN_FAILED', message: String(res.error.message || res.error) }, stderr: res.stderr || '' };
@@ -110,17 +114,27 @@ const _editorVersionCache = new Map();
 function editorVersion(info, opts) {
   if (_editorVersionCache.has(info.bin)) return _editorVersionCache.get(info.bin);
   let v = null;
-  try {
-    const session = openProject(info.bin, null);
+  // A server that was just stopped needs a moment before `open` succeeds, and
+  // a freshly booted one rejects the first invoke while it loads. Retry both.
+  for (let attempt = 0; attempt < 3 && !v; attempt += 1) {
     try {
-      const res = invoke(info.bin, session,
-        `return { version: eda.sys_Environment.getEditorCurrentVersion(true) };`,
-        { timeout: Number((opts && opts.timeout) || 60000) });
-      v = (res && typeof res.version === 'string' && res.version) || null;
-    } finally {
-      closeSession(info.bin, session);
-    }
-  } catch (e) { /* leave null; caller falls back to the bridge version */ }
+      const session = openProject(info.bin, null);
+      try {
+        for (let i = 0; i < 5 && !v; i += 1) {
+          try {
+            const res = invoke(info.bin, session,
+              `return { version: eda.sys_Environment.getEditorCurrentVersion(true) };`,
+              { timeout: Number((opts && opts.timeout) || 60000) });
+            if (res && typeof res.version === 'string' && res.version) v = res.version;
+          } catch (e) { /* retry */ }
+          if (!v) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 800);
+        }
+      } finally {
+        closeSession(info.bin, session);
+      }
+    } catch (e) { /* retry the whole open */ }
+    if (!v) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1200);
+  }
   _editorVersionCache.set(info.bin, v);
   return v;
 }
