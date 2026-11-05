@@ -162,6 +162,29 @@ function snapNetObjectsToGrid(routed, grid) {
   for (const p of routed.ports || []) { p.x = snap(p.x); p.y = snap(p.y); }
 }
 
+/** Tight union of every footprint's extent (body + pads) at its placed
+ *  position — the footprint bbox the auto board size is derived from. */
+function planBBox(plan, lib) {
+  const { footprintExtent } = require('./lib/pcb-plan');
+  let box = null;
+  for (const pl of plan.placements || []) {
+    const fp = lib.footprintOf(pl.part);
+    if (!fp) continue;
+    const [x, y, angle] = pl.pcbPos;
+    const ext = footprintExtent(fp, angle || 0);
+    const b = { x1: ext.x1 + x, y1: ext.y1 + y, x2: ext.x2 + x, y2: ext.y2 + y };
+    box = box
+      ? {
+        x1: Math.min(box.x1, b.x1),
+        y1: Math.min(box.y1, b.y1),
+        x2: Math.max(box.x2, b.x2),
+        y2: Math.max(box.y2, b.y2)
+      }
+      : b;
+  }
+  return box;
+}
+
 /** System-library power-flag type for a net name (addNetFlag enum). */
 function powerFlagKind(net) {
   const n = String(net).toUpperCase();
@@ -591,7 +614,7 @@ function placeNetPort(em, project, port, entry) {
   em.t = block.nextTicket + 1;
 }
 
-function placePcbComponent(em, project, design, pl, lib) {
+function placePcbComponent(em, project, design, pl, lib, opts) {
   const part = pl.part;
   const sym = lib.symbolOf(part);
   const fp = lib.footprintOf(part);
@@ -612,6 +635,8 @@ function placePcbComponent(em, project, design, pl, lib) {
     client: project.client,
     ms: project.ms()
   });
+  // The embedded symbol / footprint / device DOCUMENTS are always needed: the
+  // client's schematic → PCB import resolves the inline parts through them.
   em.embed([
     E.rewriteDocHeads(sym.entry.symbolDoc || sym.entry.portSymbolDoc || sym.entry.powerSymbolDoc, project.client),
     E.rewriteDocHeads(fpEntry.footprintDoc, project.client),
@@ -627,6 +652,15 @@ function placePcbComponent(em, project, design, pl, lib) {
     elemId: p.elemId,
     net: netsByNum[p.num] || ''
   }));
+  const result = {
+    blockPads: pads,
+    geoPads: placed.map((p) => ({ ref: part.id, num: p.num, net: netsByNum[p.num] || '', x: p.x, y: p.y, w: p.w, h: p.h })),
+    x: px, y: py, angle: angle || 0
+  };
+  // Client builds leave the instance to `importChanges`: writing it here and
+  // deleting it before the import leaves empty COMPONENT / PAD_NET shells in
+  // the client-saved PCB (4.1.94), which netcheck then reads as extra pads.
+  if (opts && opts.docsOnly) return result;
   const block = E.pcbComponentBlock({
     compId: E.randId(),
     x: px, y: py, angle: angle || 0,
@@ -645,11 +679,7 @@ function placePcbComponent(em, project, design, pl, lib) {
   em.addLines(block.lines);
   em.t = block.nextTicket + 1;
   void design;
-  return {
-    blockPads: pads,
-    geoPads: placed.map((p) => ({ ref: part.id, num: p.num, net: netsByNum[p.num] || '', x: p.x, y: p.y, w: p.w, h: p.h })),
-    x: px, y: py, angle: angle || 0
-  };
+  return result;
 }
 
 function main() {
@@ -776,7 +806,7 @@ function main() {
     const rules = design.pcbSpec.rules || {};
     const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
     console.log(`方案 ${design.name} → ${requestedDir}`);
-    console.log(`  板框  ${design.boardDeclared ? `${design.board.width}×${design.board.height} mil` : '自动适配（按器件收敛）'} · `
+    console.log(`  板框  自动：封装 bbox 面积 ×1.25${design.boardDeclared ? `（设计里的 ${design.board.width}×${design.board.height} mil 被忽略）` : ''} · `
       + `${doPcb ? '只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）' : '仅原理图 (--schematic-only)'}`);
     console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
     const widths = Object.entries(design.netWidths || {});
@@ -1280,44 +1310,73 @@ function main() {
   let ratNets = [];
   if (doPcb) {
     const { planPcb } = require('./lib/pcb-plan');
-    // Board size settles here. A DECLARED board is honoured as a floor and
-    // grown if the placer needs more. An UNDECLARED board takes the aggregate
-    // footprint bbox of the natural placement, gives it 1.35× area, reshapes
-    // that to a 4:3 rectangle and re-packs the parts inside it (the placer
-    // wraps rows at the new width, so the board itself drives the layout).
-    const MIN_W = 400;
-    const MIN_H = 300;
-    const snap10 = (v) => Math.round(v / 10) * 10;
+    // Board size: area = 1.25× the tight union of every footprint's bbox, with
+    // the bbox's own aspect (a wide layout gets a wide board). No minimum-area
+    // and no declared-size floor: a size declared in the design is ignored.
+    // The 40 mil margin keeps the edge-clearance rule (D003, 12 mil) green.
+    // The placer packs into the target, tightening its part spacing when
+    // needed; only if even the densest packing does not fit does the
+    // rectangle grow, and the log says so.
+    const snap10 = (v) => Math.max(10, Math.round(v / 10) * 10);
+    const SCALES = [1, 0.8, 0.65, 0.5, 0.4, 0.3, 0.25];
+    const MARGIN = 40;
+    const SCALE_125 = Math.sqrt(1.25);
+    const packAt = (w, h) => {
+      let last = null;
+      for (const s of SCALES) {
+        design.board.width = w;
+        design.board.height = h;
+        design.gapScale = s;
+        const p = planPcb(design, lib, placements);
+        last = { plan: p, scale: s, fits: p.required.width <= w && p.required.height <= h };
+        if (last.fits) return last;
+      }
+      return last;
+    };
+    const dimsFor = (b) => {
+      const w = b ? b.x2 - b.x1 : 100;
+      const h = b ? b.y2 - b.y1 : 100;
+      return [
+        Math.max(snap10(w * SCALE_125), snap10(w + MARGIN)),
+        Math.max(snap10(h * SCALE_125), snap10(h + MARGIN))
+      ];
+    };
+    const tightBox = (p) => planBBox(p, lib);
+    // From here on the board size is OUR decision: tell the placer to pack into
+    // it (fill its width) instead of aiming for a square of its own.
+    design.boardFixed = true;
     let plan = planPcb(design, lib, placements);
-    if (!design.boardDeclared) {
-      const naturalW = Math.max(plan.required.width, MIN_W);
-      const naturalH = Math.max(plan.required.height, MIN_H);
-      const area = naturalW * naturalH * 1.35;
-      let H = Math.max(MIN_H, snap10(Math.sqrt((area * 3) / 4)));
-      let W = Math.max(MIN_W, snap10((H * 4) / 3));
-      for (let round = 0; round < 4; round += 1) {
-        design.board.width = W;
-        design.board.height = H;
-        plan = planPcb(design, lib, placements);
-        const needW = Math.max(plan.required.width, MIN_W);
-        const needH = Math.max(plan.required.height, MIN_H);
-        if (needW <= W && needH <= H) break;
-        // grow the 4:3 rectangle (keeping the aspect) until the packing fits
-        const f = Math.max(needW / W, needH / H) * 1.02;
-        H = snap10(H * f);
-        W = snap10((H * 4) / 3);
+    {
+      let target = dimsFor(tightBox(plan));
+      let best = null;
+      // Fixed point: a denser re-pack shrinks the bbox, so retarget from the
+      // layout the target actually produces. Packing that still overflows
+      // grows the rectangle just enough to contain it.
+      for (let round = 0; round < 8; round += 1) {
+        let [w, h] = target;
+        let r = packAt(w, h);
+        for (let grow = 0; grow < 8 && !r.fits; grow += 1) {
+          w = Math.max(w, snap10(r.plan.required.width));
+          h = Math.max(h, snap10(r.plan.required.height));
+          r = packAt(w, h);
+        }
+        best = Object.assign({ w, h }, r);
+        const next = dimsFor(tightBox(best.plan));
+        if (Math.abs(next[0] - w) <= w * 0.02 && Math.abs(next[1] - h) <= h * 0.02) break;
+        target = next;
       }
-      log(`board set to ${W}×${H} mil (4:3, 1.35× the natural ${naturalW}×${naturalH} footprint bbox)`);
-    } else {
-      for (let round = 0; round < 4; round += 1) {
-        const targetW = Math.max(design.board.width, plan.required.width, MIN_W);
-        const targetH = Math.max(design.board.height, plan.required.height, MIN_H);
-        if (targetW === design.board.width && targetH === design.board.height) break;
-        log(`board set to ${targetW}×${targetH} mil to fit ${design.parts.length} parts (declared size kept as a floor)`);
-        design.board.width = targetW;
-        design.board.height = targetH;
-        plan = planPcb(design, lib, placements);
-      }
+      design.board.width = best.w;
+      design.board.height = best.h;
+      design.gapScale = best.scale;
+      plan = best.plan;
+      const bb = tightBox(plan);
+      const bw = Math.max(bb ? bb.x2 - bb.x1 : 1, 1);
+      const bh = Math.max(bb ? bb.y2 - bb.y1 : 1, 1);
+      const factor = (best.w * best.h) / (bw * bh);
+      log(`board set to ${best.w}×${best.h} mil (footprint bbox ${Math.round(bw)}×${Math.round(bh)} → ${factor.toFixed(2)}× area`
+        + `${best.scale < 1 ? `, part spacing ×${best.scale}` : ''}`
+        + `${design.boardDeclared ? ', declared size ignored' : ''}`
+        + `${factor > 1.25 * 1.15 ? ' — the packing needs the extra room' : ''})`);
     }
     {
       const targetW = design.board.width;
@@ -1342,7 +1401,7 @@ function main() {
         pcbParts.push({ part: pl.part, x: px, y: py, angle: angle || 0, library: true });
         continue;
       }
-      const placed = placePcbComponent(pcbEm, project, design, pl, lib);
+      const placed = placePcbComponent(pcbEm, project, design, pl, lib, { docsOnly: clientBuild });
       if (placed) {
         pcbParts.push(Object.assign({ part: pl.part }, placed));
         pcbGeoPads.push(...placed.geoPads);
@@ -1482,6 +1541,7 @@ function main() {
       parts: pcbParts.length,
       mode: doPcb ? 'placed-only' : null,
       source: doPcb ? (pcbImported ? 'client-update' : 'skill-placement') : null,
+      board: doPcb ? { width: design.board.width, height: design.board.height } : null,
       rats: ratNets.length
     },
     elapsed_ms: Date.now() - t0,
@@ -1519,13 +1579,12 @@ function main() {
 
   // Schematic ↔ PCB netlist comparison (netcheck): independent pin-by-pin
   // diff of both netlists — the explicit cross-check that the two documents
-  // agree. Full detail in report.netcheck; `scripts/netcheck.js` re-runs it
-  // standalone (e.g. after hand edits in the client).
+  // agree. It also runs on client-imported boards: with the empty-shell fix
+  // the PAD_NET records are exactly the real pads, so the diff is meaningful
+  // (and catches an import that silently dropped a part). Full detail in
+  // report.netcheck; `scripts/netcheck.js` re-runs it standalone.
   let netcheck = null;
-  // A PCB the client built from the schematic (importChanges) is complete by
-  // construction — the client's own update is the consistency proof. The
-  // offline pin diff only runs for boards the skill placed itself.
-  if (doPcb && !pcbImported) {
+  if (doPcb) {
     const NC = require('./lib/netcheck');
     netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir), D.multiUnitBaseOf(design.multiUnits));
     report.netcheck = { match: netcheck.match, summary: netcheck.summary, issues: netcheck.issues };
@@ -1677,14 +1736,11 @@ function main() {
       : `${design.name}.eprj3 at ${dir}`;
   console.log(`${where} — ${placements.length} components, ${routed.stats.segments} wire segments, `
     + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100 (placed-only)` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
-  // --plan: show the REHEARSED board, not the declared one — a plan that
-  // hides a board blow-up (S7) defeats its own purpose
+  // --plan: show the REHEARSED board (declared sizes are ignored now, so the
+  // only honest line is the auto-sized rectangle)
   if (opts.plan) {
-    const blown = design.boardDeclared
-      && (design.board.width > declaredW * 1.5 || design.board.height > declaredH * 1.5);
     console.log(`  板框（演练）  ${design.board.width}×${design.board.height} mil`
-      + (design.boardDeclared ? `（声明 ${declaredW}×${declaredH}）` : '（自动适配）')
-      + (blown ? ' — ⚠ 超出声明 1.5×，请检查 pcb.place 或加大板框' : ''));
+      + `${design.boardDeclared ? `（声明 ${declaredW}×${declaredH} 已忽略）` : '（自动：封装 bbox ×1.25）'}`);
   }
 }
 

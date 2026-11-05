@@ -5,6 +5,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.1.6] - 2026-11-05
+
+**Auto board = 1.25× the footprint bbox area, and no empty PCB shells.**
+
+### Fixed
+- The auto board size was derived from the placer's `required` extents — which
+  already include edge margins and row gaps — so the outline came out far
+  larger than the intended multiple of the footprint bbox. It now uses the
+  **tight union of every footprint's body + pads**: area ×1.25, keeping the
+  bbox's own aspect, with the placer re-packing inside it (tightening its part
+  spacing when the target is dense) and growing only when the packing genuinely
+  needs more room. There is **no minimum-area and no declared-size floor** — a
+  board size declared in the design is ignored. The log reports the bbox, the
+  part spacing used and the achieved factor.
+- Client builds no longer write PCB footprint instances that must then be
+  deleted before `importChanges` — that delete left empty `COMPONENT` / `ATTR` /
+  `PAD_NET` / `RULE_SELECTOR` shells in the client-saved PCB (4.1.94), which
+  netcheck read as phantom pads (849 pad records for 526 real ones). Only the
+  embedded symbol/footprint/device documents are emitted now; the import
+  creates every instance. A safety net (`stripEmptyShells`) still cleans those
+  shells after an import that had to delete pre-existing footprints.
+
 ## [2.1.5] - 2026-11-05
 
 **Official pin tables come from a shipped command.**

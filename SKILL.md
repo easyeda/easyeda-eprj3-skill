@@ -65,9 +65,9 @@ node scripts/build.js --design design.json --dir <proj>           # after the us
   Selections are cached (`.cache/`) — a repeated requirement resolves in one
   lookup.
 - **Confirmation gates before you build or fix:** power scheme, MCU/critical part
-  choice, interface names, board size/layers, and `autofix.js --diff` output
-  (a diff summary before any automatic edit). Full protocol + field table:
-  [`docs/intake.md`](docs/intake.md).
+  choice, interface names, layer count (the board outline is auto-sized),
+  and `autofix.js --diff` output (a diff summary before any automatic edit).
+  Full protocol + field table: [`docs/intake.md`](docs/intake.md).
 
 If the user supplied a complete design already, skip to the fast path.
 
@@ -80,11 +80,12 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    the PCB is placement-only; the run prints the rats list of nets to
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
 #    placement: one cluster per schematic block (caps beside the pads they
-#    decouple), connectors (J/CN/USB) on the board edge, board auto-fits
+#    decouple), connectors (J/CN/USB) on the board edge, board auto-sized
+#    to 1.25× the footprint bbox area (a declared size is ignored)
 node scripts/netlist.js --dir <project dir> --design design.json --audit <project dir>/.tmp/netlist-audit.json
 #    netlist audit package → a FRESH sub-agent reviews it (mandatory; see the
 #    "Netlist audit" section below, not an optional nicety)
-node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (offline-placed boards; build runs it when no client import)
+node scripts/netcheck.js --dir <project dir>    # schematic ↔ PCB netlist diff (build runs it on every PCB, client-imported included)
 node scripts/report.js --dir <project dir> --design design.json --report <dir>/build.json
 #    project-report.md (概述/功能特性/信号框架图/电路框架图/网络/门禁/遗留/建议)
 #    then write ai-report.md yourself — model/tokens/times, see "Reports" below
@@ -372,7 +373,7 @@ hand-drawn sheets); PCB coordinates are Y-up. Only `parts` is required.
 | Field | Meaning |
 | --- | --- |
 | `name` | project/index name (does not have to match the directory) |
-| `board.width/height` | board outline size in mil; **optional** — the board auto-grows to fit the parts |
+| `board.width/height` | board outline size in mil; **ignored** — the board is auto-sized to 1.25× the footprint bbox area |
 | `powers` | net → `"up"` (supply) or `"down"` (ground): these get **power flags** instead of wires |
 | `nets` | per-net **annotations**: `{ "width": 30 }` records the intended track width (derived from current) — it never lays copper; the DRC uses it as a per-net floor when reviewing imported tracks. `{ "class": "POWER" }` groups via `netClasses` |
 | `netClasses` | `{ "POWER": { "width": 30 } }` — named width groups referenced from `nets` (annotation only) |

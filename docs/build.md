@@ -42,7 +42,7 @@ schematic DRC (`sch_Drc.check`) on the finished sheet. The report lands in
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `name` | string | design file stem | project + index name; need not match the directory |
-| `board` | `{width,height}` | `1600×1000` | mil; an explicitly declared board is a **floor** (grown to fit) — omit it and the outline auto-fits the parts |
+| `board` | `{width,height}` | `1600×1000` | mil; **ignored for the outline** — the board is auto-sized to 1.25× the footprint bbox area |
 | `sheet` | `{schematic,name}` | `Schematic1` / `P1` | `name` is the sheet title (file name) |
 | `powers` | object | `{}` | net → `"up"`/`"down"`; those nets become power flags |
 | `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` **annotates** the intended track width (nothing is routed — the DRC uses it as a per-net floor when it reviews imported copper) |
@@ -272,12 +272,15 @@ schematic, with three deterministic refinements:
   as a `U…` IC) are pulled next to their IC's power side;
 - **gaps scale with the parts** (140–260 mil) instead of one fixed stride.
 
-The board outline settles after placement: a declared `board` is a floor
-(grown when the placer needs more), an **undeclared** board auto-fits the
-parts (a 3-part board no longer ships on a 1600×1000 mil blank). Supply
-`place` when a part needs an exact spot — it always wins, and a fixed part is
-a **keepout** for everything the placer arranges around it (mounting holes no
-longer get a resistor dropped on them).
+The board outline is sized from the placement: **area = 1.25× the tight union
+of every footprint's bbox**, with the bbox's own aspect. There is no minimum
+area and no declared-size floor — `board.width/height` in the design is ignored
+for the outline. When the target is too dense the placer tightens its part
+spacing (down to ×0.25) and re-packs; only if even that does not fit does the
+outline grow, and the build log reports the bbox and the achieved factor.
+Supply `place` when a part needs an exact spot — it always wins, and a fixed
+part is a **keepout** for everything the placer arranges around it (mounting
+holes no longer get a resistor dropped on them).
 
 The **schematic** side gets the same treatment: the build verifies the routed
 sheet for cross-net contacts (where the client would merge two nets) and, if

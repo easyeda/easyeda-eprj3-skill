@@ -160,9 +160,8 @@ function buildProjectReport(design, all, netcheck, build) {
   lines.push('');
   lines.push('## 工程概述');
   lines.push('');
-  const board = design.boardDeclared
-    ? `${design.board.width} × ${design.board.height} mil`
-    : `${design.board.width} × ${design.board.height} mil（未显式声明，自动适配器件）`;
+  const sz = (build && build.pcb && build.pcb.board) || design.board;
+  const board = `${sz.width} × ${sz.height} mil（自动：封装 bbox 面积 ×1.25${design.boardDeclared ? '，设计里声明的尺寸已忽略' : ''}）`;
   lines.push('| 项 | 值 |');
   lines.push('| --- | --- |');
   lines.push(`| 工程名 | ${design.name} |`);
@@ -231,9 +230,8 @@ function buildProjectReport(design, all, netcheck, build) {
     lines.push(`| intent | ${(intent.errors || []).length === 0 ? '通过' : `${intent.errors.length} 错误`} |`);
     lines.push(`| lint | ${lint.score ?? '—'}/100 |`);
     lines.push(`| DRC | ${drc.score ?? '—'}/100（${drc.mode === 'placed-only' ? '仅布局' : '含铜'}） |`);
-    const clientPcb = !!(build && build.pcb && /^client-(update|import)$/.test(build.pcb.source || ''));
     const nc = build.netcheck || netcheck;
-    lines.push(`| netcheck | ${clientPcb ? '客户端由原理图导入（构造性一致）' : (nc && nc.match ? '通过' : '失配')} |`);
+    lines.push(`| netcheck | ${nc ? (nc.match ? '通过' : '失配') : '未运行'} |`);
     if (build && build.schDrc && build.schDrc.counts) {
       const c = build.schDrc.counts;
       lines.push(`| 原理图 DRC（客户端） | ${c.fatalError || 0} fatal / ${c.error || 0} error / ${c.warn || 0} warn |`);

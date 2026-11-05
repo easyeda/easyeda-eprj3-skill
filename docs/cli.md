@@ -50,16 +50,17 @@ can plan positions, writes the project skeleton, then opens the project and:
   session), then reopens the project in a fresh session — the client only
   exposes newly placed primitives to its netlist engine after a reload;
 - calls `pcb_Document.importChanges(schUuid, true)` — the client's own
-  "schematic → PCB" update. It creates every footprint and links every pad net;
-  the skill's pre-placed instances of the same designators are removed first so
-  the import takes its clean create path (4.1.94 drops a few multi-part
-  footprints when updating them in place);
+  "schematic → PCB" update. It creates every footprint and links every pad net.
+  The PCB document ships only the embedded symbol/footprint/device documents —
+  no pre-placed instances — so nothing has to be deleted first (4.1.94 leaves
+  empty `COMPONENT`/`PAD_NET` shells behind after a delete; a safety net removes
+  those if an older project still needs the delete path);
 - moves every footprint to the position the offline engine planned
   (`pcb_PrimitiveComponent.modify`);
-- saves, after which validate / ERC / lint / DRC read the client-written
-  project. The PCB netlist is complete by construction, so there is no
-  schematic ↔ PCB comparison step, and the offline `netcheck` gate is skipped
-  for these boards (it still guards boards the skill places without a client).
+- saves, after which validate / ERC / lint / DRC / netcheck read the
+  client-written project. The import is complete by construction, but the
+  offline `netcheck` still runs as an independent pin-by-pin diff and catches
+  an import that silently dropped a part.
 
 There is no library document download and no local cache. If a device name is
 not found, pass its LCSC id (`"lcsc": "C12345"`) or fall back to an inline
@@ -133,9 +134,10 @@ Client-side limitations (4.1.94):
   schematic auto layout ignores this skill's module frames and reads worse.
   The offline engine (`build.js`) owns it; 2.x only adds client-side review,
   netlist and PCB copper.
-- `netcheck.js` reads the skill's own pad records. Client-imported boards store
-  pads in the client's layout (e.g. one logical pad as several PAD records), so
-  the offline diff is skipped for them; the import itself proves the netlist.
+- `netcheck.js` reads the skill's `PAD_NET` records. It now also runs on
+  client-imported boards: the import writes one PAD_NET per real pad, and the
+  empty-shell records 4.1.94 used to leave behind are gone (see above), so the
+  pin-by-pin diff is meaningful instead of counting phantom pads.
 
 ## Version check
 

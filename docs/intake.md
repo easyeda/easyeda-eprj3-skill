@@ -85,7 +85,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 1. **电源方案**：输入轨、内部轨、电流（决定线宽与拓扑）。
 2. **主控与关键器件选型**（含晶振/存储）。
 3. **对外接口定义与命名**（网络名会进板子文件，改一次全网）。
-4. **板框尺寸/层数**（结构约束只能用户给）。
+4. **层数与结构约束**：板框不问了——构建时自动取封装 bbox 面积 ×1.25（`design.json` 里的 `board.width/height` 会被忽略）。
 5. **自动修复将写入的内容**：`node scripts/autofix.js --design design.json --diff` 打印 before/after 行级差异 + 变更行数，**不写盘**；确认后才去掉 `--diff` 应用。
 6. **构建前预演**：`build.js --plan` 在一次性目录里真实跑完整构建（lint/drc 分数是真的），但目标目录一个字节都不写；用户确认后再正式 `build.js`。
 7. **铜皮不在本 skill 范围**：永不布线、永不铺铜——布局交给机器，铜皮交给人。`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数），走线/过孔/铺铜在 EasyEDA 客户端完成。
@@ -95,12 +95,12 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 ```
 方案 sensor-board
   电源  输入 VBUS → 轨 3V3（120 mA）
-  板框  auto-grow · 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
+  板框  自动（封装 bbox 面积 ×1.25）· 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
   模块  usb-c-power(4) + ldo-3v3(4) + mcu-min(8) + crystal(5) + i2c-sensor(5) + uart-bridge(7)
   规模  33 parts · 20 nets
   规则  电源轨 16 mil（注记，DRC 判导入铜时的每网下限）· clearance/track 用默认
   待确认
-    · 板框尺寸有硬性限制吗？→ 不回答则用 不填即自动
+    · 板框有硬性限制吗？→ 本版自动按封装 bbox 面积 ×1.25 生成，不接受指定尺寸（只给层数即可）
 ```
 
 ## 缓存与速度

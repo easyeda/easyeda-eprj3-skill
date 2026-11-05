@@ -25,12 +25,6 @@ const EDGE = 150;      // mil from board edge to the nearest part extent
 const GAP_MIN = 140;   // mil between neighbouring parts, small parts
 const GAP_MAX = 260;   // mil between neighbouring parts, large parts
 
-/** Gap that scales with the part: small parts never get 5× their own width of
- *  dead space, large parts never get less than the default escape room. */
-function gapFor(size) {
-  return Math.round(Math.max(GAP_MIN, Math.min(GAP_MAX, size)));
-}
-
 /**
  * Real copper extent of a footprint: body box AND every pad rectangle. A
  * footprint whose outline is tighter than its pads would otherwise be placed
@@ -73,6 +67,17 @@ function connectorAngle(fp) {
  * @returns {{placements:[{part, pcbPos:[x,y,angle]}], required:{width,height}}}
  */
 function planPcb(design, lib, schematicPlacements) {
+  // Spacing scales down only when the build has to hit a tight board target
+  // (design.gapScale < 1, set by build.js's board sizing). The defaults are
+  // the routing-friendly spacing; 30 mil is the floor that still clears the
+  // 12 mil board-edge rule.
+  const scale = Math.max(0.2, Math.min(1, Number(design.gapScale) || 1));
+  const EDGE = Math.max(30, Math.round(150 * scale));
+  const GAP_MIN = Math.max(30, Math.round(140 * scale));
+  const GAP_MAX = Math.max(70, Math.round(260 * scale));
+  const gapFor = (size) => Math.round(Math.max(GAP_MIN, Math.min(GAP_MAX, size)));
+  const INTRA_GAP = Math.max(25, Math.round(60 * scale));    // inside one module
+  const BLOCK_GAP = Math.max(60, Math.round(300 * scale));   // between modules
   const explicit = (design.pcbSpec && design.pcbSpec.place) || {};
   const order = schematicPlacements && schematicPlacements.length
     ? schematicPlacements.map((p) => p.part)
@@ -162,8 +167,6 @@ function planPcb(design, lib, schematicPlacements) {
   // serves and a pull-up next to the signal it pulls. Ground never attracts
   // (every part touches it). Clusters are then shelf-packed in block order —
   // the schematic's signal flow — with a routing channel between modules.
-  const INTRA_GAP = 60;    // mil between parts inside one module
-  const BLOCK_GAP = 300;   // mil between modules
   const padsAt = (it, x, y) => (it.fp.pads || []).map((p) => {
     const r = G.rotate(p.x, p.y, it.angle || 0);
     return { net: (it.part.pins || {})[String(p.num)] || null, x: x + r.x, y: y + r.y };
@@ -246,7 +249,7 @@ function planPcb(design, lib, schematicPlacements) {
   const totalArea = clusters.reduce((n, c) => n
     + (c.bbox.x2 - c.bbox.x1 + BLOCK_GAP) * (c.bbox.y2 - c.bbox.y1 + BLOCK_GAP), 0);
   const widest = clusters.reduce((n, c) => Math.max(n, c.bbox.x2 - c.bbox.x1), 0);
-  const rowLimit = Math.max(widest, design.boardDeclared
+  const rowLimit = Math.max(widest, design.boardDeclared || design.boardFixed
     ? design.board.width - 2 * EDGE
     : Math.sqrt(totalArea) * 1.25);
   let packX = 0;

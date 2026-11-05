@@ -24,6 +24,8 @@
  * runs in its own session.
  */
 const CLI = require('./cli');
+const fs = require('fs');
+const path = require('path');
 
 const GEOMETRY_HELPER = `
 async function try2(fn) {
@@ -124,6 +126,49 @@ function chunkBySize(items, budget) {
   return out;
 }
 
+// A record whose body is empty carries no data, except NET: the file format
+// keeps one empty NET record as a placeholder.
+const SHELL_TYPES = new Set(['COMPONENT', 'ATTR', 'PAD_NET', 'RULE_SELECTOR']);
+
+/** Drop the empty COMPONENT / ATTR / PAD_NET / RULE_SELECTOR records the
+ *  client leaves behind when it deletes footprints on a schematic → PCB
+ *  import (4.1.94). They are invisible in the editor but the netlist reader
+ *  still counts their pads, so a stale PAD_NET turns into phantom pins.
+ *  Returns the number of records removed. */
+function stripEmptyShells(projectDir) {
+  let removed = 0;
+  const visit = (dir) => {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
+    for (const ent of entries) {
+      const file = path.join(dir, ent.name);
+      if (ent.isDirectory()) { visit(file); continue; }
+      if (!/\.epcb2$/i.test(ent.name)) continue;
+      const raw = fs.readFileSync(file, 'utf8');
+      const lines = raw.split(/\r?\n/);
+      const kept = [];
+      for (const line of lines) {
+        const sep = line.indexOf('||');
+        if (sep > 0) {
+          let head = null;
+          try { head = JSON.parse(line.slice(0, sep)); } catch (e) { /* not a record head */ }
+          const body = line.slice(sep + 2);
+          if (head && SHELL_TYPES.has(head.type) && /^(\{\})?\|*$/.test(body)) {
+            removed += 1;
+            continue;
+          }
+        }
+        kept.push(line);
+      }
+      if (kept.length !== lines.length) {
+        fs.writeFileSync(file, kept.join('\n'), 'utf8');
+      }
+    }
+  };
+  visit(projectDir);
+  return removed;
+}
+
 /** Place library instances in an EXISTING project (already on disk).
  *  - symbols: sch_SourcePrimitiveComponent.add, per size-bounded batch;
  *  - PCB: importChanges(force) once, then planned positions per batch. */
@@ -140,6 +185,7 @@ function placeInstances(projectDir, placement, opts) {
     removed: 0,
     missing: [],
     moved: 0,
+    shellsRemoved: 0,
     batches: 0
   };
   const timeout = Number((opts && opts.timeout) || 600000);
@@ -218,6 +264,9 @@ function placeInstances(projectDir, placement, opts) {
     } finally {
       CLI.closeSession(info.bin, session);
     }
+    // Safety net for the fallback path above (a pre-existing board whose
+    // footprints had to be deleted): the client leaves empty shells behind.
+    results.shellsRemoved = stripEmptyShells(projectDir);
   }
   return results;
 }
@@ -471,5 +520,5 @@ for (const v of arr) {
 return { passed: counts.fatalError === 0 && counts.error === 0, counts, violations };
 `;
 
-module.exports = { resolveDevices, placeInstances, schDrc };
+module.exports = { resolveDevices, placeInstances, schDrc, stripEmptyShells };
 

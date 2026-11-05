@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v2.1.5** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v2.1.6** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -65,14 +65,14 @@ See [Install](#install) above. One line: Node.js ≥ 18, clone anywhere.
 
 For example:
 
-> I need an STM32F103C8T6 minimum system, 3.3 V supply, USB-serial, one LED, one button. Project at `D:\boards\stm32-blink`, board 50 mm × 40 mm.
+> I need an STM32F103C8T6 minimum system, 3.3 V supply, USB-serial, one LED, one button. Project at `D:\boards\stm32-blink`.
 
-The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md)): function, input supply, rails, current, interfaces, MCU, board size, layers, package preference… asked **all at once**; anything you leave unanswered uses a documented default and is listed in the plan for you to veto.
+The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md)): function, input supply, rails, current, interfaces, MCU, layers, package preference… asked **all at once**; anything you leave unanswered uses a documented default and is listed in the plan for you to veto. The board outline is not asked for — it is auto-sized to 1.25× the footprint bbox area.
 
 #### 3. What the agent runs internally
 
 1. `node scripts/intake.js check/resolve --req req.json` — maps your words to `recipe/` sub-circuits, derives the power chain (12V→buck→5V→LDO→3V3), and annotates rail widths from the declared current (handoff info for your copper work in the client), then emits `design.json`.
-2. **Confirmation gates** (mandatory before generation; every change is shown first): power scheme, MCU/part choices, interface names, board size/layers. `node scripts/build.js --plan` rehearses the real build without writing; `node scripts/autofix.js --diff` prints the diff of every automatic fix before applying it.
+2. **Confirmation gates** (mandatory before generation; every change is shown first): power scheme, MCU/part choices, interface names, layer count. `node scripts/build.js --plan` rehearses the real build without writing; `node scripts/autofix.js --diff` prints the diff of every automatic fix before applying it.
 3. `node scripts/build.js --design design.json --dir <project>` in one shot:
    - schematic: auto layout (signal-flow blocks), auto wiring, power symbols
    - PCB: **placement only** — footprints auto-placed with engineering sense (connectors on the board edge, decoupling caps next to their IC, undeclared boards auto-fit), pad↔net links bound, board outline; **no routing, no pour, ever**. The build prints a `rats:` handoff list of nets to connect by hand in the client.
@@ -132,7 +132,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号放置、原理图 → PCB 导入（封装与焊盘网络由客户端生成）、原理图 DRC 检查、PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局仍由 skill 自带离线引擎完成；客户端构建时导线由 source API 绘制。2.x 构建包一律手动触发发布。
 
-**当前版本：2.1.5** · [更新记录](CHANGELOG.md)
+**当前版本：2.1.6** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -170,16 +170,16 @@ npm test            # 可选：跑一遍完整回归测试，确认环境正常
 
 例如：
 
-> 我要画一个 STM32F103C8T6 最小系统，3.3V 供电，带一个 USB 转串口、一个 LED 和一个按键。工程放在 `D:\boards\stm32-blink`，板子 50mm x 40mm。
+> 我要画一个 STM32F103C8T6 最小系统，3.3V 供电，带一个 USB 转串口、一个 LED 和一个按键。工程放在 `D:\boards\stm32-blink`。
 
-AI 会按固定输入规范追问（[`docs/intake.md`](docs/intake.md)：功能、输入电源、电源轨、电流、接口、主控、板框、层数、封装偏好等），**一次问完**；没答的字段用文档化默认值填充，并在方案里逐条标出供你否决。
+AI 会按固定输入规范追问（[`docs/intake.md`](docs/intake.md)：功能、输入电源、电源轨、电流、接口、主控、层数、封装偏好等），**一次问完**；没答的字段用文档化默认值填充，并在方案里逐条标出供你否决。板框不问——自动按封装 bbox 面积 ×1.25 生成。
 
 #### 3. AI 内部执行流程
 
 AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的 Step 0 + Fast path）：
 
 1. `node scripts/intake.js check/resolve --req req.json` → 需求映射到 `recipe/` 里的子电路模板，自动推导电源链（12V→buck→5V→ldo→3V3）、按电流把电源线宽**注记**进 design.json（交接信息，供你在客户端铺铜参考），产出 `design.json`
-2. **确认点**（生成前必经，改动都先给你看）：电源方案、主控/器件选型、接口命名、板框/层数；`node scripts/build.js --plan` 真实预演但不写盘；`node scripts/autofix.js --diff` 打印修复差异后才写入
+2. **确认点**（生成前必经，改动都先给你看）：电源方案、主控/器件选型、接口命名、层数；`node scripts/build.js --plan` 真实预演但不写盘；`node scripts/autofix.js --diff` 打印修复差异后才写入
 3. `node scripts/build.js --design design.json --dir <工程目录>` 一次完成：
    - 原理图：自动布局（信号流分块）、自动布线、电源符号
    - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
