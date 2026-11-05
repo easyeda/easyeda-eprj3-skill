@@ -211,6 +211,11 @@ function normalize(raw, file) {
       ? raw.sheetNames.map((x) => String(x)).filter(Boolean)
       : [],
     expect: raw.expect && typeof raw.expect === 'object' ? raw.expect : null,
+    // requirement metadata carried over from intake (function / input power /
+    // rails / interfaces / current): the project report turns it into the
+    // functional description. The build itself never reads it, so an old
+    // design.json without `meta` keeps working.
+    meta: raw.meta && typeof raw.meta === 'object' ? raw.meta : null,
     // multi-unit components: base designator → {designator, name, footprint, units:[unitIds]}
     multiUnits: expanded.multiUnits
   };

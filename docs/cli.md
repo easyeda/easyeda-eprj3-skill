@@ -57,6 +57,13 @@ can plan positions, writes the project skeleton, then opens the project and:
   those if an older project still needs the delete path);
 - moves every footprint to the position the offline engine planned
   (`pcb_PrimitiveComponent.modify`);
+- **runs the client's PCB auto layout** (`pcb_Document.autoLayout`) on the
+  imported board — the same engine as `eda.js pcb --layout`, but automatic,
+  after the board outline and the import exist. The planned positions stay as
+  the fallback when the engine is missing or fails; `pcb.layout: "skill"` or
+  `--skill-layout` skips the pass and keeps the engineering placement. The
+  outcome is recorded as `pcb.layout` (`client-auto` / `skill-placement`) and
+  `pcb.autoLayout` (duration / failed count / error) in `build.json`;
 - saves, after which validate / ERC / lint / DRC / netcheck read the
   client-written project. The import is complete by construction, but the
   offline `netcheck` still runs as an independent pin-by-pin diff and catches
@@ -124,6 +131,11 @@ Client-side limitations (4.1.94):
 
 - `pcb --layout` / `--route` change the board in place; pass `--clear` first
   when re-routing an already-routed board.
+- `pcb_Document.autoLayout` is not part of the public 4.1.94 reference: on a
+  build that does not expose it, `build.js` logs
+  `PCB auto layout skipped — keeping the skill placement` and `build.json`
+  carries the error; the board is still delivered (with the planner's
+  positions).
 - `pour` now rebuilds the fill (`rebuildCopperRegion`). The engine returns no
   fill when the outline reaches into an area where the clearance rules remove
   all of it (observed on the ESP32 board near the top/right edge): the command

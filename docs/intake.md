@@ -39,7 +39,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 建议问 | `power.current_mA` | 200 | **注记**：按电流推线宽（≤500mA→16mil，<1A→20，<2A→30，≥2A→40），写入 `nets.{net}.width` 作为交接信息与导入铜的 DRC 每网下限；本 skill 不布线 |
 | 建议问 | `interfaces` | [] | USB-C/UART/I2C/RS-485/按键/LED… |
 | 建议问 | `mcu` | null | 有 MCU 则自动拉 mcu-min + crystal |
-| 建议问 | `board.width/height` | null=自动扩板 | 有结构限制才填 |
+| 默认 | `board.width/height` | 忽略 | 板框自动按封装 bbox 面积 ×1.25 生成；声明值不生效（只确认层数） |
 | 建议问 | `board.layers` | 2 | >2 会提示人工复核 |
 | 建议问 | `schematic.sheets` | 1 | **单页/多页询问**：全部模块放同一页还是分页；块 >8 个建议分页，跨页网络用网络端口连接 |
 | 建议问 | `constraints.crystal` | 有 MCU 即需要 | 8MHz 等 |

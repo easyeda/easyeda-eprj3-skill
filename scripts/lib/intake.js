@@ -51,9 +51,9 @@ const FIELDS = [
   { key: 'mcu', tier: 'ask', def: null,
     q: { zh: '有主控吗？型号或系列（如 STM32F103 / ESP32 / 无）',
          en: 'Any MCU? Part or family (STM32F103 / ESP32 / none)?' } },
-  { key: 'board.width', tier: 'ask', def: null,
-    q: { zh: '板框尺寸（mil 或 mm）有硬性限制吗？（不填由元件数自动扩板）',
-         en: 'Hard board size limit? (blank = auto-grow to fit parts)' } },
+  { key: 'board.width', tier: 'default', def: null,
+    q: { zh: '板框尺寸（本版自动按封装 bbox 面积 ×1.25 生成，声明值会被忽略）',
+         en: 'Board size (auto-sized to 1.25× the footprint bbox area; a declared value is ignored)' } },
   { key: 'board.layers', tier: 'ask', def: 2,
     q: { zh: '层数？（本 skill 不布线不铺铜，层数只是记录；>2 层的布线在客户端完成）',
          en: 'Layer count? (this skill never routes or pours — the number is recorded; the copper happens in the client)' } },
@@ -371,6 +371,20 @@ function resolve(req, opts) {
   }
   design.expect = design.expect || {};
   design.expect.decoupling = true;
+  // Requirement metadata: the project report reads `meta` for its functional
+  // description / feature list (function text, input rail, interfaces). It is
+  // documentation only — build.js ignores it.
+  design.meta = Object.assign({}, design.meta || {}, {
+    function: getPath(req, 'function') || null,
+    input: busNet,
+    current_mA: current,
+    rails: finalRails.slice(),
+    interfaces: [].concat(getPath(req, 'interfaces') || []).map(String),
+    mcu: getPath(req, 'mcu') || null,
+    package: getPath(req, 'package') || null,
+    layers: getPath(req, 'board.layers') || 2,
+    modules: used.map((u) => u.recipe)
+  });
   const pairs = getPath(req, 'constraints.differential') || [];
   if (pairs.length) design.expect.pairs = pairs;
 
@@ -466,7 +480,7 @@ function renderPlan(plan) {
   const L = [];
   L.push(`方案 ${plan.name}`);
   L.push(`  电源  输入 ${plan.input} → 轨 ${(plan.rails || []).join(' / ') || '—'}（${plan.current_mA} mA）`);
-  L.push(`  板框  ${typeof plan.board === 'string' ? plan.board : `${plan.board.width}×${plan.board.height} mil`} · ${plan.layers} 层 · 封装 ${plan.package} · 只布局（布线/铺铜在客户端完成）`);
+  L.push(`  板框  自动（封装 bbox 面积 ×1.25，设计里声明的尺寸会被忽略） · ${plan.layers} 层 · 封装 ${plan.package} · 只布局（布线/铺铜在客户端完成）`);
   L.push(`  模块  ${plan.recipes.map((r) => `${r.recipe}(${r.parts})${r.fromCache ? '*' : ''}`).join(' + ') || '无匹配 recipe — 需手写 design'}`);
   // coverage (report §9 P4): typed recipes pick their part by class + roles;
   // fixed-model ones still bake a specific chip in

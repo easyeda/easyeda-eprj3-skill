@@ -5,6 +5,53 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.2.0] - 2026-11-05
+
+**Client auto layout on every client build, and reports that explain the board
+(functional description, features, BOM) with an AI report that accounts for
+every agent.**
+
+### Added
+- `build.js` now runs the client's **PCB auto layout**
+  (`pcb_Document.autoLayout`) on every client build, after the board outline
+  exists and the schematic → PCB import has created the footprints. It runs in
+  the same headless session as the import; the planner's positions remain the
+  fallback when the engine is unavailable or fails. Opt out with
+  `pcb.layout: "skill"` or `--skill-layout` (keeps the engineering placement:
+  connectors on the edge, decoupling caps beside their IC).
+  `build.json` records `pcb.layout` (`client-auto` / `skill-placement`) and
+  `pcb.autoLayout` (duration / failed count / error).
+- `project-report.md` gained three sections fed by the design and the build:
+  **功能描述** (function statement, power chain, module-by-module detail, signal
+  flow), **功能特性** (supply rails, interfaces, protection, indicators, MCU,
+  board/stack, gate verdict) and **物料清单（BOM）** (grouped rows: refs, device,
+  value, footprint, qty, LCSC id). `build.json` carries `bom` so official
+  footprint names from the client show up in the table.
+- `design.json` accepts `meta` (written by `intake.js`: `function`, `input`,
+  `current_mA`, `rails`, `interfaces`, `mcu`, `package`, `layers`, `modules`);
+  the report reads it and never invents a function that was not stated.
+- `ai-report.md` template now has an **Agent 用量明细** table: one row per agent
+  (main + each audit round), with model, start/end, duration, input/output/total
+  tokens, and a **合计** row. The aggregation rule is spelled out (Σ tokens,
+  Σ agent durations vs. wall clock); `N/A` rows are excluded from totals and the
+  omitted count is stated.
+
+### Changed
+- Signal diagram: one arrow per module pair, labelled with the merged nets
+  (≤3 names + `+N`); modules without cross-module nets are left out of the
+  drawing. The per-net detail stays in the net overview.
+- Power diagram: rails chain **vertically through their converters**
+  (`12V → U1 → 5V → U1_ldo → 3V3`) instead of fanning every rail out of one row;
+  each block hangs under the rail(s) that feed it. GND is stated once in the
+  text rather than drawn to every block.
+- Rail lists start at the input rail; the net overview gained a 类型 column
+  (供电 / 地 / 信号 / NC).
+
+### Fixed
+- `intake.js` printed the declared board size in its plan summary although the
+  build ignores it; it now prints the automatic 1.25×-bbox rule. `board.width`
+  moved from "ask" to the documented-default tier (the board size is not asked).
+
 ## [2.1.6] - 2026-11-05
 
 **Auto board = 1.25× the footprint bbox area, and no empty PCB shells.**

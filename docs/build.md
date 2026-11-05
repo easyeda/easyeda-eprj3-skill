@@ -21,6 +21,8 @@ human confirmation gate; its board line reads
 `--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`, `--no-tidy`
 (keep declared rotations — default runs the sch-tidy two-pass orientation
 optimizer: layout → rotate symbols onto their signal axes → re-layout),
+`--skill-layout` (client builds only: keep the planner's PCB placement instead
+of running the client's auto layout after the import),
 `--no-patterns` (skip the circuit-pattern macros below; default on),
 `--no-search` (skip the local block-move search pass below; default on).
 
@@ -66,7 +68,8 @@ schematic DRC (`sch_Drc.check`) on the finished sheet. The report lands in
 | — | — | — | a block made only of two-pin parts that all share both nets (decoupling caps) or one net with distinct partners (pull-up/down) is laid out as an aligned row (`sch-patterns.js`), so the bank comb can merge the common side into one rail |
 | — | — | — | **pattern catalog** (`sch-patterns.js`, matched by pin topology and declared power nets — never by part number/refdes): two-pin **chains**, **parallel/pull banks**, **hub + satellites** (a regulator/connector/button with its caps, ESD or gate-RC beside the pins they serve), **crystal + load caps**, **series + shunt** (inductor/ferrite/0R feeding an output-cap row, incl. multi-phase DCDC), **bridge** (AC-coupling caps or series resistors between two ICs). A mixed block absorbs several patterns in one pass; each group stacks below the parts that stay put. The composed frame keeps its top edge and is rejected above 1.10× the original area (1.45× for a supply/ground bank), restoring the generic placement on rejection. Measure coverage with `node scripts/pattern-coverage.js --design <file>` (target ≥90%, `--fail-under` for CI) |
 | — | — | — | **local search**: after the layout strategies are scored, one block at a time is nudged on the 10-mil grid (up to 8 directions, 2 rounds), re-routed and re-scored; a move is kept only when the sheet stays contact-free, block frames stay apart and the same 0.985 quality gate accepts it. Bounded to ≤48 parts and ≤8 blocks so a large sheet does not pay for a route per trial |
-| `pcb` | object or `false` | `{}` | `false` skips the PCB entirely |
+| `pcb` | object or `false` | `{}` | `false` skips the PCB entirely; `layout: "skill"` keeps the planner's own placement instead of the client's auto layout (client builds only); `rules` declares the DRC/DFM floors (`clearance`, `trackWidth`, `edgeClearance`, `minDrill`, `minRing`, `minAngle`) |
+| `meta` | object | — | requirement metadata written by `intake.js` (`function`, `input`, `current_mA`, `rails`, `interfaces`, `mcu`, `package`, `layers`, `modules`). Documentation only: the project report turns it into the 功能描述 / 功能特性 sections; the build itself ignores it |
 
 `layout` knobs: `cols` (max columns per block, default 3), `cellW` (150),
 `cellH` (110), `blockGapX` (160), `blockGapY` (140), `margin` (70). Increase the
@@ -282,6 +285,23 @@ Supply `place` when a part needs an exact spot — it always wins, and a fixed
 part is a **keepout** for everything the placer arranges around it (mounting
 holes no longer get a resistor dropped on them).
 
+### Client auto layout (2.x client builds)
+
+When the build drives the client for any `"ic"` part, it does not stop at the
+skill's planned positions: after the board outline exists and the client's
+"schematic → PCB" import has created the footprints, `build.js` calls the
+client's **own auto layout** (`pcb_Document.autoLayout`) in the same headless
+session and saves the arranged board. The planner's positions remain the
+fallback (they still decide the board size and the pad-net/rats data); if the
+engine is unavailable or reports a failure, the build keeps them and logs it.
+
+- `pcb.layout: "skill"` or `--skill-layout` keeps the skill's engineering
+  placement instead (connectors on the edge, decoupling caps beside their IC).
+- `build.json` records `pcb.layout` (`"client-auto"` / `"skill-placement"`) and
+  `pcb.autoLayout` (engine duration, failed count, error).
+- The DRC/DFM gates then judge the arranged board, so an auto layout that
+  overflows the outline fails the build the same way a hand placement would.
+
 The **schematic** side gets the same treatment: the build verifies the routed
 sheet for cross-net contacts (where the client would merge two nets) and, if
 one exists, redoes the layout on a looser grid before failing — density is
@@ -310,7 +330,7 @@ pcb: 4 footprints · placement-only (this skill never routes or pours)
 parentheses — a net with 2 pads wants one trace, a 3-pad net wants a small
 tree. `--plan` shows the same policy on its board line
 ("只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）"), and the report JSON's `pcb`
-section is `{parts, mode: 'placed-only', rats}`.
+section is `{parts, mode: 'placed-only', layout, source, rats}`.
 
 **Finishing copper.** Open the project in the EasyEDA Pro client
 (`node scripts/open.js open --dir <p>`) and route by hand — or use the client's

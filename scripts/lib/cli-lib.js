@@ -186,7 +186,8 @@ function placeInstances(projectDir, placement, opts) {
     missing: [],
     moved: 0,
     shellsRemoved: 0,
-    batches: 0
+    batches: 0,
+    layout: null
   };
   const timeout = Number((opts && opts.timeout) || 600000);
 
@@ -258,6 +259,18 @@ function placeInstances(projectDir, placement, opts) {
         });
         results.moved += (mv && mv.moved) || 0;
         results.footprints.push(...((mv && mv.footprints) || []));
+        results.batches += 1;
+      }
+      // Client auto layout: the board outline exists and every footprint is
+      // imported, so hand the board to the client's own layout engine (the
+      // same command as the UI's "auto layout"). The planned positions above
+      // stay as the fallback when the engine is missing or fails.
+      if (placement.autoLayout) {
+        try {
+          results.layout = CLI.invoke(info.bin, session, AUTO_LAYOUT, { timeout });
+        } catch (e) {
+          results.layout = { ok: false, error: String(e && e.message || e) };
+        }
         results.batches += 1;
       }
       }
@@ -461,6 +474,47 @@ for (const p of __CLI__.args.moves || []) {
   }
 }
 await eda.pcb_Document.save();
+return out;
+`;
+
+/** Run the client's PCB auto layout on an imported board.
+ *  The footprint positions from the offline placer are the fallback: if the
+ *  engine is unavailable or reports a failure the board keeps them. */
+const AUTO_LAYOUT = `
+${READY_HELPER}
+const pcbs = await pcbsOf();
+if (!pcbs.length) return { ok: false, error: 'no PCB in this project' };
+await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
+await new Promise((r) => setTimeout(r, 1200));
+const out = {
+  pcb: pcbs[0].name, ok: false, started: false, durationMs: null,
+  successComponents: null, totalComponents: null, failed: null,
+  error: null, saved: false
+};
+const engine = eda.pcb_Document && eda.pcb_Document.autoLayout;
+if (typeof engine !== 'function') {
+  out.error = 'pcb_Document.autoLayout is not available in this client build';
+  return out;
+}
+try {
+  const r = await engine.call(eda.pcb_Document);
+  out.started = true;
+  if (r && typeof r === 'object') {
+    out.ok = r.success !== false;
+    if (!out.ok) out.error = 'auto layout reported failure';
+    if (typeof r.duration === 'number') out.durationMs = r.duration;
+    if (typeof r.successComponentsCount === 'number') out.successComponents = r.successComponentsCount;
+    if (typeof r.totalComponentsCount === 'number') out.totalComponents = r.totalComponentsCount;
+    if (Array.isArray(r.failedComponents)) out.failed = r.failedComponents.length;
+  } else {
+    out.ok = !!r;
+  }
+} catch (e) {
+  out.error = String(e && e.message || e);
+}
+// the engine commits asynchronously; give it a moment before persisting
+await new Promise((r) => setTimeout(r, 2000));
+try { await eda.pcb_Document.save(); out.saved = true; } catch (e) { /* save error is not fatal */ }
 return out;
 `;
 

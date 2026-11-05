@@ -60,7 +60,7 @@ easyeda-eprj3-skill/
 | `node scripts/lint-layout.js` | 原理图布局审查（L001–L010） |
 | `node scripts/drc.js` | 铜皮审查（D001–D012，含 DFM；本 skill 自建的板恒为 placed-only，自动跳过 D004/D006，`--placed-only`/`--routed` 可强制；导入/客户端返存的板仍完整判铜） |
 | `node scripts/netlist.js` | 网表：`--json`/`--pcb` 查看实际连通；`--design`/`--gen` + `--audit <file>` 写自包含网表审计包（spec↔built + 机械比对 + 复核清单），交给不继承上下文的子 agent 复核 |
-| `node scripts/report.js` | 生成 `project-report.md`（概述/功能/信号框架图/电源框架图/网络/门禁/遗留/建议；`--report build.json` 回填门禁结果） |
+| `node scripts/report.js` | 生成 `project-report.md`（概述/功能描述/功能特性/BOM/信号框架图/电源树/网络/门禁/遗留/建议；`--report build.json` 回填门禁结果与官方封装名） |
 | `node scripts/autofix.js` | 机械修复：NC、补去耦电容 |
 | `node scripts/build.js` | design.json 一键构建 + 全部门禁；**只布局**（本 skill 永不布线/铺铜，铜皮在客户端完成；构建输出含 `rats:` 交接清单）；`--plan` 只打印方案摘要并真实预演，不写盘（人工确认点） |
 | `node scripts/intake.js` | 需求采集：`template`/`fields`/`check`（追问协议）/`resolve`（recipe 选型 + 电源链推导 + 线宽注记，选型结果缓存于 `.cache/`） |

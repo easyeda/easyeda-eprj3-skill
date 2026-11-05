@@ -49,7 +49,8 @@ const SCHEMA = [
   { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
   { name: 'no-patterns', desc: 'skip the circuit-pattern macros (two-pin chains)', hasValue: false },
   { name: 'no-search', desc: 'skip the local block-move search pass', hasValue: false },
-  { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false }
+  { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false },
+  { name: 'skill-layout', desc: 'keep the skill\'s own PCB placement (default: the client runs its auto layout after the import)', hasValue: false }
 ];
 
 const SKILL_OWNED = ['sch', 'pcb', 'panel', '.tmp'];
@@ -1041,6 +1042,12 @@ function main() {
   // Client builds draw the wiring and the power flags through the source API;
   // offline builds keep the record emitters below.
   const clientBuild = !rehearsal && placements.some((p) => p.part && p.part.libraryEntry);
+  // Client auto layout (2.x): the skill's planner still decides the board size
+  // and the fallback positions, then the client's own layout engine arranges
+  // the imported footprints — the same command as the UI's "自动布局".
+  // `pcb.layout: "skill"` / --skill-layout keeps the planned positions.
+  const clientLayout = clientBuild && doPcb && !opts['skill-layout']
+    && !(design.pcbSpec && design.pcbSpec.layout === 'skill');
   snapNetObjectsToGrid(routed);
   growFramesToLabels(blocks, routed);
   const sheetFrames = new Map();
@@ -1307,6 +1314,7 @@ function main() {
   // ------------------------------------------------------------ pcb
   const pcbParts = [];
   const pcbGeoPads = [];
+  const bom = [];          // per-designator device/footprint for project-report.md
   let ratNets = [];
   if (doPcb) {
     const { planPcb } = require('./lib/pcb-plan');
@@ -1399,12 +1407,27 @@ function main() {
         const geo = fp ? P.placedPads(fp, px, py, angle || 0) : [];
         for (const g of geo) pcbGeoPads.push({ ref: designator, num: g.num, net: nets[g.num] || "", x: g.x, y: g.y, w: g.w, h: g.h });
         pcbParts.push({ part: pl.part, x: px, y: py, angle: angle || 0, library: true });
+        bom.push({
+          ref: designator,
+          device: pl.part.ic || pl.part.name || null,
+          value: pl.part.value || null,
+          footprint: (fp && fp.name) || null,
+          lcsc: (pl.part.libraryRef && pl.part.libraryRef.lcsc) || null
+        });
         continue;
       }
       const placed = placePcbComponent(pcbEm, project, design, pl, lib, { docsOnly: clientBuild });
       if (placed) {
         pcbParts.push(Object.assign({ part: pl.part }, placed));
         pcbGeoPads.push(...placed.geoPads);
+        const fp = lib.footprintOf(pl.part);
+        bom.push({
+          ref: pl.part.multiUnitBase || pl.part.id,
+          device: pl.part.ic || pl.part.name || null,
+          value: pl.part.value || null,
+          footprint: (fp && fp.name) || null,
+          lcsc: null
+        });
       }
     }
 
@@ -1446,6 +1469,7 @@ function main() {
   // netcheck then read the client-saved project.
   const pcbPlan = [];
   let pcbImported = false;   // the client built the PCB from the schematic
+  let clientPlacement = null; // cli-lib result (symbols, wires, footprint moves, layout)
   let schDrcResult = null;   // client schematic DRC (2.x, client builds only)
   if (doPcb) {
     const seenPcbRefs = new Set();
@@ -1469,8 +1493,10 @@ function main() {
           flagPlan,
           wirePlan,
           pcbPlan,
+          autoLayout: clientLayout,
           schematicName: design.schematic
         });
+        clientPlacement = placed;
       } catch (e) {
         die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
       }
@@ -1483,6 +1509,15 @@ function main() {
         log(`  client: schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); removed ${placed.removed} stale footprint(s), moved ${placed.moved}`);
         if (placed.missing && placed.missing.length) {
           log(`  client: import did not create ${placed.missing.length} part(s): ${placed.missing.slice(0, 8).join(' ')}${placed.missing.length > 8 ? ' …' : ''}`);
+        }
+        if (clientLayout) {
+          const lay = placed.layout || {};
+          if (lay.ok) {
+            log(`  client: PCB auto layout done${lay.durationMs ? ` in ${lay.durationMs} ms` : ''}`
+              + `${lay.failed ? ` — ${lay.failed} footprint(s) not placed` : ''}`);
+          } else {
+            log(`  client: PCB auto layout skipped — keeping the skill placement${lay.error ? ` (${lay.error})` : ''}`);
+          }
         }
       }
       if (placed.flags && placed.flags.length) {
@@ -1541,9 +1576,15 @@ function main() {
       parts: pcbParts.length,
       mode: doPcb ? 'placed-only' : null,
       source: doPcb ? (pcbImported ? 'client-update' : 'skill-placement') : null,
+      layout: doPcb
+        ? (clientLayout && clientPlacement && clientPlacement.layout && clientPlacement.layout.ok
+          ? 'client-auto' : 'skill-placement')
+        : null,
+      autoLayout: (clientPlacement && clientPlacement.layout) || null,
       board: doPcb ? { width: design.board.width, height: design.board.height } : null,
       rats: ratNets.length
     },
+    bom: bom.length ? bom : null,
     elapsed_ms: Date.now() - t0,
     generatedAt: new Date().toISOString(),
     issues: routed.issues
