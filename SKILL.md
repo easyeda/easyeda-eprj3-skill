@@ -156,7 +156,7 @@ For every pair of connected pins pick the **weakest** encoding that keeps the dr
 | Same block / nearby (a few hundred mil) | one straight or ≤2-bend **wire**, no label |
 | Same sheet, far apart, or routing would cross other blocks | short **stub** (≥30 mil out of the pin) + `add-netlabel` at both ends |
 | Across sheets | `PORT_IN/OUT/BI` or off-page connector |
-| Power / ground rail | stub + power flag (`GND`, `VCC`, …) |
+| Power / ground | stub + power flag; for **GND prefer one flag per pin, no shared rail** (see below) |
 
 Hard rules:
 
@@ -174,6 +174,25 @@ Hard rules:
   ```
 
 Before running `validate.js`, self-check: every component sits inside a titled block, every wire endpoint equals a pin tip or another wire endpoint, no floating label, no unconnected stub.
+
+### GND flags — one per pin, not a shared rail
+
+For ground, put a **separate GND power flag at every GND pin** instead of drawing a shared GND rail. A common rail reads fine in a single small block, but with several blocks it turns into long vertical drops and unreadable crossings. Verified on a 22-component carrier board (23 GND pins: connector shells, EP pads, IC grounds, decoupling caps).
+
+- Stub each pin outward by ≥30 mil; the flag connects at its origin at the stub end.
+- `add-wire --net X` always writes a **visible** NET label, so next to a power flag the sheet shows the same name twice. After opening the sheet, hide the wire label for power nets (GND/+3V3/VBUS/VSYS): `sch_PrimitiveAttribute.getAll(wireId)` returns it as key `Name`; modify with `{key, value, valueVisible:false}`.
+- **Stagger stub lengths where pins are adjacent** (e.g. 25/40/55/70 mil). A power flag's `GND` text sits at its origin, so equal lengths make neighbouring texts overlap.
+- Keep every flag inside the sheet: for a left-side pin at `x`, the flag origin is `x − stub`; leave ≥40 mil for the glyph/text or `sch_Drc.check` reports `OBJECTOUTSIDESHEET`. If a connector is too close to the edge, move the component right (e.g. USB-C from `x=100` to `x=140`) rather than shortening the stub.
+- Change this style by **regenerating the whole page from the build script** and swapping the page into the target project (keep the target's page/schematic UUIDs). Do not bulk-edit wire geometry through the API: EasyEDA merges wire groups on geometry changes and can silently short nets.
+- After swapping, run `sch_Drc.check(true,false,true)` — expect only the intentional `CHECKFLOATPIN` NC warnings. If the project uses `UNIQUE<refdes>` Unique IDs for Shift+X, reset all of them (`sch_PrimitiveComponent.modify(id, {uniqueId:"UNIQUE"+designator})`) and save.
+
+### Updating a routed PCB from the schematic — what actually works
+
+- `pcb_Document.importChanges(uuid)` requires the **schematic page UUID** (the `P1` page), not the schematic container UUID. Passing the container returns `true` but imports **0** components; passing the page UUID imports the full set.
+- On an already-routed board the call keeps tracks/vias, but it can **clear a footprint-only component's `footprint` reference** and does not necessarily clear a pre-existing `Netlist Error`. Re-read every component's `footprint`, `component` and `pads` after importing, and keep a copy of the routed board.
+- A `Netlist Error` can survive a **brand-new PCB imported from the same schematic** while the pin-level netlist matches 100 % (only NC pads differ). Compare the schematic pins against the PCB pad nets before rebuilding; do not rebuild a routed board just to clear the badge.
+- Mark intentionally floating pins with `noConnected` (`const p=await eda.sch_PrimitivePin.get(id); const a=p.toAsync(); a.setState_NoConnected(true); await a.done();`). This clears `CHECKFLOATPIN` and makes the schematic DRC green; it does not change the PCB Netlist Error.
+- Creating a new PCB from the schematic: `createPcb('Board1')` → `openDocument(pcbUuid)` → `importChanges(pageUuid)` → place components → route. Use the page UUID, not the container.
 
 ### Launching the client — non-default install paths
 
