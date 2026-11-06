@@ -1009,8 +1009,12 @@ function routeNet(net, nodes, ctx) {
       const cross = node.dir.y !== 0 ? node.tip.x : node.tip.y;
       const slot = Math.abs(Math.round(cross / 10)) % 4;
       const stair = STUB + slot * 14;
-      const lens = [...new Set([STUB, stair, stair - 14, stair - 28, 30, 20, 10]
-        .filter((l) => l >= 10))];
+      // Never park a power flag 10 mil from the pin: at that distance the flag
+      // body sits inside the symbol's pin area and the client reports the stub
+      // as a dangling net (SHOWDANDLING). 20 mil is the shortest usable stub;
+      // tighter spots fall through to the jog / label fallbacks below.
+      const lens = [...new Set([STUB, stair, stair - 14, stair - 28, 30, 20]
+        .filter((l) => l >= 20))];
       // the net name is printed beyond the flag (above an up flag, below a
       // ground flag): reserve its real box so it cannot overprint a neighbour
       const halfW = Math.max(15, String(net).length * 2.5);
@@ -1136,9 +1140,12 @@ function routeNet(net, nodes, ctx) {
         }
         if (clean) {
           placed = pos;
-          wire = first;
-          wires.push([second]);
-          commitSegs([second], net, used, committed);
+          // the bend and the flag drop are ONE logical wire: splitting them
+          // left the first segment without a flag endpoint, so it got a
+          // visible NET label and the client reported the stub as dangling
+          wire = null;
+          wires.push([first, second]);
+          commitSegs([first, second], net, used, committed);
         } else {
           // no clean exit: the flag sits directly ON the pin — co-located, so the
           // netlist unions it as a connection. Never emit a clashing lateral stub

@@ -229,7 +229,8 @@ function placeInstances(projectDir, placement, opts) {
     shellsRemoved: 0,
     batches: 0,
     layout: null,
-    attrs: []
+    attrs: [],
+    nc: { marked: [], failed: [] }
   };
   const timeout = Number((opts && opts.timeout) || 600000);
   // Designator/name rows go through the source API (updateAttribute): the
@@ -243,6 +244,23 @@ function placeInstances(projectDir, placement, opts) {
       });
       results.attrs.push(...((at && at.attrs) || []));
       results.batches += 1;
+    }
+  };
+  // No-connect markers are client-managed state (not expressible in the source
+  // records), so they are applied through sch_PrimitivePin.modify after the
+  // symbols exist.
+  const applyNc = (session) => {
+    if (!(placement.ncPlan || []).length) return;
+    try {
+      const nc = CLI.invoke(info.bin, session, MARK_NC, {
+        args: { plan: { items: placement.ncPlan } },
+        timeout
+      });
+      results.nc.marked.push(...((nc && nc.marked) || []));
+      results.nc.failed.push(...((nc && nc.failed) || []));
+      results.batches += 1;
+    } catch (e) {
+      results.nc.failed.push({ ref: '*', error: String(e && e.message || e) });
     }
   };
 
@@ -280,7 +298,7 @@ function placeInstances(projectDir, placement, opts) {
         results.batches += 1;
       }
       // no PCB pass will reopen the project: apply the rows here
-      if (!(placement.pcbPlan || []).length) applyAttrs(session);
+      if (!(placement.pcbPlan || []).length) { applyAttrs(session); applyNc(session); }
     } finally {
       CLI.closeSession(info.bin, session);
     }
@@ -333,6 +351,7 @@ function placeInstances(projectDir, placement, opts) {
       // fresh session: every component (authored + client-placed) is loaded,
       // so the source API can address each one by designator
       applyAttrs(session);
+      applyNc(session);
       }
     } finally {
       CLI.closeSession(info.bin, session);
@@ -493,14 +512,25 @@ try {
 await new Promise((r) => setTimeout(r, 1200));
 // The import commits asynchronously inside the client: poll until every
 // planned designator is visible (or give up after 20 s and report).
-const deadline = Date.now() + 20000;
-out.missing = [];
-for (;;) {
-  const all = await eda.pcb_PrimitiveComponent.getAll();
-  const have = new Set(all.map((c) => (c.getState_Designator ? String(c.getState_Designator()) : '')).filter(Boolean));
-  out.missing = (plan.designators || []).filter((d) => !have.has(String(d)));
-  if (!out.missing.length || Date.now() > deadline) break;
-  await new Promise((r) => setTimeout(r, 600));
+const pollMissing = async (ms) => {
+  const deadline = Date.now() + ms;
+  out.missing = [];
+  for (;;) {
+    const all = await eda.pcb_PrimitiveComponent.getAll();
+    const have = new Set(all.map((c) => (c.getState_Designator ? String(c.getState_Designator()) : '')).filter(Boolean));
+    out.missing = (plan.designators || []).filter((d) => !have.has(String(d)));
+    if (!out.missing.length || Date.now() > deadline) break;
+    await new Promise((r) => setTimeout(r, 600));
+  }
+};
+await pollMissing(20000);
+// importChanges takes the SCHEMATIC uuid (the page uuid is not the API
+// contract). A true return with zero footprints created is a client API
+// bug, not a wrong-uuid symptom: surface it as such instead of retrying with
+// a page uuid, which would hide the defect.
+out.created = (plan.designators || []).length - out.missing.length;
+if (out.imported && (plan.designators || []).length && out.created === 0) {
+  out.importBug = 'importChanges returned true but created 0 footprints (client API bug)';
 }
 await eda.pcb_Document.save();
 return out;
@@ -534,6 +564,74 @@ for (const p of __CLI__.args.moves || []) {
   }
 }
 await eda.pcb_Document.save();
+return out;
+`;
+
+/** Set the client's no-connect marker on the design's NC pins.
+ *  Document-scoped API: the page must be opened (rendered) first, then
+ *  sch_PrimitiveComponent.getAllPinsByPrimitiveId + sch_PrimitivePin.modify
+ *  with noConnected:true. The state is client-managed — it is not written into
+ *  the sheet source records, so offline builds keep the NC stub+label. */
+const MARK_NC = `
+${READY_HELPER}
+const plan = __CLI__.args.plan;
+const pages = await pagesOf();
+const out = { marked: [], failed: [] };
+if (!plan.items || !plan.items.length) return out;
+if (!eda.sch_PrimitivePin || typeof eda.sch_PrimitivePin.modify !== 'function') {
+  out.failed.push({ ref: '*', error: 'sch_PrimitivePin.modify is unavailable in this client build' });
+  return out;
+}
+const byPage = new Map();
+for (const it of plan.items) {
+  const k = it.pageName || (pages[0] && pages[0].name) || 'P1';
+  if (!byPage.has(k)) byPage.set(k, []);
+  byPage.get(k).push(it);
+}
+for (const [pageName, items] of byPage) {
+  const page = pages.find((p) => p.name === pageName) || pages[0];
+  if (!page) {
+    for (const it of items) out.failed.push({ ref: it.designator, error: 'page not found' });
+    continue;
+  }
+  await eda.dmt_EditorControl.openDocument(page.uuid);
+  await new Promise((r) => setTimeout(r, 1200));
+  let comps = [];
+  for (let i = 0; i < 20 && !comps.length; i += 1) {
+    try { comps = await eda.sch_PrimitiveComponent.getAll(); } catch (e) { comps = []; }
+    if (!comps.length) await new Promise((r) => setTimeout(r, 500));
+  }
+  for (const it of items) {
+    let comp = null;
+    for (const c of comps) {
+      const d = c.getState_Designator ? String(c.getState_Designator()) : '';
+      if (!d) continue;
+      if (d === it.designator || d.indexOf(it.designator + '.') === 0
+        || new RegExp('^' + it.designator + '[A-Z]$').test(d)) { comp = c; break; }
+    }
+    const id = comp && (comp.getState_PrimitiveId ? comp.getState_PrimitiveId() : comp.primitiveId);
+    if (!id) {
+      out.failed.push({ ref: it.designator, error: 'component not found on ' + page.name });
+      continue;
+    }
+    let pins = [];
+    try { pins = await eda.sch_PrimitiveComponent.getAllPinsByPrimitiveId(id); } catch (e) { pins = []; }
+    for (const num of it.pins || []) {
+      const pin = (pins || []).find((p) => String(p.pinNumber) === String(num));
+      if (!pin || !pin.primitiveId) {
+        out.failed.push({ ref: it.designator, pin: String(num), error: 'pin not found' });
+        continue;
+      }
+      try {
+        await eda.sch_PrimitivePin.modify(pin.primitiveId, { noConnected: true });
+        out.marked.push({ ref: it.designator, pin: String(num) });
+      } catch (e) {
+        out.failed.push({ ref: it.designator, pin: String(num), error: String(e && e.message || e) });
+      }
+    }
+  }
+}
+await eda.sch_Document.save().catch(() => {});
 return out;
 `;
 

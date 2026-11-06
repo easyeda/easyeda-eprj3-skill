@@ -3,7 +3,57 @@
 All notable changes to **easyeda-eprj3-skill** are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
+Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.2 → 2.2.3) **and** adds an entry here in the same commit. The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
+
+## [2.2.3] - 2026-11-06
+
+**Feedback round: import robustness and label hygiene (several items were
+already handled — verified with builds).**
+
+### Added
+- **Real no-connect markers on NC pins (client builds).** After the import the
+  build opens each schematic page and calls
+  `sch_PrimitiveComponent.getAllPinsByPrimitiveId` +
+  `sch_PrimitivePin.modify({ noConnected: true })` for every design pin mapped
+  to `"NC"`/`"DNCn"` — the client draws its no-connect cross. The NC stub +
+  net label stays, so the pin keeps a net name for the client netlist and its
+  PCB pad (netcheck / audit stay green). The marker is client-managed state;
+  offline builds keep the label-only convention. The format validator accepts
+  the client's `ATTR NO_CONNECT <componentId>-<pinId>` records.
+- **Zero-footprint import is surfaced as an API bug.** `importChanges` takes
+  the **schematic** UUID; a `true` return that creates no footprint is a client
+  API defect. The build now fails with
+  `importChanges returned true but created 0 footprints` and reports the
+  schematic-netlist part count — it does not retry with a page UUID, which
+  would hide the defect.
+- `add-wire --hide-net` assigns the net but hides its printed label — use it
+  when a power flag/port already prints the name next to the wire.
+
+### Fixed
+- A jogged power-flag wire (bend + drop to the flag) is emitted as **one**
+  wire group; splitting it left the first segment without a flag endpoint, so
+  it carried a duplicate visible NET label next to the flag.
+- The shortest power-flag stub is **20 mil** (was 10): a 10-mil flag sat inside
+  the symbol's pin area and read as a stray mark.
+
+### Verified against the feedback (no code change needed)
+- **Adjacent flag/label stubs are staggered** (`STUB + slot*14` = 40/54/68/82
+  mil, four slots by pin column) and every candidate is checked against the
+  printed label boxes — neighbours never share a text row.
+- **Left margin ≥ 40 mil**: the sheet frame keeps 60 mil around the content
+  box, and modules grow to include labels/ports; a build with a USB-C
+  connector at the left edge reports `sch drc: 0 fatal / 0 error / 0 warn`
+  (no OBJECTOUTSIDESHEET).
+- **No duplicate NET text next to power flags on client builds**: a wire that
+  ends on a power flag is drawn without a net name (the saved NET attr has an
+  empty value), so only the flag prints the name.
+- **Floating pins**: an `autoNC` LM358 build reports `sch drc 0/0/0`; client
+  builds now also set the real no-connect marker on those pins (see Added),
+  while the NC stub+label keeps the netlist and pad nets intact.
+- **Never import into an already-routed board**: the skill always imports into
+  a fresh, copper-free PCB. `docs/cli.md` now states that importing into a
+  routed board may drop footprint-only references and does not clear an
+  existing Netlist Error badge — do not rebuild a routed board for the badge.
 
 ## [2.2.2] - 2026-11-05
 

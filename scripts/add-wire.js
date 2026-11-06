@@ -30,6 +30,7 @@ const SCHEMA = [
   { name: 'link', desc: 'semicolon-separated pin pairs: "R1.2>C1.1;R1.1>U1.3"' },
   { name: 'segs', desc: 'segments x1,y1,x2,y2;... (mil)' },
   { name: 'net', desc: 'net name to label the wire with' },
+  { name: 'hide-net', desc: 'assign the net but hide its printed label (use next to a power flag to avoid duplicate text)', hasValue: false },
   { name: 'stub', desc: 'stub length out of each pin (default 40 mil)' }
 ];
 
@@ -114,6 +115,7 @@ function main() {
   const block = E.wireBlock({
     segs,
     net: opts.net,
+    netVisible: opts['hide-net'] ? false : undefined,
     zIndex: E.nextMainZIndex(lines),
     ticketBase: E.maxTicketOfLines(lines) + 1
   });

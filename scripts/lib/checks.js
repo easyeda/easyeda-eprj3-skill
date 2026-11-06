@@ -119,6 +119,15 @@ function runValidate(dir) {
         // (quick-start NO_CONNECT pins) or "e55-ie307" (H610 footprint meta).
         // They address a pin/element through its owner, never a record id.
         if (/^e\d+(?:-i?e\d+)+$/.test(pid)) continue;
+        // The client also writes NO_CONNECT as <component head id>-<pin id>
+        // where the head id is a random 16-hex atom (not "eN"): accept it when
+        // the owner is a head id of THIS document.
+        const cut = pid.indexOf('-');
+        if (cut > 0) {
+          const owner = pid.slice(0, cut);
+          const rest = pid.slice(cut + 1);
+          if (/^i?e\d+(?:-i?e\d+)*$/.test(rest) && g.ids.has(owner)) continue;
+        }
         if (g.ids.has(r.body.parentId) || allIds.has(r.body.parentId)) continue;
         check(false,
           `${label}: ATTR ${r.body.key || ''} parentId ${r.body.parentId} references nothing in the document`);

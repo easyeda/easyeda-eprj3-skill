@@ -71,6 +71,12 @@ can plan positions, writes the project skeleton, then opens the project and:
   key) on the fresh PCB session — this also positions the symbols the client
   placed itself, which have no authored ATTR records; failures leave the
   authored position and are logged, never fatal;
+- marks every design `"NC"` pin with the client's real **no-connect** marker
+  (`sch_PrimitiveComponent.getAllPinsByPrimitiveId` +
+  `sch_PrimitivePin.modify({ noConnected: true })`, document API on the opened
+  page). The NC stub + net label stays, so the pin keeps a net name for the
+  client netlist and its PCB pad; the marker itself is client-managed state,
+  not a source record;
 - **runs the client's PCB auto layout** (`pcb_Document.autoLayout`) on the
   imported board — the same engine as `eda.js pcb --layout`, but automatic,
   after the board outline and the import exist. The planned positions stay as
@@ -150,6 +156,16 @@ Client-side limitations (4.1.94):
   `PCB auto layout skipped — keeping the skill placement` and `build.json`
   carries the error; the board is still delivered (with the planner's
   positions).
+- `importChanges(uuid)` takes the **schematic** UUID (the page UUID is not the
+  API contract). If it returns `true` but creates **zero** footprints, that is
+  a client API bug: the build fails with
+  `importChanges returned true but created 0 footprints` instead of retrying
+  with a page UUID, which would only hide the defect.
+- Importing into an **already-routed** board keeps the copper, but may clear
+  the footprint reference of footprint-only parts and does **not** clear an
+  existing "Netlist Error" badge; a fresh import from the same schematic shows
+  the same badge even when the pin-level netlists match. Never rebuild a
+  routed board just to clear that badge.
 - `pour` now rebuilds the fill (`rebuildCopperRegion`). The engine returns no
   fill when the outline reaches into an area where the clearance rules remove
   all of it (observed on the ESP32 board near the top/right edge): the command

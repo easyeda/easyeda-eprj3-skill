@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v2.2.2** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v2.2.3** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -133,7 +133,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号放置、原理图 → PCB 导入（封装与焊盘网络由客户端生成）、**PCB 自动布局**、原理图 DRC 检查、按需 PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局仍由 skill 自带离线引擎完成；客户端构建时导线由 source API 绘制。2.x 构建包一律手动触发发布。
 
-**当前版本：2.2.2** · [更新记录](CHANGELOG.md)
+**当前版本：2.2.3** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 

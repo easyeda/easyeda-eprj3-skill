@@ -1507,6 +1507,29 @@ function main() {
     }
   }
 
+  // NC pins get a real no-connect marker through the client API (the source
+  // records cannot express it): design pin → net "NC"/"DNCn" → component pin.
+  const ncPlan = [];
+  {
+    const byKey = new Map();
+    for (const pl of placements) {
+      const ref = pl.part.multiUnitBase || pl.part.id;
+      const pageName = sheetTitleBySheet.get(pl.sheet || 1);
+      if (!pageName) continue;
+      const pins = Object.entries(pl.part.pins || {})
+        .filter(([, n]) => /^(NC|DNC\d*)$/i.test(String(n)))
+        .map(([num]) => String(num));
+      if (!pins.length) continue;
+      const k = `${pageName}|${ref}`;
+      if (!byKey.has(k)) byKey.set(k, { pageName, designator: ref, pins: [] });
+      byKey.get(k).pins.push(...pins);
+    }
+    for (const it of byKey.values()) {
+      it.pins = [...new Set(it.pins)];
+      ncPlan.push(it);
+    }
+  }
+
   // ---- client placement for system-library instances (2.x) -----------------
   // The official symbol/footprint documents are never downloaded or spliced:
   // the client places its symbols, then its own "schematic → PCB" update
@@ -1540,6 +1563,7 @@ function main() {
           wirePlan,
           pcbPlan,
           attrPlan,
+          ncPlan,
           autoLayout: clientLayout,
           schematicName: design.schematic
         });
@@ -1550,6 +1574,10 @@ function main() {
       if (pcbPlan.length && !placed.imported) {
         die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`
           + ` (schematic ${placed.schematicParts}/${pcbPlan.length} part(s), ${placed.wires.length} wire chain(s) drawn, ${placed.removed} stale footprint(s) removed)`);
+      }
+      if (pcbPlan.length && placed.imported && placed.importBug) {
+        die(`client PCB import created 0 footprint(s): ${placed.importBug}`
+          + ` — the schematic netlist had ${placed.schematicParts}/${pcbPlan.length} part(s); retry on a newer client build`);
       }
       pcbImported = !!(pcbPlan.length && placed.imported);
       if (pcbPlan.length) {
@@ -1578,6 +1606,12 @@ function main() {
         log(`  client: placed ${placed.attrs.length - badRows.length}/${placed.attrs.length} designator/name row(s) via updateAttribute`);
         if (badRows.length) {
           log(`  client: ${badRows.length} row(s) kept their authored position (${badRows.slice(0, 4).map((b) => `${b.ref}.${b.key}`).join(', ')}${badRows.length > 4 ? ' …' : ''})`);
+        }
+      }
+      if (placed.nc && (placed.nc.marked.length || placed.nc.failed.length)) {
+        log(`  client: marked ${placed.nc.marked.length} NC pin(s) no-connect`);
+        if (placed.nc.failed.length) {
+          log(`  client: ${placed.nc.failed.length} NC pin(s) not marked (${placed.nc.failed.slice(0, 4).map((b) => `${b.ref}.${b.pin || '?'}`).join(', ')}${placed.nc.failed.length > 4 ? ' …' : ''})`);
         }
       }
       const bad = [

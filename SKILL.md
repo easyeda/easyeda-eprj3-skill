@@ -419,7 +419,7 @@ hand-drawn sheets); PCB coordinates are Y-up. Only `parts` is required.
 | `parts[].symbol` | preset name (`RES`, `CAP`, `IND`, `DIODE`, `LED`, `TEST_POINT`, `PORT_IN`…) **or** an inline spec |
 | `parts[].ic` | evidence-sourced IC entry (`STM32F103C8T6`…) — replaces `symbol`+`footprint`, pins map by pin number, unused pins `"NC"` |
 | `parts[].footprint` | preset name (`R0603`, `C0603`, `SMA`, `TP0.5`…) **or** inline spec **or** `{ "auto": "LQFP48" }` |
-| `parts[].pins` | pin **number** → net name. Unconnected pins map to `"NC"` (ERC accepts the NC convention). Every other unlisted pin is an ERC error |
+| `parts[].pins` | pin **number** → net name. Unconnected pins map to `"NC"` (ERC accepts the NC convention; client builds also set the pin's real no-connect marker through `sch_PrimitivePin.modify`). Every other unlisted pin is an ERC error |
 | `parts[].polarity` | optional `{ "1": "+", "2": "-" }` — checked by the intent gate (I001 catches an LED/diode wired backwards); TVS/clamp parts declare `"role": "shunt"` and are exempt |
 | `parts[].rotation` | 0 / 90 / 180 / 270 |
 | `expect` | optional intent block for the fifth gate — see below |
@@ -529,7 +529,7 @@ tracks, vias and pours are drawn in the EasyEDA client. Keep-out regions
 ```bash
 node scripts/pins.js --dir <p>                       # every pin + exact tip + net
 node scripts/add-wire.js --dir <p> --sch S --sheet P \
-     --from R1.2 --to C1.1 [--net SIG]               # wire BY PIN REFERENCE
+     --from R1.2 --to C1.1 [--net SIG] [--hide-net]   # wire BY PIN REFERENCE
 node scripts/netlist.js --dir <p>                    # what is actually connected
 node scripts/add-symbol.js  --dir <p> --sch S --sheet P --symbol RES --footprint R0603 --x 300 --y -440 --refdes R1
 node scripts/add-footprint.js --dir <p> --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
@@ -544,6 +544,8 @@ node scripts/cleanup.js --dir <p>                    # drop .tmp staging (build 
 **Never hand-compute a pin coordinate.** `scripts/pins.js` lists exact tips;
 `add-wire --from/--to` (or `--link "R1.2>C1.1;R1.1>U1.3"`) resolves them and
 routes orthogonally. Hand arithmetic is how a schematic silently loses a net.
+`--net X` prints the name on the wire; add `--hide-net` when a power flag or
+port already prints it (avoids duplicate text).
 
 Coordinates are mil, 10 mil grid; schematic records are Y-down (client native,
 blocks laid out downward from y=0), PCB is Y-up. Connectivity is exact coordinate equality
