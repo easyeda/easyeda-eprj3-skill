@@ -530,7 +530,10 @@ await pollMissing(20000);
 // a page uuid, which would hide the defect.
 out.created = (plan.designators || []).length - out.missing.length;
 if (out.imported && (plan.designators || []).length && out.created === 0) {
-  out.importBug = 'importChanges returned true but created 0 footprints (client API bug)';
+  // Measured: a schematic with no footprint-bearing component (only power
+  // flags / symbol-only parts) imports "successfully" with nothing to place.
+  // Nothing else about the schematic UUID or the API is wrong.
+  out.importEmpty = 'importChanges returned true but created 0 footprints — no footprint-bearing component in the schematic netlist (or the import was skipped)';
 }
 await eda.pcb_Document.save();
 return out;

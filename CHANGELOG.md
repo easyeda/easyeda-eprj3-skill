@@ -3,12 +3,11 @@
 All notable changes to **easyeda-eprj3-skill** are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
-Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.2 → 2.2.3) **and** adds an entry here in the same commit. The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
+Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
-## [2.2.3] - 2026-11-06
+## [2.2.4] - 2026-11-06
 
-**Feedback round: import robustness and label hygiene (several items were
-already handled — verified with builds).**
+**Feedback round: real no-connect markers, import diagnosis, label hygiene.**
 
 ### Added
 - **Real no-connect markers on NC pins (client builds).** After the import the
@@ -20,12 +19,15 @@ already handled — verified with builds).**
   PCB pad (netcheck / audit stay green). The marker is client-managed state;
   offline builds keep the label-only convention. The format validator accepts
   the client's `ATTR NO_CONNECT <componentId>-<pinId>` records.
-- **Zero-footprint import is surfaced as an API bug.** `importChanges` takes
-  the **schematic** UUID; a `true` return that creates no footprint is a client
-  API defect. The build now fails with
-  `importChanges returned true but created 0 footprints` and reports the
-  schematic-netlist part count — it does not retry with a page UUID, which
-  would hide the defect.
+- **Zero-footprint import: surfaced and diagnosed by measurement.**
+  `importChanges` takes the **schematic** UUID (no page-UUID retry). A `true`
+  return that creates no footprint now fails the build with
+  "no footprint-bearing component in the schematic netlist (or the import was
+  skipped)" plus the netlist part count. Measured on fresh projects: a
+  schematic with only a power flag imports `true` / **0**; four library
+  devices (AMS1117, LM358, STM32F103, 0603 resistor) import `true` / **4/4**
+  with their footprints. It is not an API bug — only symbols/power flags carry
+  nothing to place.
 - `add-wire --hide-net` assigns the net but hides its printed label — use it
   when a power flag/port already prints the name next to the wire.
 
@@ -48,12 +50,12 @@ already handled — verified with builds).**
   ends on a power flag is drawn without a net name (the saved NET attr has an
   empty value), so only the flag prints the name.
 - **Floating pins**: an `autoNC` LM358 build reports `sch drc 0/0/0`; client
-  builds now also set the real no-connect marker on those pins (see Added),
-  while the NC stub+label keeps the netlist and pad nets intact.
+  builds also set the real no-connect marker on those pins, while the NC
+  stub+label keeps the netlist and pad nets intact.
 - **Never import into an already-routed board**: the skill always imports into
-  a fresh, copper-free PCB. `docs/cli.md` now states that importing into a
-  routed board may drop footprint-only references and does not clear an
-  existing Netlist Error badge — do not rebuild a routed board for the badge.
+  a fresh, copper-free PCB. `docs/cli.md` states that importing into a routed
+  board may drop footprint-only references and does not clear an existing
+  Netlist Error badge — do not rebuild a routed board for the badge.
 
 ## [2.2.2] - 2026-11-05
 

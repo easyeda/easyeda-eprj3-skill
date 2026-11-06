@@ -1575,9 +1575,9 @@ function main() {
         die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`
           + ` (schematic ${placed.schematicParts}/${pcbPlan.length} part(s), ${placed.wires.length} wire chain(s) drawn, ${placed.removed} stale footprint(s) removed)`);
       }
-      if (pcbPlan.length && placed.imported && placed.importBug) {
-        die(`client PCB import created 0 footprint(s): ${placed.importBug}`
-          + ` — the schematic netlist had ${placed.schematicParts}/${pcbPlan.length} part(s); retry on a newer client build`);
+      if (pcbPlan.length && placed.imported && placed.importEmpty) {
+        die(`client PCB import created 0 footprint(s): ${placed.importEmpty}`
+          + ` — schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); check that every placed component is a device with a footprint`);
       }
       pcbImported = !!(pcbPlan.length && placed.imported);
       if (pcbPlan.length) {

@@ -157,10 +157,11 @@ Client-side limitations (4.1.94):
   carries the error; the board is still delivered (with the planner's
   positions).
 - `importChanges(uuid)` takes the **schematic** UUID (the page UUID is not the
-  API contract). If it returns `true` but creates **zero** footprints, that is
-  a client API bug: the build fails with
-  `importChanges returned true but created 0 footprints` instead of retrying
-  with a page UUID, which would only hide the defect.
+  API contract). A `true` return with **zero** footprints means the schematic
+  exposed no footprint-bearing component — only power flags / symbol-only
+  parts — or the import was skipped; a schematic with 4 library devices
+  imports 4 footprints through the same call. The build fails with that
+  diagnosis instead of retrying with a page UUID.
 - Importing into an **already-routed** board keeps the copper, but may clear
   the footprint reference of footprint-only parts and does **not** clear an
   existing "Netlist Error" badge; a fresh import from the same schematic shows
