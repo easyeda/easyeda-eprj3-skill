@@ -915,6 +915,36 @@ function buildSheetPageDoc(v) {
 }
 
 // ------------------------------------------------- SCH component block
+/** Designator / Name row positions for one placed symbol.
+ *  Measured from the BODY box (not the pin-inclusive extent: a rotated
+ *  two-pin part would put its rows at the far pin tips). Horizontal parts put
+ *  the reference above the body and the name below it, left-aligned. A tall
+ *  two-pin part (rotated resistor/LED/cap) puts both rows to the RIGHT of the
+ *  body, stacked around its centre — the wire runs through the body's centre,
+ *  so text starting past the right edge never crosses it. The same function
+ *  feeds the record emitter and the client's updateAttribute pass, so both
+ *  routes write identical coordinates. */
+function attrRows(body, twoPin, x, y) {
+  if (!body) {
+    return {
+      Designator: { x: x - 10, y: y + 10 },
+      Name: { x: x - 10, y: y - 15 }
+    };
+  }
+  const tall = (body.y2 - body.y1) > (body.x2 - body.x1) + 10;
+  if (tall && twoPin) {
+    const cy = (body.y1 + body.y2) / 2;
+    return {
+      Designator: { x: body.x2 + 8, y: cy + 10 },
+      Name: { x: body.x2 + 8, y: cy - 10 }
+    };
+  }
+  return {
+    Designator: { x: body.x1, y: body.y2 + 8 },
+    Name: { x: body.x1, y: body.y1 - 12 }
+  };
+}
+
 // lib: staged library entry (kind 'device'). symbolAttrZ mirrors the symbol
 // doc's Name/Designator zIndexes when known; defaults match the example.
 function schComponentBlock(v) {
@@ -952,24 +982,25 @@ function schComponentBlock(v) {
   line('ATTR', attrNull('Unique ID', v.uniqueId, -5, v.compId), randId());
   line('ATTR', attrNull('Footprint', v.footprintUuid || null, -1, v.compId), randId());
   line('ATTR', attrNull('Relevance', '[]', 2, v.compId), randId());
-  // Designator/value follow the human convention: the reference sits at the
-  // symbol's TOP-LEFT (just above the body), the name/value at the BOTTOM-LEFT
-  // (just below it). Offsetting from the component ORIGIN put both inside a
-  // large IC's body. The placement's axis-aligned extent is the body+pin text
-  // box, so the offsets hold for any rotation.
+  // Designator/value rows: see attrRows() — body-based, right-side rows for a
+  // vertical two-pin part. align stays the client's default (LEFT_BOTTOM) so
+  // the coordinates mean the same thing when the client's updateAttribute pass
+  // rewrites them for library symbols.
   const ext = v.extent;
-  const desPos = ext ? { x: ext.x1, y: ext.y2 + 8 } : { x: v.x - 10, y: v.y + 10 };
-  const namePos = ext ? { x: ext.x1, y: ext.y1 - 17 } : { x: v.x - 10, y: v.y - 15 };
+  const body = v.bodyExtent || ext;
+  const rows = attrRows(body, Number(v.pinCount || 0) <= 2, v.x, v.y);
+  const desPos = rows.Designator;
+  const namePos = rows.Name;
   line('ATTR', attrStyled({
     x: namePos.x, y: namePos.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: null, valueVisible: true,
-    align: ext ? 'LEFT_BOTTOM' : null,
+    align: body ? 'LEFT_BOTTOM' : null,
     key: 'Name', parentId: v.compId, zIndex: nameZ
   }), randId());
   line('ATTR', attrStyled({
     x: desPos.x, y: desPos.y, fontSize: 6.75, fontWeight: false,
     italic: false, underline: false, value: v.refdes, valueVisible: true,
-    align: ext ? 'LEFT_BOTTOM' : null,
+    align: body ? 'LEFT_BOTTOM' : null,
     key: 'Designator', parentId: v.compId, zIndex: designatorZ
   }), randId());
   line('ATTR', attrNull('Reuse Block', null, 32, v.compId), randId());
@@ -1188,6 +1219,14 @@ function wireBlock(v) {
     midY = last.endY;
     netAlign = leftward ? 'RIGHT_MIDDLE' : 'LEFT_MIDDLE';
   }
+  if (vertical) {
+    // A vertical wire prints its name HORIZONTALLY just to the right of the
+    // wire (rotated text ran through designators and neighbouring wires).
+    // +5 units keeps the anchor on the client's 50-mil net-object grid.
+    midX = (v.segs.length === 1 ? last.endX : midX) + 5;
+    midY = v.segs.length === 1 ? last.endY : midY;
+    netAlign = 'LEFT_MIDDLE';
+  }
   // The client's NETOBJECTONGRID rule wants net objects on the 50-mil grid
   // (5 schematic units). Snap the label anchor — the text does not carry the
   // connection, so a ≤2-unit move is safe and keeps the schematic DRC clean.
@@ -1212,7 +1251,7 @@ function wireBlock(v) {
   // A named wire carries a NET attr; client-generated unnamed wires omit it.
   if (v.net) {
     line('ATTR', Object.assign(attrNull('NET', v.net, 7, wireId), {
-      x: midX, y: midY, rotation: vertical ? 90 : 0,
+      x: midX, y: midY, rotation: 0,
       align: netAlign,
       keyVisible: false, valueVisible: v.netVisible !== false
     }), randId());
@@ -1979,6 +2018,7 @@ module.exports = {
   buildEcfgDoc,
   buildPanelDoc,
   buildSheetPageDoc,
+  attrRows,
   schComponentBlock,
   powerComponentBlock,
   portComponentBlock,

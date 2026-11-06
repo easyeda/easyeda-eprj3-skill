@@ -5,6 +5,45 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every change that lands in a commit must bump `package.json` (`patch` for fixes, `minor` for new capabilities or behavior changes, `major` only for format-breaking record changes) **and** add an entry here in the same commit.
 
+## [2.2.2] - 2026-11-05
+
+**Schematic readability: vertical drops connect, labels stay beside their
+parts, and crowded nets get labels instead of ports.**
+
+### Fixed
+- **Trunk routes split their spine at every drop.** A vertical drop now meets
+  a horizontal/vertical trunk on a **segment endpoint**. Previously it ended in
+  the middle of the trunk, and a wire end landing inside another wire does not
+  connect in the client's source-API wires — the "vertical wire does not join"
+  defect (the netlist reader agrees, so this was a real open).
+- **Designator/value rows are placed from the symbol's body box**, not the
+  pin-inclusive extent. A rotated two-pin part had its rows at the far pin
+  tips ("labels flying"), often on the wire or on a net name. A vertical
+  two-pin part now carries both rows to the **right** of the body, stacked
+  around its centre, so they never cross the wire.
+- **Client builds apply those rows through the source API**
+  (`sch_SourcePrimitiveComponent.updateAttribute`, addressed by designator +
+  key): the coordinates do not depend on the authored ATTR records, and the
+  pass also positions the symbols the client placed itself. Offline builds
+  write the same `attrRows()` coordinates into the records, so both paths
+  agree; a client that cannot address a component keeps the authored position
+  and the build logs it (cosmetic, not fatal).
+- **Wire net names print horizontally beside a vertical wire** — rotated text
+  ran through designators and neighbouring wires.
+- **Net ports are no longer forced into crowded spots.** When no clean port
+  site exists (the body or its printed name would sit on another wire or a
+  designator), the net falls back to a stub + global net label — smaller, and
+  the human drawing at that density.
+- **Cold bridge boot is robust**: `ensureServer` polls up to 90 s and `open`
+  retries twice while the hidden owner finishes starting, so the first build
+  after closing the client no longer fails with "client is not running".
+
+### Docs
+- `docs/build.md` / `SKILL.md`: body-based label rows (vertical two-pin parts
+  get right-side rows), the client source-API pass that applies them, label
+  fallback for crowded ports, and the requirement that a T drop meet its trunk
+  on an endpoint.
+
 ## [2.2.1] - 2026-11-05
 
 **Starting a build no longer pops the client window; only the final open step does.**

@@ -589,7 +589,18 @@ function trunkNetPathH(nodes, busY) {
   if (xs.length) {
     const lo = Math.min(...xs);
     const hi = Math.max(...xs);
-    if (hi - lo > G.EPS) main.push({ x1: lo, y1: busY, x2: hi, y2: busY });
+    if (hi - lo > G.EPS) {
+      // Split the spine at every drop: a drop must meet the trunk on a
+      // SEGMENT ENDPOINT. A wire end landing mid-segment is not connected by
+      // the client's source-API wires (it is the classic "vertical wire does
+      // not join the horizontal one" defect), and our own netlist agrees.
+      const pts = [...new Set(xs.map((x) => G.round(x)))].sort((a, b) => a - b);
+      const stops = pts.filter((x) => x > lo + G.EPS && x < hi - G.EPS);
+      const all = [lo, ...stops, hi];
+      for (let i = 0; i + 1 < all.length; i += 1) {
+        if (all[i + 1] - all[i] > G.EPS) main.push({ x1: all[i], y1: busY, x2: all[i + 1], y2: busY });
+      }
+    }
   }
   return { stubs: stubs.filter((s) => G.segLen(s) > G.EPS), main: main.filter((s) => G.segLen(s) > G.EPS) };
 }
@@ -610,7 +621,16 @@ function trunkNetPathV(nodes, busX) {
   if (ys.length) {
     const lo = Math.min(...ys);
     const hi = Math.max(...ys);
-    if (hi - lo > G.EPS) main.push({ x1: busX, y1: lo, x2: busX, y2: hi });
+    if (hi - lo > G.EPS) {
+      // split the spine at every drop (see trunkNetPathH): a T contact must be
+      // a shared endpoint, not one wire ending inside another
+      const pts = [...new Set(ys.map((y) => G.round(y)))].sort((a, b) => a - b);
+      const stops = pts.filter((y) => y > lo + G.EPS && y < hi - G.EPS);
+      const all = [lo, ...stops, hi];
+      for (let i = 0; i + 1 < all.length; i += 1) {
+        if (all[i + 1] - all[i] > G.EPS) main.push({ x1: busX, y1: all[i], x2: busX, y2: all[i + 1] });
+      }
+    }
   }
   return { stubs: stubs.filter((s) => G.segLen(s) > G.EPS), main: main.filter((s) => G.segLen(s) > G.EPS) };
 }
@@ -716,8 +736,11 @@ function routeGroup(nodes, net, ctx, issues) {
   return out;
 }
 
-/** Adaptive stub + net-port for a lone node (mirrors the old connector path). */
-function placeNodePort(node, net, ctx, kind) {
+/** Adaptive stub + net-port for a lone node (mirrors the old connector path).
+ *  `strict` makes a crowded placement a failure (return null) instead of
+ *  forcing the port into another net's wire/designator — the caller then
+ *  falls back to a stub + global net label, which is far smaller. */
+function placeNodePort(node, net, ctx, kind, strict) {
   const committed = ctx.committedSegs;
   const used = ctx.usedPoints;
   const foreign = committed.filter((c) => c.net !== net);
@@ -751,11 +774,12 @@ function placeNodePort(node, net, ctx, kind) {
       if (!fallback) fallback = { seg, labelBox };
     }
   }
-  if (!chosen && fallback) { chosen = fallback.seg; ctx.flagBoxes.push(fallback.labelBox); }
-  if (!chosen) {
+  if (!chosen && fallback && !strict) { chosen = fallback.seg; ctx.flagBoxes.push(fallback.labelBox); }
+  if (!chosen && !strict) {
     chosen = { x1: node.tip.x, y1: node.tip.y, x2: node.tip.x, y2: node.tip.y, anchor: true };
     ctx.flagBoxes.push(portLabelBox(net, { x: node.tip.x, y: node.tip.y }, portDir));
   }
+  if (!chosen) return null;
   const zero = Math.abs(chosen.x2 - node.tip.x) < G.EPS && Math.abs(chosen.y2 - node.tip.y) < G.EPS;
   if (zero) chosen.anchor = true;
   // ALWAYS return the wire: a port dropped directly on the pin needs the
@@ -800,9 +824,20 @@ function routeSignalNet(net, nodes, ctx) {
           labels.push(...enc.labels);
           continue;
         }
-        const pr = placeNodePort(grp[0], net, ctx, kind);
-        if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
-        ports.push(pr.port);
+        const pr = placeNodePort(grp[0], net, ctx, kind, true);
+        if (pr) {
+          if (pr.wire.length) { wires.push(pr.wire); commitSegs(pr.wire, net, used, committed); }
+          ports.push(pr.port);
+        } else {
+          // no clean port site: the port body + printed name would sit on a
+          // wire or a designator. A stub + global net label is the readable
+          // human encoding at that density.
+          const enc = labelEncoding(grp, net, issues,
+            `net "${net}": ${grp[0].part}.${grp[0].pin} is too crowded for a net port → encoded as stub+label`, ctx);
+          enc.wires.forEach((w) => commitSegs(w, net, used, committed));
+          wires.push(...enc.wires);
+          labels.push(...enc.labels);
+        }
       }
       continue; // lone node on a single-block net is handled by the caller
     }

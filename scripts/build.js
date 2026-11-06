@@ -550,11 +550,25 @@ function placeSchematicComponent(em, project, pl, lib, design) {
   ]);
 
   const placement = entry.placement || { nameZ: 10, designatorZ: 11, symbolZ: 12 };
+  // Body-only extent (no pin tips, no label band): the designator/name rows
+  // are placed from THIS box, so a rotated two-pin part gets its labels beside
+  // the body instead of at the far pin tips (the "labels fly away" defect).
+  let bodyExtent = null;
+  if (sym && sym.bbox) {
+    const b = sym.bbox;
+    const pts = [[b.x1, b.y1], [b.x2, b.y1], [b.x2, b.y2], [b.x1, b.y2]].map(([cx, cy]) => {
+      const r = G.rotate(cx, cy, pl.rotation || 0);
+      return { x: pl.x + r.x, y: pl.y + r.y };
+    });
+    bodyExtent = G.bboxOfPoints(pts);
+  }
   const block = E.schComponentBlock({
     compId: E.randId(),
     partId: sym.partId,
     x: pl.x, y: pl.y, rotation: pl.rotation || 0,
     extent: pl.extent,
+    bodyExtent,
+    pinCount: (sym.pins || []).length,
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid,
@@ -1461,6 +1475,38 @@ function main() {
     log(`  rats: ${ratNets.length} net(s) to connect by hand in the client — ${ratNets.map(([n, c]) => `${n}(${c}p)`).join(' ') || 'none'}`);
   }
 
+  // Attribute rows (designator/name) for every placement. Client builds apply
+  // these through sch_SourcePrimitiveComponent.updateAttribute — the source
+  // API — so the positions match the authored records exactly and also cover
+  // the symbols the client placed itself (an "ic" part has no authored ATTR).
+  const attrPlan = [];
+  {
+    const seenAttr = new Set();
+    for (const pl of placements) {
+      const ref = pl.part.multiUnitBase || pl.part.id;
+      const sheet = pl.sheet || 1;
+      const pageName = sheetTitleBySheet.get(sheet);
+      if (!pageName) continue;
+      const sym = lib.symbolOf(pl.part);
+      const b = sym && sym.bbox;
+      let body = null;
+      if (b) {
+        const pts = [[b.x1, b.y1], [b.x2, b.y1], [b.x2, b.y2], [b.x1, b.y2]].map(([cx, cy]) => {
+          const r = G.rotate(cx, cy, pl.rotation || 0);
+          return { x: pl.x + r.x, y: pl.y + r.y };
+        });
+        body = G.bboxOfPoints(pts);
+      }
+      const rows = E.attrRows(body, ((sym && sym.pins) || []).length <= 2, pl.x, pl.y);
+      for (const key of ['Designator', 'Name']) {
+        const k = `${pageName}|${ref}|${key}`;
+        if (seenAttr.has(k)) continue;
+        seenAttr.add(k);
+        attrPlan.push({ pageName, designator: ref, key, x: rows[key].x, y: rows[key].y });
+      }
+    }
+  }
+
   // ---- client placement for system-library instances (2.x) -----------------
   // The official symbol/footprint documents are never downloaded or spliced:
   // the client places its symbols, then its own "schematic → PCB" update
@@ -1493,6 +1539,7 @@ function main() {
           flagPlan,
           wirePlan,
           pcbPlan,
+          attrPlan,
           autoLayout: clientLayout,
           schematicName: design.schematic
         });
@@ -1525,6 +1572,13 @@ function main() {
       }
       if (placed.wires && placed.wires.length) {
         log(`  client: drew ${placed.wires.length} wire chain(s) through the source API`);
+      }
+      if (placed.attrs && placed.attrs.length) {
+        const badRows = placed.attrs.filter((a) => !a.ok);
+        log(`  client: placed ${placed.attrs.length - badRows.length}/${placed.attrs.length} designator/name row(s) via updateAttribute`);
+        if (badRows.length) {
+          log(`  client: ${badRows.length} row(s) kept their authored position (${badRows.slice(0, 4).map((b) => `${b.ref}.${b.key}`).join(', ')}${badRows.length > 4 ? ' …' : ''})`);
+        }
       }
       const bad = [
         ...((placed && placed.symbols) || []),

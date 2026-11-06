@@ -226,8 +226,8 @@ function ensureServer(bin) {
   } catch (e) {
     return false;
   }
-  for (let i = 0; i < 40; i += 1) {
-    sleep(750);
+  for (let i = 0; i < 90; i += 1) {
+    sleep(1000);
     if (up()) return true;
   }
   return false;
@@ -244,7 +244,14 @@ function openProject(bin, projectPath, opts) {
   const args = ['open'];
   if (projectPath) args.push('--path', projectIndex(projectPath));
   args.push('--headless', String(o.headless !== false));
-  const res = run(bin, args, { timeout: o.timeout || 120000 });
+  let res = run(bin, args, { timeout: o.timeout || 120000 });
+  // The bridge may still be finishing its own boot when the first open lands
+  // (a cold `--owner` takes a while): retry instead of failing the build.
+  for (let i = 0; i < 2 && (!res.ok || !res.value || !res.value.sessionId); i += 1) {
+    ensureServer(bin);
+    sleep(1500);
+    res = run(bin, args, { timeout: o.timeout || 120000 });
+  }
   if (!res.ok || !res.value || !res.value.sessionId) {
     const e = new Error(`open failed: ${JSON.stringify(res.error || res).slice(0, 500)}`);
     e.code = 'OPEN_FAILED';

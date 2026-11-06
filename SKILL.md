@@ -594,7 +594,12 @@ What the builder does on top of that (and what to keep when editing by hand):
   author-supplied descriptive name is kept. Multi-unit symbol docs and their
   PART titles show the device name (no `SYM_` staging prefix).
 - **Designator at the symbol's top-left, value at its bottom-left**, outside
-  the body — never inside a large IC.
+  the body — never inside a large IC. Rows are placed from the **body** box
+  (not the pin-tip extent); a vertical two-pin part carries both rows to the
+  right of the body. Client builds apply the rows through
+  `sch_SourcePrimitiveComponent.updateAttribute` (source API), so the
+  client-placed symbols are positioned the same way; offline builds write the
+  same coordinates into the records.
 - **Pattern catalog (template-first, like composing slide layouts).** A block
   that matches a pattern gets its pinned geometry instead of the generic grid:
   two-pin **chains** (LED+R, RC, divider), **parallel/pull banks** (decoupling
@@ -687,7 +692,7 @@ list|show|remove` inspects that tier. Inline entries are staged as `SYM_*` /
   `validate.js` first, then compare with [`examples/blink`](examples/blink).
   Set `EPRJ3_DETERMINISTIC=1` to build byte-identical projects for golden-file
   diffs.
-- **Cross-module signals use net ports where they fit** — one official port per module side for any net that leaves its block; a pin in a dense 100-mil column takes a stub + global net label instead (stacked port bodies overlap). Long wires across the page do not exist.
+- **Cross-module signals use net ports where they fit** — one official port per module side for any net that leaves its block; a pin in a dense 100-mil column takes a stub + global net label instead (stacked port bodies overlap), and so does any port whose body/name cannot clear existing wires and designators (the router falls back to a stub + label rather than forcing occlusion). Long wires across the page do not exist.
 - **The skill never implements a router or a pour engine.** The offline build
   writes no copper; it prints the `rats:` handoff (nets still to connect, with
   pad counts). 2.x can ask the *client* to do the copper — `eda.js pcb --route`

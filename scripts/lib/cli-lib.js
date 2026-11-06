@@ -228,9 +228,23 @@ function placeInstances(projectDir, placement, opts) {
     moved: 0,
     shellsRemoved: 0,
     batches: 0,
-    layout: null
+    layout: null,
+    attrs: []
   };
   const timeout = Number((opts && opts.timeout) || 600000);
+  // Designator/name rows go through the source API (updateAttribute): the
+  // positions are computed by the offline engine but applied by the client, so
+  // they also cover symbols the client placed itself.
+  const applyAttrs = (session) => {
+    for (const chunk of chunkBySize(placement.attrPlan || [], 9000)) {
+      const at = CLI.invoke(info.bin, session, UPDATE_ATTRS, {
+        args: { plan: { schematicName: placement.schematicName, attrs: chunk } },
+        timeout
+      });
+      results.attrs.push(...((at && at.attrs) || []));
+      results.batches += 1;
+    }
+  };
 
   // Phase 1 — place the official symbols and draw the wiring through the
   // source API, then save. The client only exposes these source edits to its
@@ -265,6 +279,8 @@ function placeInstances(projectDir, placement, opts) {
         results.wires.push(...((wr && wr.wires) || []));
         results.batches += 1;
       }
+      // no PCB pass will reopen the project: apply the rows here
+      if (!(placement.pcbPlan || []).length) applyAttrs(session);
     } finally {
       CLI.closeSession(info.bin, session);
     }
@@ -314,6 +330,9 @@ function placeInstances(projectDir, placement, opts) {
         }
         results.batches += 1;
       }
+      // fresh session: every component (authored + client-placed) is loaded,
+      // so the source API can address each one by designator
+      applyAttrs(session);
       }
     } finally {
       CLI.closeSession(info.bin, session);
@@ -515,6 +534,46 @@ for (const p of __CLI__.args.moves || []) {
   }
 }
 await eda.pcb_Document.save();
+return out;
+`;
+
+/** Place the designator/name rows through the source API.
+ *  `updateAttribute` addresses an attribute by (component id, key); the
+ *  component is looked up by designator on the named page. Coordinates are the
+ *  sheet coordinates the offline engine computed — identical to the values in
+ *  the authored ATTR records, so a client build and an offline build agree. */
+const UPDATE_ATTRS = `
+${READY_HELPER}
+const plan = __CLI__.args.plan;
+const schs = await schsOf();
+const projectId = schs[0].parentProjectUuid;
+const sch = schs.find((x) => x.name === plan.schematicName) || schs[0];
+const out = { attrs: [] };
+for (const a of plan.attrs || []) {
+  const rec = { ref: a.designator, key: a.key, ok: false };
+  try {
+    const g = await eda.sch_SourcePrimitiveComponent.get({
+      projectId, schematicName: sch.name, pageName: a.pageName, designator: a.designator
+    });
+    const detail = g && g.ok !== false ? (g.value || g) : null;
+    const id = detail && (detail.primitiveId || detail.id);
+    if (!id) {
+      rec.error = (g && g.error && g.error.message) || 'component not found';
+      out.attrs.push(rec);
+      continue;
+    }
+    const r = await eda.sch_SourcePrimitiveComponent.updateAttribute({
+      projectId, schematicName: sch.name, pageName: a.pageName,
+      primitiveId: id, key: a.key, x: a.x, y: a.y, rotation: 0, valueVisible: true
+    });
+    rec.ok = !!(r && r.ok !== false);
+    if (!rec.ok) rec.error = (r && r.error && r.error.message) || 'updateAttribute failed';
+  } catch (e) {
+    rec.error = String(e && e.message || e);
+  }
+  out.attrs.push(rec);
+}
+await eda.sch_Document.save().catch(() => {});
 return out;
 `;
 

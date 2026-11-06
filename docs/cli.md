@@ -66,6 +66,11 @@ can plan positions, writes the project skeleton, then opens the project and:
   those if an older project still needs the delete path);
 - moves every footprint to the position the offline engine planned
   (`pcb_PrimitiveComponent.modify`);
+- places the designator/name rows through the source API
+  (`sch_SourcePrimitiveComponent.updateAttribute`, addressed by designator +
+  key) on the fresh PCB session — this also positions the symbols the client
+  placed itself, which have no authored ATTR records; failures leave the
+  authored position and are logged, never fatal;
 - **runs the client's PCB auto layout** (`pcb_Document.autoLayout`) on the
   imported board — the same engine as `eda.js pcb --layout`, but automatic,
   after the board outline and the import exist. The planned positions stay as
