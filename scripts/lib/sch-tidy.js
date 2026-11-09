@@ -53,6 +53,41 @@ function tidyRotations(design, lib, placements) {
     if (part.rotationExplicit) continue;              // the author chose it
     const routable = pl.sym.pins.filter((p) => part.pins[String(p.num)]);
     if (routable.length < 2) continue;                // nothing to orient
+    // A two-pin part bridging a supply rail and ground is drawn VERTICALLY,
+    // supply north (larger y, y-UP sheet) and ground south — regardless of
+    // where its partners sit. Letting the centroid rule decide made stacked decoupling
+    // caps turn to face each other, piling their power flags in the middle and
+    // overlapping the GND symbols.
+    if (pl.sym.pins.length === 2) {
+      const [a, b] = pl.sym.pins;
+      const na = part.pins[String(a.num)];
+      const nb = part.pins[String(b.num)];
+      const dirOf = (net) => (design.powers && design.powers[net]) || null;
+      let upPin = null;
+      let downPin = null;
+      if (dirOf(na) === 'up' && dirOf(nb) === 'down') { upPin = a; downPin = b; }
+      else if (dirOf(nb) === 'up' && dirOf(na) === 'down') { upPin = b; downPin = a; }
+      if (upPin && downPin) {
+        const yOf = (pin, r) => G.pinTip(pin, pl.x, pl.y, r).y;
+        const cur = pl.rotation || 0;
+        // sheet coordinates are y-UP: north = larger y
+        if (yOf(upPin, cur) <= yOf(downPin, cur)) {
+          let bestR = cur;
+          let bestD = Infinity;
+          for (const r of [0, 90, 180, 270]) {
+            if (yOf(upPin, r) <= yOf(downPin, r)) continue;
+            const d = Math.abs(((r - cur + 540) % 360) - 180);
+            if (d < bestD) { bestD = d; bestR = r; }
+          }
+          if (bestD !== Infinity) {
+            pl.rotation = bestR;
+            part.rotation = bestR;
+            rotated.push(part.id);
+          }
+        }
+        continue;   // the power rule owns this part's orientation
+      }
+    }
     // candidate partner centroids per pin
     const targets = [];
     for (const pin of routable) {
@@ -105,7 +140,7 @@ function tidyRotations(design, lib, placements) {
  * Pattern macros run AFTER this pass and keep their own deliberate rotations.
  * @returns {string[]} rotated part ids
  */
-function alignRotations(placements, blocks) {
+function alignRotations(placements, blocks, design) {
   if (!placements || !placements.length) return [];
   const D = require('./design');
   const tipsOf = (pl) => pl.sym.pins.map((pin) => {
@@ -145,6 +180,13 @@ function alignRotations(placements, blocks) {
     if (pl.part.rotationExplicit) continue;
     if (!pl.sym || pl.sym.pins.length !== 2) continue;
     if (tipsOf(pl).length !== 2) continue;
+    // supply→ground two-pin parts keep the vertical rule from tidyRotations
+    // (supply north, ground south); re-scoring toward partners would flip one
+    // of a stacked pair and pile the two flags in the middle
+    if (design && design.powers) {
+      const dirs = tipsOf(pl).map((t) => design.powers[t.net]);
+      if (dirs.includes('up') && dirs.includes('down')) continue;
+    }
     const base = pl.rotation || 0;
     const cur = scoreAt(pl, base);
     let bestR = base;

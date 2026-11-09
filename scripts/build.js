@@ -530,6 +530,17 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
   return { symbolOf, footprintOf, symbolCache, footprintCache };
 }
 
+// Orientation of a two-pin symbol from its actual pin tips: stacked along Y
+// means the part is vertical and its designator/name rows belong BESIDE the
+// body (the bbox aspect alone misreads small bodies like a rotated CAP).
+function twoPinIsVertical(sym, rotation) {
+  const pins = (sym && sym.pins) || [];
+  if (pins.length !== 2) return undefined;
+  const a = G.rotate(pins[0].x, pins[0].y, rotation || 0);
+  const b = G.rotate(pins[1].x, pins[1].y, rotation || 0);
+  return Math.abs(a.y - b.y) > Math.abs(a.x - b.x);
+}
+
 function placeSchematicComponent(em, project, pl, lib, design) {
   const sym = pl.sym;
   const entry = sym.entry;
@@ -610,6 +621,7 @@ function placeSchematicComponent(em, project, pl, lib, design) {
     extent: pl.extent,
     bodyExtent,
     pinCount: (sym.pins || []).length,
+    twoPinVertical: twoPinIsVertical(sym, pl.rotation),
     zIndex: em.nextZ(),
     symbolUuid: entry.symbolUuid,
     deviceUuid,
@@ -1046,7 +1058,7 @@ function main() {
       }
       // the re-layout may have moved a part away from the position its
       // rotation was scored for; re-check 2-pin parts on the FINAL spot
-      const aligned = T.alignRotations(placements, blocks);
+      const aligned = T.alignRotations(placements, blocks, design);
       if (rotatedNote && aligned.length) {
         log(`sch-tidy: re-aligned ${aligned.length} part(s) after placement (${aligned.slice(0, 8).join(' ')}${aligned.length > 8 ? ' …' : ''})`);
       }
@@ -1376,8 +1388,12 @@ function main() {
         wirePlan.push({
           pageName: sheetTitleBySheet.get(w.sheet || 1) || `P${w.sheet || 1}`,
           // Power flags name the net in the client's netlister; net ports do
-          // not, so port-named wires must carry the name themselves.
+          // not, so port-named wires must carry the name themselves. When the
+          // wire lands on a same-net port, the port already prints that name —
+          // keep the NET assignment for the netlister but hide its label so
+          // the schematic does not show the net twice in a row.
           net: touchesPort || !touchesFlag ? w.net : null,
+          hideLabel: touchesPort,
           chains
         });
       }
@@ -1572,7 +1588,8 @@ function main() {
         });
         body = G.bboxOfPoints(pts);
       }
-      const rows = E.attrRows(body, ((sym && sym.pins) || []).length <= 2, pl.x, pl.y);
+      const rows = E.attrRows(body, ((sym && sym.pins) || []).length <= 2, pl.x, pl.y,
+        twoPinIsVertical(sym, pl.rotation));
       for (const key of ['Designator', 'Name']) {
         const k = `${pageName}|${ref}|${key}`;
         if (seenAttr.has(k)) continue;

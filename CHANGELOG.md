@@ -5,10 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
-## [2.2.5] - 2026-11-09
+## [2.2.6] - 2026-11-09
 
 **PCB layout is an explicit user choice; `pcb.place` is never silently
-overridden (issue #6).**
+overridden (issue #6); annotated schematic-readability round.**
 
 ### Added
 - `--layout <skill|client>` (also `pcb.layout` in the design): `skill` = the
@@ -38,6 +38,29 @@ overridden (issue #6).**
   whole board). Explicit parts are now locked for that pass, `--move-locked`
   makes moving them an explicit decision, and `--keep-layout` preserves an
   existing board exactly.
+- **Vertical net-port names** printed along the symbol and covered it. A
+  vertical port now prints its name horizontally BESIDE the body, vertically
+  centred (`LEFT_MIDDLE`, +12/+20); the router's reserved port box follows the
+  same geometry.
+- **Duplicate net text at ports (client builds).** A wire landing on a
+  same-net net port keeps its NET assignment for the netlister but the printed
+  label is switched off through `sch_PrimitiveAttribute.modify` — the port
+  already shows the name.
+- **Supply→ground two-pin parts are vertical** (supply north, ground south) in
+  both the tidy pass and the final re-align pass; a single cap + power + ground
+  no longer draws sideways.
+- **Parallel decoupling banks** (several caps sharing one rail) are laid as one
+  aligned row: shared ground rail, supply flags outward, GND flags no longer
+  stacked on top of each other. Parallel pairs are no longer misread as a
+  series chain, and the bank's north/south test now follows the y-UP sheet.
+- **Rotated small two-pin labels** (CAP and friends) sit beside the body:
+  orientation now comes from the pin tips, not the bbox aspect (a rotated CAP's
+  16×20 body used to read as horizontal and stack C42/CAP on the wire).
+- **Cross-coupled transistor base resistors** (Q3.E→R16→Q4.B / Q4.E→R15→Q3.B)
+  stay beside their own base as hub satellites instead of being stacked in the
+  middle as a "bridge"; the composite pass keeps the block frame's top edge, so
+  a good hub layout is no longer rejected by the area gate and falls back to the
+  generic grid with long wire detours.
 
 ## [2.2.4] - 2026-11-06
 

@@ -94,12 +94,13 @@ function blockChains(design, members) {
     if (ids.length < 2) return null;
     const nets = (pid) => new Set(pinsOf(byId.get(pid)));
     const outer = (pid, skip) => [...nets(pid)].find((n) => n !== skip) || null;
-    chains.push({
-      ids,
-      shared,
-      top: outer(ids[0], shared[0]),
-      bottom: outer(ids[ids.length - 1], shared[shared.length - 1])
-    });
+    const top = outer(ids[0], shared[0]);
+    const bottom = outer(ids[ids.length - 1], shared[shared.length - 1]);
+    // equal ends = every member bridges the SAME two nets: a parallel bank,
+    // not a series chain. Laying it as a chain put the shared rail in the
+    // middle and made decoupling caps face each other.
+    if (top === bottom) return null;
+    chains.push({ ids, shared, top, bottom });
   }
   if (seen.size !== members.length) return null;   // a loop or an isolated part
   return chains;
@@ -172,8 +173,9 @@ function blockBank(design, members) {
   const common = [...sets[0]].filter((n) => sets.every((s) => s.has(n)));
   if (!common.length || common.length > 2) return null;
   if (common.length === 1) {
-    const others = members.map((pl, i) => [...sets[i]].find((n) => n !== common[0]));
-    if (others.some((n) => !n) || new Set(others).size !== others.length) return null;
+    // one shared rail (decoupling caps on GND, pull-ups on VCC). The outward
+    // net may repeat — several caps on the same supply are still ONE bank:
+    // align everything on the common rail, supplies/partners outward, in a row.
     const down = design.powers[common[0]] === 'down';
     return {
       parts: members,
@@ -212,8 +214,9 @@ function layoutBank(bank, byId) {
       const ra = G.rotate(a.x, a.y, rot);
       const rb = G.rotate(b.x, b.y, rot);
       if (Math.abs(ra.x - rb.x) > EPS || Math.abs(ra.y - rb.y) < EPS) continue;
-      const aSouth = ra.y < rb.y;
-      if (alignSouth ? aSouth : !aSouth) { pick = { rot, aligned: ra }; break; }
+      // sheet coordinates are y-UP: larger y = north
+      const aNorth = ra.y > rb.y;
+      if (alignSouth ? !aNorth : aNorth) { pick = { rot, aligned: ra }; break; }
     }
     if (!pick) return null;
     const x = cursor - pick.aligned.x;
@@ -527,7 +530,12 @@ function placeComposite(block, pls, groups) {
   const areaOf = (r) => Math.max(0, r.x2 - r.x1) * Math.max(0, r.y2 - r.y1);
   const oldArea = areaOf(block.rect);
   let box = restBox;
-  let top = restBox ? restBox.y1 - COL_GAP : 0;   // y of the next group's TOP edge
+  // Keep the frame's TOP edge: with no parts left in place, groups start just
+  // below the old frame top. Anchoring at y=0 instead dropped the composed
+  // content far below a high-on-page block and the area gate then rejected a
+  // perfectly good layout (leaving the generic grid with its long detours).
+  let top = restBox ? restBox.y1 - COL_GAP
+    : (block.rect ? block.rect.y2 - PAD : 0);   // y of the next group's TOP edge
   for (const g of groups) {
     for (const g2 of g.groups) {
       const dx = (restBox ? restBox.x1 : 0) - g2.bbox.x1;
@@ -570,10 +578,29 @@ function findHubSubset(members) {
   };
   const anchors = members.filter(isMulti);
   if (!anchors.length) return null;
+  // A 2-pin part sharing a CONTROL net (base/gate) with exactly one anchor
+  // belongs to that anchor. Without this, a cross-coupled base resistor also
+  // "shares" the other transistor's emitter net and gets absorbed into the
+  // wrong hub, so the real pair never forms.
+  const controlName = (p) => /^(B|G|BASE|GATE|CTRL)$/.test(
+    String(p && p.name || '').toUpperCase().replace(/[^A-Z0-9]/g, ''));
+  const controlNets = (a) => new Set(Object.entries(a.part.pins || {})
+    .filter(([num]) => {
+      const pin = (a.sym && a.sym.pins || []).find((p) => String(p.num) === String(num));
+      return controlName(pin);
+    })
+    .map(([, net]) => net));
+  const owner = new Map();
+  for (const pl of members.filter(twoPin)) {
+    const nets = Object.values(pl.part.pins || {});
+    const owners = anchors.filter((a) => [...controlNets(a)].some((n) => nets.includes(n)));
+    if (owners.length === 1) owner.set(pl.part.id, owners[0]);
+  }
   let best = null;
   for (const a of anchors) {
     const aNets = new Set(Object.values(a.part.pins || {}));
     const sats = members.filter((pl) => pl !== a && twoPin(pl)
+      && (!owner.has(pl.part.id) || owner.get(pl.part.id) === a)
       && Object.values(pl.part.pins || {}).some((n) => aNets.has(n) && !/^(NC|DNC\d*)$/i.test(n)));
     if (!sats.length) continue;
     const hub = blockHub([a, ...sats]);
@@ -598,11 +625,28 @@ function blockBridge(members) {
   const isMulti = (pl) => Object.keys(pl.part.pins || {}).length > 2;
   const anchors = members.filter(isMulti);
   if (anchors.length !== 2) return null;
-  const bridges = members.filter((pl) => !isMulti(pl));
-  if (!bridges.length || bridges.length > 12) return null;
   const netsOf = (pl) => new Set(Object.values(pl.part.pins || {}));
   const na = netsOf(anchors[0]);
   const nb = netsOf(anchors[1]);
+  // A part landing on a transistor's CONTROL pin (B/G) belongs to that
+  // transistor as a hub satellite, even when its other end reaches the second
+  // anchor's net. The classic auto-download cross-couple (Q3.E → R16 → Q4.B,
+  // Q4.E → R15 → Q3.B) otherwise reads as a "bridge" and the resistors get
+  // stacked in the corridor instead of sitting beside their base.
+  const controlSat = (b) => {
+    const nets = netsOf(b);
+    for (const a of anchors) {
+      for (const [num, net] of Object.entries(a.part.pins || {})) {
+        if (!nets.has(net)) continue;
+        const pin = (a.sym && a.sym.pins || []).find((p) => String(p.num) === String(num));
+        const nm = String(pin && pin.name || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (/^(B|G|BASE|GATE|CTRL)$/.test(nm)) return true;
+      }
+    }
+    return false;
+  };
+  const bridges = members.filter((pl) => !isMulti(pl) && !controlSat(pl));
+  if (!bridges.length || bridges.length > 12) return null;
   const links = [];
   for (const b of bridges) {
     const nets = [...netsOf(b)];

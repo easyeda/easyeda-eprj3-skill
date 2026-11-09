@@ -1190,13 +1190,17 @@ function routeNet(net, nodes, ctx) {
 
 const PORT_OUT = T.PORT_NAME_OFFSET; // official Netport name offset (body ends at 40)
 
-/** Space a port's body + printed net name occupies (see portComponentBlock). */
+/** Space a port's body + printed net name occupies (see portComponentBlock).
+ *  Horizontal ports run their name past the body's far end. Vertical ports
+ *  print the name HORIZONTALLY beside the body (centred on it), so the
+ *  reserved box is as wide as the text and only as tall as it, offset to +x. */
 function portLabelBox(net, pos, dir) {
   const half = Math.max(10, String(net).length * 2.5);
   if (dir.x > 0) return G.rect(pos.x, pos.y - 7, pos.x + PORT_OUT + 2 * half, pos.y + 7);
   if (dir.x < 0) return G.rect(pos.x - PORT_OUT - 2 * half, pos.y - 7, pos.x, pos.y + 7);
-  if (dir.y > 0) return G.rect(pos.x - half, pos.y, pos.x + half, pos.y + PORT_OUT + 7);
-  return G.rect(pos.x - half, pos.y - PORT_OUT - 7, pos.x + half, pos.y);
+  // vertical: body along Y (0..40 or −40..0), name at x+12 centred on the body
+  if (dir.y > 0) return G.rect(pos.x - 5, pos.y, pos.x + 12 + 2 * half, pos.y + 40);
+  return G.rect(pos.x - 5, pos.y - 40, pos.x + 12 + 2 * half, pos.y);
 }
 
 function boxClash(ctx, box) {

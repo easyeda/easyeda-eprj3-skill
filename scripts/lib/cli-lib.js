@@ -393,8 +393,27 @@ for (const w of plan.wires || []) {
       const opts = { projectId, schematicName: sch.name, pageName: w.pageName, line };
       if (w.net) opts.net = w.net;
       const r = await eda.sch_SourcePrimitiveWire.add(opts);
-      out.wires.push({ net: w.net, ok: !!(r && r.ok !== false), id: r && r.value && r.value.primitiveId });
+      const wid = r && r.value && r.value.primitiveId;
+      out.wires.push({ net: w.net, ok: !!(r && r.ok !== false), id: wid });
       if (!r || r.ok === false) out.wires[out.wires.length - 1].error = r && r.error;
+      // A wire landing on a same-net port would repeat the port's own printed
+      // name. The client's add() always turns the label on, so flip its
+      // visibility attribute back off; the NET value stays, keeping the
+      // netlister link intact.
+      if (w.net && w.hideLabel && wid) {
+        try {
+          const attrs = await eda.sch_PrimitiveAttribute.getAll(wid);
+          for (const a of attrs || []) {
+            const key = typeof a.getState_Key === 'function' ? a.getState_Key() : a.key;
+            const val = typeof a.getState_Value === 'function' ? a.getState_Value() : a.value;
+            if (key !== 'Name' && key !== 'NET' && val !== w.net) continue;
+            const aid = a.primitiveId || a.id;
+            if (aid) await eda.sch_PrimitiveAttribute.modify(aid, { valueVisible: false });
+          }
+        } catch (e) {
+          // label stays visible — the net itself is correct
+        }
+      }
     } catch (e) {
       out.wires.push({ net: w.net, ok: false, error: String(e && e.message || e) });
     }

@@ -924,14 +924,21 @@ function buildSheetPageDoc(v) {
  *  so text starting past the right edge never crosses it. The same function
  *  feeds the record emitter and the client's updateAttribute pass, so both
  *  routes write identical coordinates. */
-function attrRows(body, twoPin, x, y) {
+function attrRows(body, twoPin, x, y, vertical) {
   if (!body) {
     return {
       Designator: { x: x - 10, y: y + 10 },
       Name: { x: x - 10, y: y - 15 }
     };
   }
-  const tall = (body.y2 - body.y1) > (body.x2 - body.x1) + 10;
+  // `vertical` is the authoritative orientation for a two-pin part (its two
+  // pin tips stacked along Y). The bbox aspect is only a fallback: a CAP's
+  // body is 20x16 — rotated it becomes 16x20, which the old +10 tolerance
+  // still read as "horizontal" and stacked the labels above/below the symbol
+  // right on the wire.
+  const tall = vertical === undefined || vertical === null
+    ? (body.y2 - body.y1) > (body.x2 - body.x1) + 10
+    : !!vertical;
   if (tall && twoPin) {
     const cy = (body.y1 + body.y2) / 2;
     return {
@@ -988,7 +995,7 @@ function schComponentBlock(v) {
   // rewrites them for library symbols.
   const ext = v.extent;
   const body = v.bodyExtent || ext;
-  const rows = attrRows(body, Number(v.pinCount || 0) <= 2, v.x, v.y);
+  const rows = attrRows(body, Number(v.pinCount || 0) <= 2, v.x, v.y, v.twoPinVertical);
   const desPos = rows.Designator;
   const namePos = rows.Name;
   line('ATTR', attrStyled({
@@ -1133,11 +1140,17 @@ function portComponentBlock(v) {
   const base = dir.x > 0 ? 0 : dir.x < 0 ? 180 : dir.y > 0 ? 90 : 270;
   const rotation = v.portKind === 'IN' ? (base + 180) % 360 : base;
   const OUT = 45;                                      // official Netport name offset (body ends at 40)
+  // The body always ends up on the `dir` side of the hotspot: PORT_BI/OUT draw
+  // it on +x, PORT_IN on −x, and the extra half-turn above puts every kind's
+  // body on the same side as the stub. A horizontal port's name continues past
+  // the body's far end (as the official templates do); a VERTICAL port prints
+  // its name horizontally BESIDE the body, centred on it — the old along-body
+  // text sat right on top of the symbol.
   let namePos;
   if (dir.x > 0) namePos = { x: v.x + OUT, y: v.y, align: 'LEFT_MIDDLE' };
   else if (dir.x < 0) namePos = { x: v.x - OUT, y: v.y, align: 'RIGHT_MIDDLE' };
-  else if (dir.y > 0) namePos = { x: v.x, y: v.y + OUT, align: 'CENTER_BOTTOM' };
-  else namePos = { x: v.x, y: v.y - OUT, align: 'CENTER_TOP' };
+  // +12 clears the body's ~5-unit half width; ±20 is the 40-long body's centre
+  else namePos = { x: v.x + 12, y: v.y + dir.y * 20, align: 'LEFT_MIDDLE' };
   const lines = [];
   let t = v.ticketBase;
   const line = (type, body, id) => lines.push(formatRecord({ type, ticket: ++t, id }, body));
@@ -1159,8 +1172,9 @@ function portComponentBlock(v) {
   // net name must be turned on here (the generated per-net document used to
   // bake it into the symbol, which is exactly what we are replacing)
   line('ATTR', attrNull('Name', v.net, 9, v.compId,
-    Object.assign({ valueVisible: true, keyVisible: false }, namePos)), randId());
-  line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId, namePos), randId());
+    Object.assign({ valueVisible: true, keyVisible: false, rotation: 0 }, namePos)), randId());
+  line('ATTR', attrNull('Global Net Name', v.net, 11, v.compId,
+    Object.assign({ rotation: 0 }, namePos)), randId());
   return { lines, nextTicket: t };
 }
 
