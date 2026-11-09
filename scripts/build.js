@@ -904,7 +904,7 @@ function main() {
     const rules = design.pcbSpec.rules || {};
     const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
     console.log(`方案 ${design.name} → ${requestedDir}`);
-    console.log(`  板框  自动：封装 bbox 面积 ×1.25${design.boardDeclared ? `（设计里的 ${design.board.width}×${design.board.height} mil 被忽略）` : ''} · `
+    console.log(`  板框  自动：封装 bbox 面积 ×1.25（小板受板边间距约束会略大）${design.boardDeclared ? `（设计里的 ${design.board.width}×${design.board.height} mil 被忽略）` : ''} · `
       + `${doPcb ? '只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）' : '仅原理图 (--schematic-only)'}`);
     console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
     const widths = Object.entries(design.netWidths || {});
@@ -1426,13 +1426,16 @@ function main() {
     // Board size: area = 1.25× the tight union of every footprint's bbox, with
     // the bbox's own aspect (a wide layout gets a wide board). No minimum-area
     // and no declared-size floor: a size declared in the design is ignored.
-    // The 40 mil margin keeps the edge-clearance rule (D003, 12 mil) green.
+    // The placer's own edge clearance (>= 15 mil, D003 needs 12) is already
+    // part of `required`; the board grows above 1.25× only when that clearance
+    // cannot fit inside the target — for a small board the fixed edge margin
+    // dominates (the log says so and reports the real factor).
     // The placer packs into the target, tightening its part spacing when
     // needed; only if even the densest packing does not fit does the
     // rectangle grow, and the log says so.
     const snap10 = (v) => Math.max(10, Math.round(v / 10) * 10);
+    const growTo = (v) => Math.max(10, Math.ceil(v));
     const SCALES = [1, 0.8, 0.65, 0.5, 0.4, 0.3, 0.25];
-    const MARGIN = 40;
     const SCALE_125 = Math.sqrt(1.25);
     const packAt = (w, h) => {
       let last = null;
@@ -1449,10 +1452,7 @@ function main() {
     const dimsFor = (b) => {
       const w = b ? b.x2 - b.x1 : 100;
       const h = b ? b.y2 - b.y1 : 100;
-      return [
-        Math.max(snap10(w * SCALE_125), snap10(w + MARGIN)),
-        Math.max(snap10(h * SCALE_125), snap10(h + MARGIN))
-      ];
+      return [snap10(w * SCALE_125), snap10(h * SCALE_125)];
     };
     const tightBox = (p) => planBBox(p, lib);
     // From here on the board size is OUR decision: tell the placer to pack into
@@ -1464,16 +1464,25 @@ function main() {
       let best = null;
       // Fixed point: a denser re-pack shrinks the bbox, so retarget from the
       // layout the target actually produces. Packing that still overflows
-      // grows the rectangle just enough to contain it.
+      // grows to the dense packing's own 1.25 target plus the edge-clearance
+      // requirement — the floor for a board too small for 1.25×.
       for (let round = 0; round < 8; round += 1) {
         let [w, h] = target;
         let r = packAt(w, h);
-        for (let grow = 0; grow < 8 && !r.fits; grow += 1) {
-          w = Math.max(w, snap10(r.plan.required.width));
-          h = Math.max(h, snap10(r.plan.required.height));
+        let grown = false;
+        if (!r.fits) {
+          // Retarget from THIS (dense) packing, not the stale loose one: a
+          // one-sided overflow used to inflate the other dimension too.
+          const nb = dimsFor(tightBox(r.plan));
+          w = Math.max(nb[0], growTo(r.plan.required.width));
+          h = Math.max(nb[1], growTo(r.plan.required.height));
           r = packAt(w, h);
+          grown = true;
         }
         best = Object.assign({ w, h }, r);
+        // The grown size is the edge-clearance floor for this packing; the
+        // 1.25× target is below it, so retargeting would only re-grow.
+        if (grown) break;
         const next = dimsFor(tightBox(best.plan));
         if (Math.abs(next[0] - w) <= w * 0.02 && Math.abs(next[1] - h) <= h * 0.02) break;
         target = next;
@@ -1489,7 +1498,7 @@ function main() {
       log(`board set to ${best.w}×${best.h} mil (footprint bbox ${Math.round(bw)}×${Math.round(bh)} → ${factor.toFixed(2)}× area`
         + `${best.scale < 1 ? `, part spacing ×${best.scale}` : ''}`
         + `${design.boardDeclared ? ', declared size ignored' : ''}`
-        + `${factor > 1.25 * 1.15 ? ' — the packing needs the extra room' : ''})`);
+        + `${factor > 1.25 * 1.10 ? ` — the ${(plan && plan.edge) || 15}-mil edge clearance (D003 needs 12) sets the floor` : ''})`);
     }
     {
       const targetW = design.board.width;

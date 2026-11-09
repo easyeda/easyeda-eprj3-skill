@@ -270,7 +270,7 @@ function buildProjectReport(design, all, netcheck, build) {
   lines.push('## 工程概述');
   lines.push('');
   const sz = (build && build.pcb && build.pcb.board) || design.board;
-  const board = `${sz.width} × ${sz.height} mil（自动：封装 bbox 面积 ×1.25${design.boardDeclared ? '，设计里声明的尺寸已忽略' : ''}）`;
+  const board = `${sz.width} × ${sz.height} mil（自动：封装 bbox 面积 ×1.25${design.boardDeclared ? '，设计里声明的尺寸已忽略' : ''}；小板受板边间距约束会略大）`;
   lines.push('| 项 | 值 |');
   lines.push('| --- | --- |');
   lines.push(`| 工程名 | ${design.name} |`);

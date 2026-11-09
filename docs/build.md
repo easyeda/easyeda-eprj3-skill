@@ -52,7 +52,7 @@ schematic DRC (`sch_Drc.check`) on the finished sheet. The report lands in
 | Field | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `name` | string | design file stem | project + index name; need not match the directory |
-| `board` | `{width,height}` | `1600×1000` | mil; **ignored for the outline** — the board is auto-sized to 1.25× the footprint bbox area |
+| `board` | `{width,height}` | `1600×1000` | mil; **ignored for the outline** — the board is auto-sized to 1.25× the footprint bbox area (edge clearance sets a larger floor on tiny boards) |
 | `sheet` | `{schematic,name}` | `Schematic1` / `P1` | `name` is the sheet title (file name) |
 | `powers` | object | `{}` | net → `"up"`/`"down"`; those nets become power flags |
 | `nets` | object | `{}` | `{ "VCC": { "power": "up" } }` is the long form of `powers`; `{ "MOTOR_A": { "width": 30 } }` **annotates** the intended track width (nothing is routed — the DRC uses it as a per-net floor when it reviews imported copper) |
@@ -288,8 +288,11 @@ The board outline is sized from the placement: **area = 1.25× the tight union
 of every footprint's bbox**, with the bbox's own aspect. There is no minimum
 area and no declared-size floor — `board.width/height` in the design is ignored
 for the outline. When the target is too dense the placer tightens its part
-spacing (down to ×0.25) and re-packs; only if even that does not fit does the
-outline grow, and the build log reports the bbox and the achieved factor.
+spacing (down to ×0.25) and its edge margin (down to 15 mil, just above the
+12-mil D003 rule) and re-packs; the hard floor is `bbox + 2×edge margin`, so a
+very small board comes out slightly above 1.25× — the build log reports the
+bbox and the achieved factor (`1.45× area — the 15-mil edge clearance sets the
+floor`).
 Supply `place` when a part needs an exact spot. Under `--layout skill` it
 always wins, and a fixed part is a **keepout** for everything the placer
 arranges around it (mounting holes no longer get a resistor dropped on them).

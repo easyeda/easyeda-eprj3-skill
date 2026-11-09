@@ -5,10 +5,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
-## [2.2.6] - 2026-11-09
+## [2.2.7] - 2026-11-09
 
 **PCB layout is an explicit user choice; `pcb.place` is never silently
-overridden (issue #6); annotated schematic-readability round.**
+overridden (issue #6); annotated schematic-readability round; auto board size
+actually lands on 1.25×.**
 
 ### Added
 - `--layout <skill|client>` (also `pcb.layout` in the design): `skill` = the
@@ -61,6 +62,16 @@ overridden (issue #6); annotated schematic-readability round.**
   middle as a "bridge"; the composite pass keeps the block frame's top edge, so
   a good hub layout is no longer rejected by the area gate and falls back to the
   generic grid with long wire detours.
+- **Auto board size now really is 1.25× the footprint bbox area.** The fixed
+  `+40` margin and the fixed-point retarget from the loose first packing made a
+  small board come out at ~2× the bbox (the 4-cap probe: 190×290 vs a 114×217
+  bbox, 2.23× area). The placer's edge margin now scales down to 15 mil (just
+  above the 12-mil D003 rule), the target is retargeted from the dense packing,
+  and the grow step rounds up instead of down. Mid-size and large boards hit
+  exactly 1.25×; a very small board floors at `bbox + 2×edge margin` (the probe
+  is now 145×247, 1.45×) and the log names the edge clearance as the floor. The
+  intake/plan/report wording states the floor instead of promising 1.25×
+  unconditionally.
 
 ## [2.2.4] - 2026-11-06
 

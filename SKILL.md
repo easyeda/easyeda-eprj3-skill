@@ -93,7 +93,8 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    connect by hand in the EasyEDA client (this skill never routes or pours)
 #    placement: one cluster per schematic block (caps beside the pads they
 #    decouple), connectors (J/CN/USB) on the board edge, board auto-sized
-#    to 1.25× the footprint bbox area (a declared size is ignored)
+#    to 1.25× the footprint bbox area (a declared size is ignored; a tiny
+#    board may be slightly larger because the edge clearance sets a floor)
 #    client builds (any "ic" part): after the board outline + import the
 #    build runs the client's PCB auto layout (pcb_Document.autoLayout) and
 #    keeps that result. ASK FIRST (new project): AI coordinates or EDA auto
@@ -418,7 +419,7 @@ hand-drawn sheets); PCB coordinates are Y-up. Only `parts` is required.
 | Field | Meaning |
 | --- | --- |
 | `name` | project/index name (does not have to match the directory) |
-| `board.width/height` | board outline size in mil; **ignored** — the board is auto-sized to 1.25× the footprint bbox area |
+| `board.width/height` | board outline size in mil; **ignored** — the board is auto-sized to 1.25× the footprint bbox area (edge clearance may set a larger floor on tiny boards) |
 | `powers` | net → `"up"` (supply) or `"down"` (ground): these get **power flags** instead of wires |
 | `nets` | per-net **annotations**: `{ "width": 30 }` records the intended track width (derived from current) — it never lays copper; the DRC uses it as a per-net floor when reviewing imported tracks. `{ "class": "POWER" }` groups via `netClasses` |
 | `netClasses` | `{ "POWER": { "width": 30 } }` — named width groups referenced from `nets` (annotation only) |

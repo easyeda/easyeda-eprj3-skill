@@ -69,10 +69,12 @@ function connectorAngle(fp) {
 function planPcb(design, lib, schematicPlacements) {
   // Spacing scales down only when the build has to hit a tight board target
   // (design.gapScale < 1, set by build.js's board sizing). The defaults are
-  // the routing-friendly spacing; 30 mil is the floor that still clears the
-  // 12 mil board-edge rule.
+  // the routing-friendly spacing. The edge margin falls FASTER than the gaps
+  // (squared): at the densest packing it reaches 15 mil — just above the
+  // 12-mil D003 rule — so a small board can actually hit its 1.25× target
+  // instead of being forced to bbox+2×38 mil (nearly 2× the bbox area).
   const scale = Math.max(0.2, Math.min(1, Number(design.gapScale) || 1));
-  const EDGE = Math.max(30, Math.round(150 * scale));
+  const EDGE = Math.max(15, Math.round(150 * scale * scale));
   const GAP_MIN = Math.max(30, Math.round(140 * scale));
   const GAP_MAX = Math.max(70, Math.round(260 * scale));
   const gapFor = (size) => Math.round(Math.max(GAP_MIN, Math.min(GAP_MAX, size)));
@@ -301,7 +303,8 @@ function planPcb(design, lib, schematicPlacements) {
 
   return {
     placements: items.map((it) => ({ part: it.part, pcbPos: [it.x, it.y, it.angle] })),
-    required: { width: Math.ceil(neededW), height: Math.ceil(neededH) }
+    required: { width: Math.ceil(neededW), height: Math.ceil(neededH) },
+    edge: EDGE
   };
 }
 

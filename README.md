@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v2.2.6** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v2.2.7** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -68,7 +68,7 @@ For example:
 
 > I need an STM32F103C8T6 minimum system, 3.3 V supply, USB-serial, one LED, one button. Project at `D:\boards\stm32-blink`.
 
-The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md)): function, input supply, rails, current, interfaces, MCU, layers, package preference… asked **all at once**; anything you leave unanswered uses a documented default and is listed in the plan for you to veto. The board outline is not asked for — it is auto-sized to 1.25× the footprint bbox area.
+The agent follows the fixed intake protocol ([`docs/intake.md`](docs/intake.md)): function, input supply, rails, current, interfaces, MCU, layers, package preference… asked **all at once**; anything you leave unanswered uses a documented default and is listed in the plan for you to veto. The board outline is not asked for — it is auto-sized to 1.25× the footprint bbox area (a mandatory edge clearance can set a slightly larger floor on very small boards; the build log states the achieved factor).
 
 #### 3. What the agent runs internally
 
@@ -133,7 +133,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号放置、原理图 → PCB 导入（封装与焊盘网络由客户端生成）、**PCB 自动布局**、原理图 DRC 检查、按需 PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局仍由 skill 自带离线引擎完成；客户端构建时导线由 source API 绘制。2.x 构建包一律手动触发发布。
 
-**当前版本：2.2.6** · [更新记录](CHANGELOG.md)
+**当前版本：2.2.7** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -173,7 +173,7 @@ npm test            # 可选：跑一遍完整回归测试，确认环境正常
 
 > 我要画一个 STM32F103C8T6 最小系统，3.3V 供电，带一个 USB 转串口、一个 LED 和一个按键。工程放在 `D:\boards\stm32-blink`。
 
-AI 会按固定输入规范追问（[`docs/intake.md`](docs/intake.md)：功能、输入电源、电源轨、电流、接口、主控、层数、封装偏好等），**一次问完**；没答的字段用文档化默认值填充，并在方案里逐条标出供你否决。板框不问——自动按封装 bbox 面积 ×1.25 生成。
+AI 会按固定输入规范追问（[`docs/intake.md`](docs/intake.md)：功能、输入电源、电源轨、电流、接口、主控、层数、封装偏好等），**一次问完**；没答的字段用文档化默认值填充，并在方案里逐条标出供你否决。板框不问——自动按封装 bbox 面积 ×1.25 生成（小板受板边安全间距限制时以最小可行为准，构建日志会给出实际倍数）。
 
 #### 3. AI 内部执行流程
 

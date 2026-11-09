@@ -39,7 +39,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 | 建议问 | `power.current_mA` | 200 | **注记**：按电流推线宽（≤500mA→16mil，<1A→20，<2A→30，≥2A→40），写入 `nets.{net}.width` 作为交接信息与导入铜的 DRC 每网下限；本 skill 不布线 |
 | 建议问 | `interfaces` | [] | USB-C/UART/I2C/RS-485/按键/LED… |
 | 建议问 | `mcu` | null | 有 MCU 则自动拉 mcu-min + crystal |
-| 默认 | `board.width/height` | 忽略 | 板框自动按封装 bbox 面积 ×1.25 生成；声明值不生效（只确认层数） |
+| 默认 | `board.width/height` | 忽略 | 板框自动按封装 bbox 面积 ×1.25 生成；声明值不生效（只确认层数）；小板受板边间距约束会略大 |
 | 建议问 | `board.layers` | 2 | >2 会提示人工复核 |
 | 建议问 | `schematic.sheets` | 1 | **单页/多页询问**：全部模块放同一页还是分页；块 >8 个建议分页，跨页网络用网络端口连接 |
 | 建议问 | `constraints.crystal` | 有 MCU 即需要 | 8MHz 等 |
@@ -85,7 +85,7 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 1. **电源方案**：输入轨、内部轨、电流（决定线宽与拓扑）。
 2. **主控与关键器件选型**（含晶振/存储）。
 3. **对外接口定义与命名**（网络名会进板子文件，改一次全网）。
-4. **层数与结构约束**：板框不问了——构建时自动取封装 bbox 面积 ×1.25（`design.json` 里的 `board.width/height` 会被忽略）。
+4. **层数与结构约束**：板框不问了——构建时自动取封装 bbox 面积 ×1.25（`design.json` 里的 `board.width/height` 会被忽略；小板以板边安全间距为准，会略大）。
 5. **PCB 布局方式（必须问，二选一）**：
    - **新建工程**："PCB 布局用 AI 生成的坐标（skill 规划，可精确约束 `pcb.place`），还是 EDA 客户端自动布局？" → `--layout skill` / `--layout client`；
    - **已有工程**："保留已有布局，还是重新布局？" 保留 → `--keep-layout`（读取旧 PCB 坐标，不再自动布局）；重新布局 → `--layout client`，并追问"允许移动锁定的元件吗？" 允许 → `--move-locked`，不允许 → 不加（锁定件保持原位）。
@@ -99,12 +99,12 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 ```
 方案 sensor-board
   电源  输入 VBUS → 轨 3V3（120 mA）
-  板框  自动（封装 bbox 面积 ×1.25）· 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
+  板框  自动（封装 bbox 面积 ×1.25，小板受板边间距约束会略大）· 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
   模块  usb-c-power(4) + ldo-3v3(4) + mcu-min(8) + crystal(5) + i2c-sensor(5) + uart-bridge(7)
   规模  33 parts · 20 nets
   规则  电源轨 16 mil（注记，DRC 判导入铜时的每网下限）· clearance/track 用默认
   待确认
-    · 板框有硬性限制吗？→ 本版自动按封装 bbox 面积 ×1.25 生成，不接受指定尺寸（只给层数即可）
+    · 板框有硬性限制吗？→ 本版自动按封装 bbox 面积 ×1.25 生成（小板以板边安全间距为准），不接受指定尺寸（只给层数即可）
 ```
 
 ## 缓存与速度
