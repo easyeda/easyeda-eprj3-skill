@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
+## [2.2.5] - 2026-11-09
+
+**PCB layout is an explicit user choice; `pcb.place` is never silently
+overridden (issue #6).**
+
+### Added
+- `--layout <skill|client>` (also `pcb.layout` in the design): `skill` = the
+  AI/planner coordinates, `pcb.place` always wins, no client auto layout;
+  `client` = the EDA client's auto layout (default for `ic` builds).
+- `--move-locked` (client layout): unlocks every component —
+  including explicit `pcb.place` and previously locked ones — before
+  `pcb_Document.autoLayout`, so the engine may move them. Without it,
+  explicit `pcb.place` parts are locked (`primitiveLock`) and the engine keeps
+  them exactly.
+- `--keep-layout`: rebuilding an existing project reads its current footprint
+  positions from the old `.epcb2` into `pcb.place` and skips auto layout
+  (implies `--layout skill`).
+- `eda.js pcb --layout --move-locked`: same unlock semantics for in-place
+  re-layout.
+- `build.json` `pcb.locks` records which explicit parts were locked.
+
+### Changed
+- The AI must **ask before building**: new project — AI-planned coordinates or
+  the EDA auto layout? existing project — keep the current layout or re-layout;
+  if re-layout, may locked components move? Documented in `SKILL.md`,
+  `docs/intake.md`, `docs/build.md`, `docs/cli.md`, `README.md`.
+
+### Fixed
+- Issue #6: `pcb.place` coordinates were silently overwritten by the default
+  client auto layout (build moved the parts, then the engine rearranged the
+  whole board). Explicit parts are now locked for that pass, `--move-locked`
+  makes moving them an explicit decision, and `--keep-layout` preserves an
+  existing board exactly.
+
 ## [2.2.4] - 2026-11-06
 
 **Feedback round: real no-connect markers, import diagnosis, label hygiene.**

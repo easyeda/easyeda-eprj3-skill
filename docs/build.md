@@ -21,8 +21,16 @@ human confirmation gate; its board line reads
 `--allow-erc`, `--allow-lint`, `--allow-drc`, `--allow-intent`, `--no-tidy`
 (keep declared rotations — default runs the sch-tidy two-pass orientation
 optimizer: layout → rotate symbols onto their signal axes → re-layout),
-`--skill-layout` (client builds only: keep the planner's PCB placement instead
-of running the client's auto layout after the import),
+`--skill-layout` (alias of `--layout skill`),
+`--layout <skill|client>` — **PCB layout engine** (also `pcb.layout` in the
+design): `skill` = the AI/planner coordinates, `pcb.place` always wins, no
+client auto layout; `client` = the EDA client's own auto layout (default for
+builds that use `ic` parts). Explicit `pcb.place` parts are **locked** during
+the client auto layout so they keep their coordinates; `--move-locked` clears
+every lock first and lets the engine move them too,
+`--keep-layout` — rebuild an existing project while **keeping its current
+footprint positions**: reads the old `.epcb2` into `pcb.place` and implies
+`--layout skill` (ask the user: keep the existing layout, or re-layout?),
 `--no-patterns` (skip the circuit-pattern macros below; default on),
 `--no-search` (skip the local block-move search pass below; default on).
 
@@ -251,7 +259,7 @@ auto footprint when one exists: fewer tokens, no invented coordinates.
 
 | Field | Default | Notes |
 | --- | --- | --- |
-| `place` | auto | `{ "R1": [x, y, angle] }` — explicit placement wins |
+| `place` | auto | `{ "R1": [x, y, angle] }` — explicit placement wins in `--layout skill`; under `--layout client` those parts are locked so the EDA auto layout keeps them (unless `--move-locked`) |
 | `rules` | see below | DRC floors (see below) |
 | `route` / `pour` | — | **removed (1.13)** — writing them has no effect; this skill never routes or pours |
 
@@ -282,9 +290,12 @@ area and no declared-size floor — `board.width/height` in the design is ignore
 for the outline. When the target is too dense the placer tightens its part
 spacing (down to ×0.25) and re-packs; only if even that does not fit does the
 outline grow, and the build log reports the bbox and the achieved factor.
-Supply `place` when a part needs an exact spot — it always wins, and a fixed
-part is a **keepout** for everything the placer arranges around it (mounting
-holes no longer get a resistor dropped on them).
+Supply `place` when a part needs an exact spot. Under `--layout skill` it
+always wins, and a fixed part is a **keepout** for everything the placer
+arranges around it (mounting holes no longer get a resistor dropped on them).
+Under `--layout client` those parts are locked before the EDA auto layout runs,
+so the engine keeps them exactly; `--move-locked` unlocks everything and lets
+the engine arrange them too.
 
 ### Client auto layout (2.x client builds)
 
@@ -296,10 +307,27 @@ session and saves the arranged board. The planner's positions remain the
 fallback (they still decide the board size and the pad-net/rats data); if the
 engine is unavailable or reports a failure, the build keeps them and logs it.
 
-- `pcb.layout: "skill"` or `--skill-layout` keeps the skill's engineering
-  placement instead (connectors on the edge, decoupling caps beside their IC).
-- `build.json` records `pcb.layout` (`"client-auto"` / `"skill-placement"`) and
-  `pcb.autoLayout` (engine duration, failed count, error).
+**Choosing the engine is the user's call** (ask before building, see
+[`SKILL.md`](../SKILL.md)):
+
+- new project — *"PCB layout: AI-planned coordinates or the EDA auto layout?"*
+  → `--layout skill` / `--layout client`;
+- existing project — *"keep the current layout or re-layout?"* → keep:
+  `--keep-layout` (reads the old `.epcb2` positions into `pcb.place`, no auto
+  layout); re-layout → `--layout client`, then ask *"may locked components
+  move?"* → yes `--move-locked`, no (default) locks stay.
+
+- `pcb.layout: "skill"` / `--layout skill` / `--skill-layout` keeps the skill's
+  engineering placement (connectors on the edge, decoupling caps beside their
+  IC).
+- `--keep-layout` implies `--layout skill`; it is the "keep existing layout"
+  answer and refuses when the project has no footprints yet.
+- Explicit `pcb.place` parts are locked (`primitiveLock`) for the client auto
+  layout and stay at their coordinates; `--move-locked` unlocks every
+  component first (including user-locked ones) and is reported in the log.
+- `build.json` records `pcb.layout` (`"client-auto"` / `"skill-placement"`),
+  `pcb.autoLayout` (engine duration, failed count, error) and
+  `pcb.locks` (which explicit parts were locked).
 - The engine arranges for spacing, not for our tight outline, so it can park a
   footprint just outside it. The build then **grows the board outline** to
   contain every placed pad (+50 mil) and logs

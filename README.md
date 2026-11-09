@@ -1,6 +1,6 @@
 # easyeda-eprj3-skill
 
-**English** · [中文](#中文) · **v2.2.4** · [Changelog](CHANGELOG.md)
+**English** · [中文](#中文) · **v2.2.5** · [Changelog](CHANGELOG.md)
 
 ---
 
@@ -23,7 +23,7 @@ All code is self-authored Node CommonJS. **Zero third-party dependencies** — e
 - **Requirement intake, not guesswork** — a fixed input spec ([`docs/intake.md`](docs/intake.md)): required fields (function, input supply) block the build until answered; ask-tier fields come back as one batch of questions, each with its documented fallback; defaults are applied silently but shown so you can veto them.
 - **Keyword → recipe selection** — `usb`, `单片机/mcu`, `i2c`, `rs485`, `按键/button`… map onto 16 buildable sub-circuit templates (`recipe/`), merged in signal-flow order with de-duplicated ids.
 - **Derived power tree** — a regulator's input lands on the nearest rail *above* its output (12V→buck→5V→LDO→3V3 chains correctly), and a big linear drop prints a heat estimate instead of silently changing your BOM.
-- **Placement by the skill, copper by the client** — the offline build ships footprints placed by block flow with every pad's net linked, plus the board outline, and prints a `rats:` handoff list. On client builds `build.js` then runs the client's **own PCB auto layout** after the outline + import (`--skill-layout` keeps the skill's engineering placement). 2.x can also hand the board to the client's engine on demand (`eda.js pcb --route`, `eda.js pour`) — the skill never implements a router or a pour engine itself.
+- **Placement by the skill, copper by the client** — the offline build ships footprints placed by block flow with every pad's net linked, plus the board outline, and prints a `rats:` handoff list. The user picks the PCB layout engine up front: `--layout skill` (AI-planned coordinates; `pcb.place` always wins) or `--layout client` (EDA auto layout; explicit `pcb.place` parts are locked, `--move-locked` lets the engine move them). Rebuilding an existing project: `--keep-layout` keeps the current footprint positions. 2.x can also hand the board to the client's engine on demand (`eda.js pcb --route`, `eda.js pour`) — the skill never implements a router or a pour engine itself.
 - **CLI-first in 2.x** — library search, client netlist export (simplified to refdes + pin→net + model for a fresh review), the client's own schematic → PCB update (footprint + pad-net creation), schematic DRC, PCB auto layout/route, pour + fill and canvas screenshots all run through the client's `source`/auto APIs; `docs/cli.md` maps every command to its API.
 - **Human confirmation gates before anything is written** — `build.js --plan` rehearses the real build (true scores) into a throwaway dir; `autofix.js --diff` shows a line diff of every automatic edit first.
 - **Five gates** — format / ERC (E001–E007) / layout lint (L001–L010) / DRC + **DFM** (D001–D012: pad spacing, board edge, min drill, annular ring, silk-on-pad, acute angles — connectivity `D004` and pour `D006` are never judged on a board this skill built; imported or client-saved boards with copper get the full copper rules) / design intent (I001–I006: polarity, decoupling, divider ratio, diff pairs). Every finding carries a concrete `fix:` line.
@@ -133,7 +133,7 @@ MIT — see [LICENSE](LICENSE).
 >
 > **1.x 与 2.x**：1.x 是纯离线生成器（零依赖 Node，冻结在 v1.36.1，其构建包由 v1.36.1 标签发布）；2.x 通过 LCEDA Pro / EasyEDA Pro CLI（需 **V4.1.94+**）完成器件搜索、官方符号放置、原理图 → PCB 导入（封装与焊盘网络由客户端生成）、**PCB 自动布局**、原理图 DRC 检查、按需 PCB 自动布局/布线、铺铜与填充、网表导出与截图（不再有本地库缓存）；原理图布局仍由 skill 自带离线引擎完成；客户端构建时导线由 source API 绘制。2.x 构建包一律手动触发发布。
 
-**当前版本：2.2.4** · [更新记录](CHANGELOG.md)
+**当前版本：2.2.5** · [更新记录](CHANGELOG.md)
 
 ### AI 一键安装口令
 
@@ -183,7 +183,7 @@ AI 会按下面顺序完成（声明式一键路径，[`SKILL.md`](SKILL.md) 的
 2. **确认点**（生成前必经，改动都先给你看）：电源方案、主控/器件选型、接口命名、层数；`node scripts/build.js --plan` 真实预演但不写盘；`node scripts/autofix.js --diff` 打印修复差异后才写入
 3. `node scripts/build.js --design design.json --dir <工程目录>` 一次完成：
    - 原理图：自动布局（信号流分块）、自动布线、电源符号
-   - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；客户端构建（含 `ic` 器件）在板框与导入完成后自动调用客户端 **PCB 自动布局**（`--skill-layout` 可保留 skill 自己的工程化摆放）；**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
+   - PCB：**只管布局**——自动放置封装、绑定焊盘网络、生成板框；构建前按用户选择决定布局引擎：`--layout skill`（AI 规划坐标，`pcb.place` 永远生效）或 `--layout client`（EDA 自动布局；`pcb.place` 器件默认锁定，`--move-locked` 才允许移动）；已有工程保留现状用 `--keep-layout`。**永不布线、永不铺铜**（铜皮由人在 EasyEDA 客户端完成；build 会打印 `rats:` 交接清单，列出还需手工连的网络）
    - 五道门禁：格式 / ERC / 布局 / DRC+DFM（焊盘间距、板边、最小钻孔、环宽、丝印压盘、锐角 D009–D012；本 skill 自建的板恒为 placed-only，不判 D004/D006；导入或客户端返存的铜皮仍完整判定） / 设计意图（极性、去耦、分压比等）
    - 网表审计：`netlist.js --audit` 写出自包含审计包——「设计要求」（design.json 的引脚→网络）与「实际网表」（从原理图反解）并排——交给一个**不继承任何上下文**的子 agent 按固定清单复核；不一致就回到修复循环（[`SKILL.md`](SKILL.md#netlist-audit--a-fresh-reviewer-not-you)）
    - 报告：`project-report.md`（自动——概述/功能描述/功能特性/BOM/信号框架图/电源树/网络/门禁/遗留/建议）+ `ai-report.md`（由 agent 填写**每个 agent** 的模型/token/耗时，并给出全部 agent 的合计）

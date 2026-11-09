@@ -42,7 +42,7 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 | `node scripts/eda.js netlist --dir <project> --out netlist.json` | export the schematic netlist as the EDA JSON, then simplify it to `parts[{ref,name,device,footprint,pins}]` + `nets{name:[ref.pin]}` | `sch_ManufactureData.getNetlistFile` |
 | `node scripts/eda.js sch-drc --dir <project>` | run the client's schematic DRC; print counts and every violation (rule, net, designator/pin) | `sch_Drc.check` |
 | `node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch\|pcb] [--page N]` | write PNGs of every schematic page, or the PCB canvas | `sch_ManufactureData.getPngFile`, `dmt_EditorControl.getCurrentRenderedAreaImage` |
-| `node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route]` | PCB auto layout / auto route / clear routing and save | `pcb_Document.autoLayout` / `autoRouting` / `clearRouting` |
+| `node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--move-locked]` | PCB auto layout / auto route / clear routing and save; `--move-locked` unlocks every component first, otherwise `primitiveLock` components stay put | `pcb_Document.autoLayout` / `autoRouting` / `clearRouting` |
 | `node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 --layers 1,2` | create copper pour borders **and rebuild their fill**; `--outline` is in PCB data units (mil; the board rectangle is the board-outline path in the `.epcb2`) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
 
 `--keep` keeps the session open (debugging); by default every command closes
@@ -79,11 +79,14 @@ can plan positions, writes the project skeleton, then opens the project and:
   not a source record;
 - **runs the client's PCB auto layout** (`pcb_Document.autoLayout`) on the
   imported board — the same engine as `eda.js pcb --layout`, but automatic,
-  after the board outline and the import exist. The planned positions stay as
-  the fallback when the engine is missing or fails; `pcb.layout: "skill"` or
-  `--skill-layout` skips the pass and keeps the engineering placement. The
-  outcome is recorded as `pcb.layout` (`client-auto` / `skill-placement`) and
-  `pcb.autoLayout` (duration / failed count / error) in `build.json`;
+  after the board outline and the import exist — **only when the user chose the
+  EDA layout** (`--layout client`, the default for `ic` builds). Explicit
+  `pcb.place` parts are locked (`primitiveLock`) first, so the engine keeps
+  them; `--move-locked` clears every lock and lets it move everything.
+  `--layout skill` / `--skill-layout` / `--keep-layout` skip the pass and keep
+  the planner's coordinates. The outcome is recorded as `pcb.layout`
+  (`client-auto` / `skill-placement`), `pcb.autoLayout` (duration / failed
+  count / error) and `pcb.locks` in `build.json`;
 - saves, after which validate / ERC / lint / DRC / netcheck read the
   client-written project. The import is complete by construction, but the
   offline `netcheck` still runs as an independent pin-by-pin diff and catches

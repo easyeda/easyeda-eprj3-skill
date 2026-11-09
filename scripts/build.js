@@ -50,10 +50,51 @@ const SCHEMA = [
   { name: 'no-patterns', desc: 'skip the circuit-pattern macros (two-pin chains)', hasValue: false },
   { name: 'no-search', desc: 'skip the local block-move search pass', hasValue: false },
   { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false },
-  { name: 'skill-layout', desc: 'keep the skill\'s own PCB placement (default: the client runs its auto layout after the import)', hasValue: false }
+  { name: 'layout', desc: 'PCB layout engine: "skill" (AI-planned coordinates, explicit pcb.place always wins) or "client" (EDA auto layout); default from design.pcb.layout, else "client" for ic builds' },
+  { name: 'move-locked', desc: 'client layout: unlock every component before auto layout (also moves explicitly placed / user-locked parts)', hasValue: false },
+  { name: 'keep-layout', desc: 'rebuild an existing project while keeping its current footprint positions (reads the old PCB into pcb.place; implies --layout skill)', hasValue: false },
+  { name: 'skill-layout', desc: 'alias of --layout skill (keep the skill\'s own PCB placement; no client auto layout)', hasValue: false }
 ];
 
 const SKILL_OWNED = ['sch', 'pcb', 'panel', '.tmp'];
+
+/** Read the footprint positions of an existing PCB (designator → [x, y, angle]).
+ *  Used by --keep-layout so a rebuild reuses the current board arrangement. */
+function readExistingPlacements(projectDir) {
+  const out = new Map();
+  const files = [];
+  const walk = (d) => {
+    let entries;
+    try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.epcb2$/i.test(e.name)) files.push(p);
+    }
+  };
+  walk(path.join(projectDir, 'pcb'));
+  for (const file of files) {
+    const comps = new Map();
+    const desig = new Map();
+    let lines;
+    try { lines = E.readLines(file); } catch { continue; }
+    for (const line of lines) {
+      const r = E.parseRecord(line);
+      if (!r || !r.body) continue;
+      if (r.type === 'COMPONENT') comps.set(r.id, { x: r.body.x, y: r.body.y, angle: r.body.angle });
+      else if (r.type === 'ATTR' && r.body.key === 'Designator' && r.body.parentId) {
+        desig.set(r.body.parentId, r.body.value);
+      }
+    }
+    for (const [id, pos] of comps) {
+      const ref = desig.get(id);
+      if (ref && Number.isFinite(pos.x) && Number.isFinite(pos.y)) {
+        out.set(String(ref), [pos.x, pos.y, Number(pos.angle) || 0]);
+      }
+    }
+  }
+  return out;
+}
 
 function safeClean(dir) {
   const entries = fs.readdirSync(dir);
@@ -735,6 +776,36 @@ function main() {
   const t0 = Date.now();                  // report.elapsed_ms
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
 
+  // ---- layout engine choice (the AI asks the user; see SKILL.md) ----------
+  //  new project      → AI-planned coordinates (skill) or the EDA auto layout?
+  //  existing project → keep the current layout, or re-layout (and, if so,
+  //                     allow moving locked components)?
+  const layoutArg = opts.layout ? String(opts.layout).toLowerCase() : null;
+  if (layoutArg && !['skill', 'client'].includes(layoutArg)) {
+    die(`--layout must be "skill" or "client" (got "${opts.layout}")`);
+  }
+  if (opts['keep-layout']) {
+    if (!doPcb) die('--keep-layout needs the PCB (drop --schematic-only)');
+    const existing = readExistingPlacements(requestedDir);
+    if (!existing.size) {
+      die(`--keep-layout: no footprint positions found in ${requestedDir} — build the project once, then rebuild with --keep-layout`);
+    }
+    const place = Object.assign({}, design.pcbSpec.place || {});
+    let kept = 0;
+    for (const p of design.parts) {
+      const ref = p.multiUnitBase || p.id;
+      // the PCB's current position is authoritative for "keep the layout"
+      if (existing.has(ref)) { place[p.id] = existing.get(ref); kept += 1; }
+    }
+    design.pcbSpec.place = place;
+    // "keep the existing layout" means: use those coordinates, never auto-layout
+    opts.layout = 'skill';
+    if (!opts.quiet) {
+      const total = Object.keys(place).length;
+      console.log(`layout: keep existing — ${total} footprint position(s) kept (${kept} read from the current PCB)`);
+    }
+  }
+
   // ---- system-library devices, resolved through the client CLI (2.x) -------
   // No local cache and no document download: the client returns the device
   // geometry (layout) and later places the official symbol/footprint instances
@@ -1056,12 +1127,16 @@ function main() {
   // Client builds draw the wiring and the power flags through the source API;
   // offline builds keep the record emitters below.
   const clientBuild = !rehearsal && placements.some((p) => p.part && p.part.libraryEntry);
-  // Client auto layout (2.x): the skill's planner still decides the board size
-  // and the fallback positions, then the client's own layout engine arranges
-  // the imported footprints — the same command as the UI's "自动布局".
-  // `pcb.layout: "skill"` / --skill-layout keeps the planned positions.
-  const clientLayout = clientBuild && doPcb && !opts['skill-layout']
-    && !(design.pcbSpec && design.pcbSpec.layout === 'skill');
+  // Layout engine: "skill" = the AI/planner coordinates (pcb.place always
+  // wins, no client auto layout); "client" = the EDA client's own auto layout.
+  // Precedence: --layout > --skill-layout > design.pcb.layout > "client".
+  const layoutMode = (opts.layout && String(opts.layout).toLowerCase())
+    || (opts['skill-layout'] ? 'skill' : null)
+    || (design.pcbSpec && design.pcbSpec.layout === 'skill' ? 'skill' : 'client');
+  const clientLayout = clientBuild && doPcb && layoutMode === 'client';
+  if (opts['move-locked'] && layoutMode !== 'client') {
+    log('layout: --move-locked has no effect without --layout client');
+  }
   snapNetObjectsToGrid(routed);
   growFramesToLabels(blocks, routed);
   const sheetFrames = new Map();
@@ -1557,6 +1632,11 @@ function main() {
       log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client (headless — no window opens)`);
       let placed;
       try {
+        // Explicit pcb.place parts are locked for the auto-layout pass unless
+        // the user allowed moving locked components (--move-locked).
+        const explicitRefs = clientLayout && !opts['move-locked']
+          ? Object.keys(design.pcbSpec.place || {})
+          : [];
         placed = CLI_LIB.placeInstances(dir, {
           sch: librarySch,
           flagPlan,
@@ -1565,6 +1645,8 @@ function main() {
           attrPlan,
           ncPlan,
           autoLayout: clientLayout,
+          lockRefs: explicitRefs,
+          moveLocked: !!opts['move-locked'],
           schematicName: design.schematic
         });
         clientPlacement = placed;
@@ -1587,12 +1669,20 @@ function main() {
         }
         if (clientLayout) {
           const lay = placed.layout || {};
+          const keptLocked = (placed.locks && placed.locks.locked && placed.locks.locked.length) || 0;
+          // locked explicit parts are reported by the engine as "not placed";
+          // only the remainder is a real failure
+          const unexpected = Math.max(0, (lay.failed || 0) - keptLocked);
           if (lay.ok) {
             log(`  client: PCB auto layout done${lay.durationMs ? ` in ${lay.durationMs} ms` : ''}`
-              + `${lay.failed ? ` — ${lay.failed} footprint(s) not placed` : ''}`);
+              + `${unexpected ? ` — ${unexpected} footprint(s) not placed` : ''}`);
           } else {
             log(`  client: PCB auto layout skipped — keeping the skill placement${lay.error ? ` (${lay.error})` : ''}`);
           }
+          if (keptLocked) {
+            log(`  client: kept ${keptLocked} explicit pcb.place part(s) locked (pass --move-locked to let auto layout move them)`);
+          }
+          if (opts['move-locked']) log('  client: unlocked every component before auto layout (--move-locked)');
         }
       }
       if (placed.flags && placed.flags.length) {
@@ -1708,6 +1798,7 @@ function main() {
           ? 'client-auto' : 'skill-placement')
         : null,
       autoLayout: (clientPlacement && clientPlacement.layout) || null,
+      locks: (clientPlacement && clientPlacement.locks) || null,
       board: doPcb ? { width: design.board.width, height: design.board.height } : null,
       rats: ratNets.length
     },

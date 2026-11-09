@@ -229,6 +229,7 @@ function placeInstances(projectDir, placement, opts) {
     shellsRemoved: 0,
     batches: 0,
     layout: null,
+    locks: null,
     attrs: [],
     nc: { marked: [], failed: [] }
   };
@@ -341,6 +342,19 @@ function placeInstances(projectDir, placement, opts) {
       // same command as the UI's "auto layout"). The planned positions above
       // stay as the fallback when the engine is missing or fails.
       if (placement.autoLayout) {
+        // Explicit pcb.place parts are locked so the EDA auto layout keeps
+        // them; --move-locked unlocks everything first (the user allowed it).
+        if ((placement.lockRefs || []).length || placement.moveLocked) {
+          try {
+            results.locks = CLI.invoke(info.bin, session, SET_LOCKS, {
+              args: { plan: { lock: placement.lockRefs || [], unlock: !!placement.moveLocked } },
+              timeout
+            });
+          } catch (e) {
+            results.locks = { locked: [], unlocked: 0, error: String(e && e.message || e) };
+          }
+          results.batches += 1;
+        }
         try {
           results.layout = CLI.invoke(info.bin, session, AUTO_LAYOUT, { timeout });
         } catch (e) {
@@ -675,6 +689,34 @@ for (const a of plan.attrs || []) {
   out.attrs.push(rec);
 }
 await eda.sch_Document.save().catch(() => {});
+return out;
+`;
+
+/** Lock / unlock PCB components before the client auto layout.
+ *  The engine respects `primitiveLock`, so explicit pcb.place parts keep their
+ *  coordinates; `unlock` (--move-locked) clears every lock and lets the engine
+ *  move everything. */
+const SET_LOCKS = `
+${READY_HELPER}
+const plan = __CLI__.args.plan;
+const pcbs = await pcbsOf();
+if (!pcbs.length) return { locked: [], unlocked: 0, error: 'no PCB in this project' };
+await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
+await new Promise((r) => setTimeout(r, 1000));
+const comps = await eda.pcb_PrimitiveComponent.getAll();
+const want = new Set((plan.lock || []).map(String));
+const out = { locked: [], unlocked: 0, missing: [] };
+for (const c of comps) {
+  const d = c.getState_Designator ? String(c.getState_Designator()) : '';
+  const id = c.getState_PrimitiveId ? c.getState_PrimitiveId() : null;
+  if (!d || !id) continue;
+  if (plan.unlock) {
+    try { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: false }); out.unlocked += 1; } catch (e) { /* keep going */ }
+  } else if (want.has(d)) {
+    try { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: true }); out.locked.push(d); } catch (e) { out.missing.push(d); }
+  }
+}
+await eda.pcb_Document.save();
 return out;
 `;
 

@@ -86,9 +86,13 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 2. **主控与关键器件选型**（含晶振/存储）。
 3. **对外接口定义与命名**（网络名会进板子文件，改一次全网）。
 4. **层数与结构约束**：板框不问了——构建时自动取封装 bbox 面积 ×1.25（`design.json` 里的 `board.width/height` 会被忽略）。
-5. **自动修复将写入的内容**：`node scripts/autofix.js --design design.json --diff` 打印 before/after 行级差异 + 变更行数，**不写盘**；确认后才去掉 `--diff` 应用。
-6. **构建前预演**：`build.js --plan` 在一次性目录里真实跑完整构建（lint/drc 分数是真的），但目标目录一个字节都不写；用户确认后再正式 `build.js`。
-7. **铜皮不在本 skill 范围**：永不布线、永不铺铜——布局交给机器，铜皮交给人。`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数），走线/过孔/铺铜在 EasyEDA 客户端完成。
+5. **PCB 布局方式（必须问，二选一）**：
+   - **新建工程**："PCB 布局用 AI 生成的坐标（skill 规划，可精确约束 `pcb.place`），还是 EDA 客户端自动布局？" → `--layout skill` / `--layout client`；
+   - **已有工程**："保留已有布局，还是重新布局？" 保留 → `--keep-layout`（读取旧 PCB 坐标，不再自动布局）；重新布局 → `--layout client`，并追问"允许移动锁定的元件吗？" 允许 → `--move-locked`，不允许 → 不加（锁定件保持原位）。
+   - 选 `client` 时，`pcb.place` 里的器件默认锁定、不会被自动布局挪走；只有 `--move-locked` 才允许移动。
+6. **自动修复将写入的内容**：`node scripts/autofix.js --design design.json --diff` 打印 before/after 行级差异 + 变更行数，**不写盘**；确认后才去掉 `--diff` 应用。
+7. **构建前预演**：`build.js --plan` 在一次性目录里真实跑完整构建（lint/drc 分数是真的），但目标目录一个字节都不写；用户确认后再正式 `build.js`。
+8. **铜皮不在本 skill 范围**：永不布线、永不铺铜——布局交给机器，铜皮交给人。`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数），走线/过孔/铺铜在 EasyEDA 客户端完成。
 
 `resolve` 的输出格式就是为确认点设计的——电源/板框/模块/规模/网络/规则/待确认逐行可读：
 

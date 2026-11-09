@@ -72,7 +72,13 @@ node scripts/build.js --design design.json --dir <proj>           # after the us
   lookup.
 - **Confirmation gates before you build or fix:** power scheme, MCU/critical part
   choice, interface names, layer count (the board outline is auto-sized),
-  and `autofix.js --diff` output (a diff summary before any automatic edit).
+  **PCB layout engine**, and `autofix.js --diff` output (a diff summary before
+  any automatic edit). Ask the layout question explicitly:
+  - **new project** — "PCB 布局用 AI 生成的坐标（skill 规划，可精确约束）还是
+    EDA 客户端自动布局？" → `--layout skill` / `--layout client`;
+  - **existing project** — "保留已有布局，还是重新布局？" keep →
+    `--keep-layout`; re-layout → `--layout client`, then ask "允许移动锁定的
+    元件吗？" yes → `--move-locked`, no → omit it (locks stay).
   Full protocol + field table: [`docs/intake.md`](docs/intake.md).
 
 If the user supplied a complete design already, skip to the fast path.
@@ -90,8 +96,10 @@ node scripts/build.js --design design.json --dir <absolute project dir>
 #    to 1.25× the footprint bbox area (a declared size is ignored)
 #    client builds (any "ic" part): after the board outline + import the
 #    build runs the client's PCB auto layout (pcb_Document.autoLayout) and
-#    keeps that result; --skill-layout or pcb.layout:"skill" keeps the
-#    planner's own engineering placement instead
+#    keeps that result. ASK FIRST (new project): AI coordinates or EDA auto
+#    layout? → --layout skill | client; explicit pcb.place parts are locked
+#    during the EDA pass (--move-locked lets it move them). Rebuilding an
+#    existing project: keep layout → --keep-layout, re-layout → --layout client
 node scripts/netlist.js --dir <project dir> --design design.json --audit <project dir>/.tmp/netlist-audit.json
 #    netlist audit package → a FRESH sub-agent reviews it (mandatory; see the
 #    "Netlist audit" section below, not an optional nicety)
@@ -124,8 +132,9 @@ Then call a script instead of hand-writing JavaScript:
 | netlist for review | `eda.js netlist --dir <p> --out review/netlist.json` | `sch_ManufactureData.getNetlistFile` |
 | schematic DRC | `eda.js sch-drc --dir <p>` | `sch_Drc.check` |
 | visual check | `eda.js screenshot --dir <p> --out shots` | `getPngFile` / `getCurrentRenderedAreaImage` |
-| PCB auto layout/route | `eda.js pcb --layout/--route` | `pcb_Document` |
-| — | **build.js runs `pcb --layout` automatically on client builds** (after the board outline and the schematic→PCB import), unless `--skill-layout` / `pcb.layout:"skill"` | `pcb_Document.autoLayout` |
+| PCB layout engine | `build.js --layout skill|client` (`pcb.layout`) | skill planner vs `pcb_Document.autoLayout` |
+| PCB auto layout/route | `eda.js pcb --layout/--route [--move-locked]` | `pcb_Document` |
+| — | **build.js runs `pcb --layout` automatically on client builds** (after the board outline and the schematic→PCB import) when the user chose the EDA layout; explicit `pcb.place` parts are locked for that pass unless `--move-locked` | `pcb_Document.autoLayout` |
 | copper pour + fill | `eda.js pour --net GND --outline x1,y1,x2,y2` (data units = mil) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
 
 Rules:
@@ -424,7 +433,7 @@ hand-drawn sheets); PCB coordinates are Y-up. Only `parts` is required.
 | `parts[].rotation` | 0 / 90 / 180 / 270 |
 | `expect` | optional intent block for the fifth gate — see below |
 | `frame` | `{ titleBlock: true }` re-enables the 明细表 (default: hidden); the drawing frame is AUTO-SIZED around the packed blocks (Size reports the nearest A-series, Width/Height are authoritative) |
-| `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed |
+| `pcb.place` | optional explicit placement `[x, y, angle]`; everything else is auto-placed. Under `--layout skill` these coordinates always win; under `--layout client` those parts are locked so the EDA auto layout keeps them (unless `--move-locked`) |
 | `pcb.rules` | DRC floors only: `clearance`, `trackWidth` (→ min track), `edgeClearance`, `minDrill`, `minRing`, `minAngle`. 0.5 mm-pitch parts want `clearance 6, trackWidth 6` |
 | `pcb.pour` / `pcb.route` | **removed (1.13)** — this skill never pours or routes; writing these keys has no effect |
 

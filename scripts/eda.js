@@ -15,7 +15,7 @@
  *   node scripts/eda.js netlist --dir <project> --out netlist.json
  *   node scripts/eda.js sch-drc --dir <project>
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
- *   node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--no-save] [--timeout 900000]
+ *   node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--move-locked] [--no-save] [--timeout 900000]
  *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 (PCB data units, mil) [--layers 1,2] [--no-save]
  *
  * Requires the client V4.1.94+ (source APIs 4.1.83+). `--cli <path>` overrides
@@ -343,7 +343,18 @@ const pcbs = await pcbsOf();
 if (!pcbs.length) throw new Error('no PCB in this project');
 await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
 await new Promise((r) => setTimeout(r, 1200));
-const out = { pcb: pcbs[0].name, cleared: false, layout: null, route: null, saved: false };
+const out = { pcb: pcbs[0].name, cleared: false, unlocked: 0, layout: null, route: null, saved: false };
+if (${!!args['move-locked']}) {
+  // the auto engine keeps primitiveLock'ed components in place; --move-locked
+  // clears every lock first, so the user's "yes, move locked parts" is honoured
+  try {
+    const comps = await eda.pcb_PrimitiveComponent.getAll();
+    for (const c of comps) {
+      const id = c.getState_PrimitiveId ? c.getState_PrimitiveId() : null;
+      if (id) { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: false }); out.unlocked += 1; }
+    }
+  } catch (e) { out.unlockErr = String(e && e.message || e); }
+}
 if (${!!args.clear}) { try { await eda.pcb_Document.clearRouting(); out.cleared = true; } catch (e) { out.clearErr = String(e && e.message || e); } }
 if (${!!args.layout}) { try { out.layout = await eda.pcb_Document.autoLayout(); } catch (e) { out.layoutErr = String(e && e.message || e); } }
 if (${!!args.route}) { try { out.route = await eda.pcb_Document.autoRouting(); } catch (e) { out.routeErr = String(e && e.message || e); } }
