@@ -95,8 +95,7 @@ function collectSheet(file) {
     labels.push({ x: a.body.x, y: a.body.y, net: a.body.value });
   }
   void compIds;
-  const namedWires = new Set(attrs.filter((a) => a.body.key === 'NET').map((a) => a.body.parentId));
-  return { parts, rects, texts, labels, segs, namedWires };
+  return { parts, rects, texts, labels, segs };
 }
 
 /** Frame extent of one sheet, read from its embedded frame device doc. */
@@ -122,7 +121,7 @@ function lintSheet(file, sheetLabel) {
     const rule = RULES[code];
     findings.push(Object.assign({ code, level: rule.level, msg }, extra || {}));
   };
-  const { parts, rects, texts, labels, segs, namedWires } = collectSheet(file);
+  const { parts, rects, texts, labels, segs } = collectSheet(file);
   const real = parts.filter((p) => p.ref !== '?' && p.extent);
   const blocks = rects.filter((r) => isBlockRect(r.rect));
 
@@ -199,15 +198,21 @@ function lintSheet(file, sheetLabel) {
   }
   // Labels are intentional wire terminations: a dangling end there is by design.
   for (const l of labels) pinKeys.add(`${G.round(l.x)},${G.round(l.y)}`);
-  // A named wire ends are deliberate too (stub+label encoding, power drops).
-  const exempt = new Set();
+  // A wire end is valid when it meets another wire end (junction/corner),
+  // lands on another wire's body (T), or hits a pin / flag / port / label
+  // anchor. There is NO blanket exemption for named wires: in an authored
+  // file every wire carries a net, and a 1-mil miss against a pin tip must be
+  // reported instead of passing lint at 100/100.
+  const onOtherSeg = (s, x, y) => segs.some((o) => o !== s
+    && !(Math.abs(o.x1 - x) < 0.01 && Math.abs(o.y1 - y) < 0.01)
+    && !(Math.abs(o.x2 - x) < 0.01 && Math.abs(o.y2 - y) < 0.01)
+    && G.pointSegDist({ x, y }, o) < 0.01);
   for (const s of segs) {
-    if (!namedWires.has(s.wire)) continue;
-    exempt.add(`${G.round(s.x1)},${G.round(s.y1)}`);
-    exempt.add(`${G.round(s.x2)},${G.round(s.y2)}`);
-  }
-  for (const [k, n] of endpoints) {
-    if (n < 2 && !pinKeys.has(k) && !exempt.has(k)) {
+    for (const [x, y] of [[s.x1, s.y1], [s.x2, s.y2]]) {
+      const k = `${G.round(x)},${G.round(y)}`;
+      if ((endpoints.get(k) || 0) >= 2) continue;   // two wire ends meet
+      if (pinKeys.has(k)) continue;
+      if (onOtherSeg(s, x, y)) continue;
       add('L010', `wire endpoint ${k} touches nothing`, { at: k });
     }
   }

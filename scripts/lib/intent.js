@@ -192,10 +192,10 @@ function runIntent(d, opts) {
         fix: `a differential pair needs the same pin count on both sides — check parts[].pins`
       });
     } else if (!placedOnly) {
-      // placed-only boards route pairs by hand in the client — the warning is
-      // permanent there and carries no information (report: mimo §7.7)
-      addW('I006', `pair [${a}, ${b}] declared — finish the pair side by side in the client`, {
-        fix: `informational: keep the two nets side by side manually with pcb.place if length matching matters`
+      // routed board: the pair exists, but the local DRC has no gap/skew rule —
+      // say so instead of telling the author to "do it in the client"
+      addW('I006', `pair [${a}, ${b}] is declared; the local checks do not verify pair gap, skew or length`, {
+        fix: `keep the two nets side by side in pcb.tracks with the intended gap and matched length, then verify the pair in the EasyEDA client`
       });
     }
   }

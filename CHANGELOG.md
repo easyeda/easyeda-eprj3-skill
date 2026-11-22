@@ -5,7 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
-## [2.2.8] - 2026-11-22
+## [2.2.9] - 2026-11-22
 
 **AI-authored geometry replaces the layout engine (breaking).** The build no
 longer chooses positions, wires, footprints, tracks or the board size:
@@ -15,8 +15,9 @@ gates.
 
 ### Added
 - `build.js --geometry`: print the resolved symbol bbox/pins (number, name,
-  net, hotspot, rotation) and footprint pads (size, hole, layer, `boardAt`
-  once `pcb.place` exists) as JSON, writing no project. This is the AI's first
+  net, hotspot, rotation, and — once `sch.place` exists — the absolute
+  `sheetAt`) and footprint pads (size, hole, layer, `boardAt` once
+  `pcb.place` exists) as JSON, writing no project. This is the AI's first
   step before authoring geometry.
 - `scripts/lib/authored-layout.js`: validation of the declared geometry —
   exactly one position per designator/footprint, 90° rotations, orthogonal
@@ -83,6 +84,25 @@ gates.
   pad layer correctly for back-side footprint records.
 - Netcheck/audit/report merge multi-unit base designators consistently, so a
   multi-unit part no longer shows as missing on one side.
+- **Authoring feedback round (2.2.9).** `--geometry` now returns each pin's
+  absolute `sheetAt`, so the AI copies coordinates instead of rotating and
+  translating by hand.
+- **The schematic is proved connectable before anything is written.** Every
+  non-NC pin must land on a wire endpoint (or a coincident same-net pin),
+  every flag/port must sit on a wire endpoint, and a net spanning pages must
+  have a port or flag on every page. All violations are reported together,
+  each with the pin's `sheetAt`, the nearest wire endpoint and the distance;
+  a one-mil miss now fails at the right file instead of being blamed on
+  `parts[].pins`.
+- **L010 works again for authored schematics.** Named wires are no longer
+  blanket-exempt: a wire end that touches nothing (no pin, flag, port, label,
+  other wire end or T) is reported. A 1-mil gap previously passed lint at
+  100/100.
+- E001/E002/E003 and netcheck/DRC fix lines now name `sch.wires` /
+  `pcb.tracks` / `pcb.place` and the coordinate to change, instead of
+  "re-run build.js --force"; I006 states that the local checks do not verify
+  pair gap/skew/length rather than telling the author to finish it in the
+  client.
 
 ## [2.2.7] - 2026-11-09
 

@@ -8,7 +8,20 @@ The running AI agent makes all placement and routing decisions. The builder vali
 node scripts/build.js --design design.json --dir <project> --geometry
 ```
 
-JSON gives each symbol's local boundary, assigned sheet, electrical pin hotspot and net, and each footprint's pad geometry. After `pcb.place` is entered, it also gives each pad's `boardAt` position. No project is created. `--gen` works the same way; use `A.schematicLayout(sch)`, `A.pcbLayout(pcb)` and `A.board(width, height, layers)` to supply explicit geometry. Pin and pad offsets rotate counterclockwise from the part origin. Coordinates are Y-up. Schematic units are 10 mil each, not the same numeric units as PCB coordinates. Use positive schematic coordinates with margin for the drawing frame; the builder does not shift, rotate, snap, or rescale them.
+JSON gives each symbol's local boundary, assigned sheet, electrical pin hotspot and net, and each footprint's pad geometry. **With `sch.place` present every pin also carries `sheetAt` — its absolute sheet position** (rotate the local pin by the part's angle, add the placement); use those numbers verbatim as wire endpoints. After `pcb.place` is entered, each pad also gets its absolute `boardAt` position. No project is created. `--gen` works the same way; use `A.schematicLayout(sch)`, `A.pcbLayout(pcb)` and `A.board(width, height, layers)` to supply explicit geometry. Pin and pad offsets rotate counterclockwise from the part origin. Coordinates are Y-up. Schematic units are 10 mil each, not the same numeric units as PCB coordinates. Use positive schematic coordinates with margin for the drawing frame; the builder does not shift, rotate, snap, or rescale them.
+
+**Connectivity the builder proves before writing anything** (all problems are
+reported together):
+
+- every pin on a non-NC net must land on a **wire endpoint** — a pin in the
+  middle of a segment is not connected (the client joins only at wire ends);
+  a pin coincident with another pin of the same net is also accepted;
+- every `sch.flags` / `sch.ports` entry must sit on a wire endpoint (a flag on
+  a bare pin needs a short stub wire);
+- a net with pins on more than one sheet needs a **net port or power flag on
+  every one of those sheets** — a wire name alone does not cross pages;
+- errors name the pin, its `sheetAt`, the nearest wire endpoint and the
+  distance, so the fix is a coordinate edit in `sch.wires`.
 
 ## 2. Supply geometry
 

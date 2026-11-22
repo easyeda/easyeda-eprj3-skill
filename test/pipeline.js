@@ -43,6 +43,12 @@ try {
   const inspect = run('inspect', (d) => { delete d.sch; delete d.pcb.place; }, ['--geometry']);
   assert.equal(JSON.parse(inspect.stdout).parts[0].pins.find((p) => p.num === '2').at[0], 20);
   assert(!fs.existsSync(inspect.dir));
+  // with sch.place present every pin also carries its absolute sheet position
+  const geo = run('geometry', () => {}, ['--geometry']);
+  const geoOut = JSON.parse(geo.stdout);
+  assert.deepEqual(geoOut.parts.find((p) => p.ref === 'R1').pins.find((p) => p.num === '2').sheetAt, [320, 300]);
+  assert.deepEqual(geoOut.parts.find((p) => p.ref === 'R2').pins.find((p) => p.num === '1').sheetAt, [580, 300]);
+  assert(!fs.existsSync(geo.dir));
   const preview = run('preview', () => {}, ['--plan']);
   assert(!fs.existsSync(preview.dir));
   assert.equal(preview.report.pcb.rats, 0);
@@ -55,8 +61,51 @@ try {
   assert(!fs.existsSync(noPcbPosition.dir));
   const touching = run('touching', (d) => { d.sch.wires[1].points[0] = [320, 300]; }, [], 1);
   assert.match(touching.stderr, /touches R1\.2/);
+  // a one-mil miss must fail BEFORE writing, name the pin tip and the nearest
+  // wire endpoint, and point at sch.wires (not at parts[].pins)
+  const offPin = run('wire-off-pin', (d) => { d.sch.wires[0].points[0] = [321, 300]; }, [], 1);
+  assert.match(offPin.stderr, /pin R1\.2 \(net "LINK"\).*321,300.*1\.0 mil/);
+  assert.match(offPin.stderr, /sch\.wires/);
+  assert.doesNotMatch(offPin.stderr, /parts\[\]\.pins/);
+  assert(!fs.existsSync(offPin.dir));
   const schematicGap = run('missing-wire', (d) => { d.sch.wires.shift(); }, [], 1);
-  assert.equal(schematicGap.report.audit.ok, false);
+  assert.match(schematicGap.stderr, /pin R1\.2 \(net "LINK"\).*nearest endpoint/);
+  // a named wire that ends in empty space is still a dangling end (L010)
+  const dangling = run('dangling-wire', (d) => {
+    d.sch.wires.push({ net: 'LINK', points: [[580, 300], [580, 340], [700, 340]] });
+  });
+  assert(dangling.report.lint.findings.some((f) => f.code === 'L010' && f.at === '700,340'));
+  // a flag that is not on a wire endpoint fails before writing
+  const floatFlag = run('floating-flag', (d) => {
+    d.sch.flags = [{ net: 'RETURN', at: [900, 900], kind: 'down' }];
+  }, [], 1);
+  assert.match(floatFlag.stderr, /power flag "RETURN" at 900,900.*not on a wire endpoint/);
+  // a net spanning pages needs a port/flag on every page — a wire name does not
+  // cross pages
+  const crossSheet = (d) => {
+    d.sheets = 2;
+    d.blocks = [{ title: 'A', sheet: 1, parts: ['R1'] }, { title: 'B', sheet: 2, parts: ['R2'] }];
+    d.sch.wires = [
+      { net: 'LINK', points: [[320, 300], [360, 300]], sheet: 1 },
+      { net: 'LINK', points: [[580, 300], [540, 300]], sheet: 2 },
+      { net: 'RETURN', points: [[280, 300], [240, 300]], sheet: 1 },
+      { net: 'RETURN', points: [[620, 300], [660, 300]], sheet: 2 }
+    ];
+    d.sch.flags = [
+      { net: 'RETURN', at: [240, 300], kind: 'down', sheet: 1 },
+      { net: 'RETURN', at: [660, 300], kind: 'down', sheet: 2 }
+    ];
+  };
+  const noPort = run('cross-sheet-no-port', crossSheet, [], 1);
+  assert.match(noPort.stderr, /net "LINK" has pins on sheets 1, 2 but sheet 1 has no net port/);
+  const withPort = run('cross-sheet-ports', (d) => {
+    crossSheet(d);
+    d.sch.ports = [
+      { net: 'LINK', at: [360, 300], kind: 'BI', sheet: 1 },
+      { net: 'LINK', at: [540, 300], kind: 'BI', sheet: 2 }
+    ];
+  });
+  assert.equal(withPort.report.netcheck.match, true);
   const noVias = run('missing-vias', (d) => { d.pcb.vias = []; }, [], 1);
   assert(noVias.report.drc.findings.some((f) => f.code === 'D004' && f.net === 'RETURN'));
   const disconnected = run('separate-stubs', (d) => {

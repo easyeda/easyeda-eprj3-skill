@@ -106,7 +106,7 @@ function compare(all, baseOf, noConnect = new Set()) {
   for (const u of unconnected) {
     issues.push({ code: 'PIN_FLOATING', pin: `${u.ref}.${u.pin}`, where: u.where,
       msg: `schematic pin ${u.ref}.${u.pin} connects to nothing (${u.where})`,
-      fix: `map it in parts[].pins (or "NC"), then re-run build.js --force` });
+      fix: `end a wire segment at this pin's tip in sch.wires (--geometry sheetAt), or mark the pin "NC" in parts[].pins` });
   }
   return {
     match: issues.length === 0,

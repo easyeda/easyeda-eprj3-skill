@@ -7,6 +7,21 @@ const P = require('./parts');
 const isNC = (net) => D.NC_NET.test(net || '');
 const own = (obj, key) => Object.hasOwn(obj, key);
 const fail = (message) => { throw new D.DesignError(`${message} — supply or correct the AI layout (docs/ai-layout.md)`); };
+// Sheet coordinates are authored as literals and pin tips are rounded to 0.001,
+// so "the same point" means within that grid — stricter than the client's
+// exact equality would only produce messages nobody can satisfy.
+const ptEq = (a, b) => Math.abs(a.x - b.x) < 0.001 && Math.abs(a.y - b.y) < 0.001;
+/** Nearest wire endpoint to (x,y): the coordinate the author most likely meant. */
+function nearestEndpoint(segs, x, y) {
+  let best = null;
+  for (const s of segs) {
+    for (const [px, py] of [[s.x1, s.y1], [s.x2, s.y2]]) {
+      const d = Math.hypot(px - x, py - y);
+      if (!best || d < best.d) best = { d, x: px, y: py };
+    }
+  }
+  return best;
+}
 
 function object(value, key) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail(`${key} must be an object`);
@@ -141,6 +156,69 @@ function schematic(design, lib) {
       }
     }
   }
+  // ---------------------------------------------------------- connectivity
+  // Written geometry is final, so prove it BEFORE anything reaches disk: every
+  // pin must land on a wire END (the client joins only at ends), every
+  // flag/port must sit on one, and a net that spans pages must be linked by a
+  // port/flag on each page. Reporting all of them at once keeps the AI from
+  // fix-one-rerun loops, and the message names the exact coordinate to use.
+  const problems = [];
+  const segsBySheet = new Map();
+  for (const w of wires) {
+    if (!segsBySheet.has(w.sheet)) segsBySheet.set(w.sheet, []);
+    for (const s of w.segs) segsBySheet.get(w.sheet).push({ ...s, net: w.net });
+  }
+  const pins = [];
+  for (const pl of placements) {
+    for (const pin of pl.sym.pins) {
+      const t = G.pinTip(pin, pl.x, pl.y, pl.rotation);
+      pins.push({
+        x: t.x, y: t.y, net: pl.part.pins[String(pin.num)] ?? null,
+        ref: pl.part.id, num: String(pin.num), sheet: pl.sheet
+      });
+    }
+  }
+  const atEnd = (seg, p) => ptEq({ x: seg.x1, y: seg.y1 }, p) || ptEq({ x: seg.x2, y: seg.y2 }, p);
+  for (const p of pins) {
+    if (!p.net || isNC(p.net)) continue;
+    const segs = segsBySheet.get(p.sheet) || [];
+    if (segs.some((s) => atEnd(s, p))) continue;
+    if (pins.some((q) => q !== p && q.sheet === p.sheet && ptEq(q, p) && q.net === p.net)) continue;
+    const near = nearestEndpoint(segs, p.x, p.y);
+    const mid = segs.find((s) => G.pointSegDist(p, s) < G.EPS && !atEnd(s, p));
+    const why = mid
+      ? `the tip lands on the middle of net "${mid.net}"'s wire — split that segment at ${p.x},${p.y} in sch.wires`
+      : near
+        ? `no wire ends there; the nearest endpoint ${near.x},${near.y} is ${near.d.toFixed(1)} mil away — add [${p.x},${p.y}] to the points of net "${p.net}" in sch.wires`
+        : `no wire on sheet ${p.sheet} — add a segment ending at [${p.x},${p.y}] to net "${p.net}" in sch.wires`;
+    problems.push(`pin ${p.ref}.${p.num} (net "${p.net}") at ${p.x},${p.y}: ${why}`);
+  }
+  for (const t of [...flags, ...ports]) {
+    const segs = segsBySheet.get(t.sheet) || [];
+    if (segs.some((s) => atEnd(s, t))) continue;
+    const near = nearestEndpoint(segs, t.x, t.y);
+    const kind = t.kind === 'up' || t.kind === 'down' ? 'power flag' : 'net port';
+    problems.push(`${kind} "${t.net}" at ${t.x},${t.y} (sheet ${t.sheet}) is not on a wire endpoint`
+      + (near ? `; the nearest endpoint ${near.x},${near.y} is ${near.d.toFixed(1)} mil away` : '; add a wire ending there'));
+  }
+  const pinSheets = new Map();
+  for (const p of pins) {
+    if (!p.net || isNC(p.net)) continue;
+    if (!pinSheets.has(p.net)) pinSheets.set(p.net, new Set());
+    pinSheets.get(p.net).add(p.sheet);
+  }
+  for (const [net, sheets] of pinSheets) {
+    if (sheets.size < 2) continue;
+    const linked = new Set([...flags, ...ports].filter((t) => t.net === net).map((t) => t.sheet));
+    const list = [...sheets].sort((a, b) => a - b);
+    for (const s of list) {
+      if (!linked.has(s)) {
+        problems.push(`net "${net}" has pins on sheets ${list.join(', ')} but sheet ${s} has no net port or power flag — a wire name alone does not cross pages`);
+      }
+    }
+  }
+  if (problems.length) fail(`schematic connectivity:\n  - ${problems.join('\n  - ')}`);
+
   return { placements, blocks, routed: { wires, flags, ports, issues: [], stats: {
     segments: wires.reduce((n, w) => n + w.segs.length, 0), flags: flags.length, ports: ports.length
   } } };
@@ -189,11 +267,28 @@ function pcb(design, lib) {
 }
 
 function geometry(design, lib, doPcb) {
+  // With sch.place present, every pin also carries its ABSOLUTE sheet position
+  // (sheetAt): the AI must otherwise rotate+translate the symbol-local `at`
+  // itself, and a one-mil arithmetic slip silently disconnects the net.
+  const schPlace = (design.schSpec && design.schSpec.place) || {};
   const parts = design.parts.map((part) => {
     const sym = lib.symbolOf(part);
-    return { ref: part.id, sheet: design.blocks[part.blockIndex].sheet, bbox: sym.bbox,
-      pins: sym.pins.map((p) => ({ num: p.num, name: p.name, net: part.pins[p.num] ?? null,
-        at: [p.x, p.y], rotation: p.rotation, length: p.length })) };
+    const pos = schPlace[part.id];
+    const placed = Array.isArray(pos) && pos.length === 3 && pos.every(Number.isFinite) ? pos : null;
+    return {
+      ref: part.id,
+      sheet: design.blocks[part.blockIndex].sheet,
+      bbox: sym.bbox,
+      ...(placed ? { place: [placed[0], placed[1], placed[2]] } : {}),
+      pins: sym.pins.map((p) => {
+        const r = placed ? G.rotate(p.x, p.y, placed[2] || 0) : null;
+        return {
+          num: p.num, name: p.name, net: part.pins[p.num] ?? null,
+          at: [p.x, p.y], rotation: p.rotation, length: p.length,
+          ...(r ? { sheetAt: [G.round(placed[0] + r.x), G.round(placed[1] + r.y)] } : {})
+        };
+      })
+    };
   });
   const footprints = doPcb ? pcbParts(design).map((part) => {
     const fp = lib.footprintOf(part);

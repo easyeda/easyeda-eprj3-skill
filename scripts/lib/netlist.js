@@ -290,6 +290,8 @@ function sheetNetlist(file) {
     components,
     nets: [...merged.values()].sort((a, b) => a.name.localeCompare(b.name)),
     unconnected: namedUnconnected,
+    // plain geometry, so a caller can point at the exact wire end a pin missed
+    segments: segments.map((s) => ({ x1: s.seg.x1, y1: s.seg.y1, x2: s.seg.x2, y2: s.seg.y2, wire: s.wire })),
     pinCount: pinNodes.length,
     wireCount: segments.length
   };

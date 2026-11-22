@@ -301,7 +301,7 @@ function runDrc(file, opts) {
           a: a.net, b: b.net, at: [Math.round(mid.x), Math.round(mid.y)],
           fix: a.kind === 'pad' && b.kind === 'pad' && a.ref === b.ref
             ? `fix the land pattern of ${a.ref} in parts[].footprint — its own pads must clear each other`
-            : `space is tight: enlarge the board, move the parts with pcb.place, or lower pcb.rules.clearance for fine-pitch parts`
+            : `space is tight: move the parts with pcb.place, reroute the segment in pcb.tracks, enlarge board.width/height in design.json, or lower pcb.rules.clearance for fine-pitch parts`
         });
       }
     }
@@ -313,7 +313,7 @@ function runDrc(file, opts) {
     if (gap < rules.edge - 0.001) {
       add('D003', `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} is ${gap.toFixed(1)} mil from the board edge — min ${rules.edge}`, {
         net: c.net, at: [Math.round((c.rect.x1 + c.rect.x2) / 2), Math.round((c.rect.y1 + c.rect.y2) / 2)],
-        fix: `grow board.width/height or raise pcb.rules.edgeClearance, then re-run build.js --force`
+        fix: `move that copper in pcb.tracks / pcb.place, or enlarge board.width/height in design.json, then rebuild`
       });
     }
   }

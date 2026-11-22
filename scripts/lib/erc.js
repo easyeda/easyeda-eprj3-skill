@@ -48,6 +48,27 @@ function actualSet(netlist) {
   return out;
 }
 
+/** The design net a pin is declared on (null for NC / unknown). */
+function designNetOf(design, ref, num) {
+  if (!design) return null;
+  const p = design.parts.find((x) => (x.multiUnitBase || x.id) === ref || x.id === ref);
+  if (!p) return null;
+  const n = p.pins[String(num)];
+  return n && !/^(NC|DNC\d*)$/i.test(n) ? n : null;
+}
+
+/** Nearest wire endpoint to a point — the coordinate the author meant. */
+function nearestEnd(segments, x, y) {
+  let best = null;
+  for (const s of segments || []) {
+    for (const [px, py] of [[s.x1, s.y1], [s.x2, s.y2]]) {
+      const d = Math.hypot(px - x, py - y);
+      if (!best || d < best.d) best = { d, x: px, y: py };
+    }
+  }
+  return best;
+}
+
 function setsEqual(a, b) {
   if (!a || !b || a.size !== b.size) return false;
   for (const v of a) if (!b.has(v)) return false;
@@ -106,12 +127,18 @@ function runErc(dir, opts) {
     // E001 — unconnected pins
     for (const u of nl.unconnected) {
       if (unused.has(`${norm(u.ref)}.${u.num}`)) continue;
+      const dNet = designNetOf(options.design, norm(u.ref), u.num);
+      const near = nearestEnd(nl.segments, u.x, u.y);
+      const gap = near ? `${near.x},${near.y} (${near.d.toFixed(1)} mil away)` : 'none on this sheet';
       errors.push({
         id: 'E001',
         sheet: label,
-        msg: `unconnected pin ${u.ref}.${u.num} (${u.name}) at ${u.x},${u.y}`,
-        ref: u.ref, pin: u.num,
-        fix: `set parts[].pins["${u.num}"] of ${u.ref} in the design to a net (or "NC" if intentionally unused), then re-run build.js --force`
+        msg: `unconnected pin ${u.ref}.${u.num} (${u.name}) at ${u.x},${u.y}`
+          + `${dNet ? ` — design net "${dNet}"` : ''}; nearest wire endpoint ${gap}`,
+        ref: u.ref, pin: u.num, net: dNet || undefined,
+        fix: dNet
+          ? `add [${u.x},${u.y}] to the points of net "${dNet}" in sch.wires (nearest endpoint ${gap}); edit parts[].pins only if the design net itself is wrong`
+          : `map parts[].pins["${u.num}"] of ${u.ref} to a net (or "NC"), then wire it in sch.wires`
       });
     }
 
@@ -146,7 +173,7 @@ function runErc(dir, opts) {
           sheet: label,
           net: net.name,
           msg: `net "${net.name}" has only one pin (${real[0].ref}.${real[0].num})`,
-          fix: `wire the pin to something, declare the net in "powers", or rename it "NC" in parts[].pins if intentionally unconnected`
+          fix: `net "${net.name}" reaches only ${real[0].ref}.${real[0].num}; end a segment at every other pin's tip in sch.wires (--geometry gives sheetAt), or mark those pins "NC" in parts[].pins`
         });
       }
       if (net.auto || /^N\$/.test(net.name)) {
@@ -238,7 +265,7 @@ function runErc(dir, opts) {
         errors.push({
           id: 'E003', net,
           msg: `design net "${net}" is missing from the built schematic`,
-          fix: `re-run build.js --force; if it persists, check which parts[].pins reference "${net}"`
+          fix: `no wire in sch.wires carries "${net}" — add its segments between the pin tips shown by build.js --geometry (sheetAt)`
         });
         continue;
       }
@@ -251,7 +278,9 @@ function runErc(dir, opts) {
           msg: `net "${net}" differs from the design: expected {${[...want].join(', ')}}, built {${[...have].join(', ')}}`
             + (missing.length ? ` — missing ${missing.join(', ')}` : '')
             + (extra.length ? ` — extra ${extra.join(', ')}` : ''),
-          fix: `re-run build.js --force; if it persists, check parts[].pins entries that reference "${net}" (suspect: ${[...missing, ...extra][0].split('.')[0]})`
+          fix: missing.length
+            ? `net "${net}" in sch.wires does not reach ${missing.join(', ')} — end a segment at each of those pin tips (--geometry sheetAt); edit parts[].pins only if the design net is wrong`
+            : `net "${net}" in sch.wires also reaches ${extra.join(', ')} which the design puts on another net — check the wire net names in sch.wires`
         });
       }
     }
@@ -261,7 +290,7 @@ function runErc(dir, opts) {
         errors.push({
           id: 'E003', net,
           msg: `built net "${net}" is not in the design`,
-          fix: `remove or rename "${net}" in parts[].pins, then re-run build.js --force`
+          fix: `sch.wires uses "${net}" but no design pin has it — fix the net name in sch.wires (or in parts[].pins if the design is wrong)`
         });
       }
     }
