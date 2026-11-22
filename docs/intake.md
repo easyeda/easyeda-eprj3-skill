@@ -15,7 +15,9 @@ node scripts/intake.js template --out req.json      # 1. 取固定输入模板
 # 2. 用户填 req.json（只填知道的，其余留空/null）
 node scripts/intake.js check  --req req.json        # 3. 缺必填 → exit 1 + 逐条追问文案
 node scripts/intake.js resolve --req req.json --out design.json   # 4. 方案摘要 + design.json
-node scripts/build.js --design design.json --dir <proj> --plan    # 5. 人工确认点（不写盘）
+node scripts/build.js --design design.json --dir <proj> --geometry
+# 按 ai-layout.md 补全几何后预检
+node scripts/build.js --design design.json --dir <proj> --plan
 node scripts/build.js --design design.json --dir <proj>           # 6. 正式构建 + 五道门禁
 ```
 
@@ -85,27 +87,11 @@ node scripts/build.js --design design.json --dir <proj>           # 6. 正式构
 1. **电源方案**：输入轨、内部轨、电流（决定线宽与拓扑）。
 2. **主控与关键器件选型**（含晶振/存储）。
 3. **对外接口定义与命名**（网络名会进板子文件，改一次全网）。
-4. **层数与结构约束**：板框不问了——构建时自动取封装 bbox 面积 ×1.25（`design.json` 里的 `board.width/height` 会被忽略；小板以板边安全间距为准，会略大）。
-5. **PCB 布局方式（必须问，二选一）**：
-   - **新建工程**："PCB 布局用 AI 生成的坐标（skill 规划，可精确约束 `pcb.place`），还是 EDA 客户端自动布局？" → `--layout skill` / `--layout client`；
-   - **已有工程**："保留已有布局，还是重新布局？" 保留 → `--keep-layout`（读取旧 PCB 坐标，不再自动布局）；重新布局 → `--layout client`，并追问"允许移动锁定的元件吗？" 允许 → `--move-locked`，不允许 → 不加（锁定件保持原位）。
-   - 选 `client` 时，`pcb.place` 里的器件默认锁定、不会被自动布局挪走；只有 `--move-locked` 才允许移动。
-6. **自动修复将写入的内容**：`node scripts/autofix.js --design design.json --diff` 打印 before/after 行级差异 + 变更行数，**不写盘**；确认后才去掉 `--diff` 应用。
-7. **构建前预演**：`build.js --plan` 在一次性目录里真实跑完整构建（lint/drc 分数是真的），但目标目录一个字节都不写；用户确认后再正式 `build.js`。
-8. **铜皮不在本 skill 范围**：永不布线、永不铺铜——布局交给机器，铜皮交给人。`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数），走线/过孔/铺铜在 EasyEDA 客户端完成。
+4. **层数与结构约束**：确认板框、固定孔、连接器及禁布区；构建不会自行改变尺寸。
+5. **布局布线范围**：新建由 AI 显式布局布线；修改已有工程时先确认允许移动的器件及允许重布的网络。
+6. **自动修复**：先看 `autofix.js --diff`，确认后再改。
 
-`resolve` 的输出格式就是为确认点设计的——电源/板框/模块/规模/网络/规则/待确认逐行可读：
-
-```
-方案 sensor-board
-  电源  输入 VBUS → 轨 3V3（120 mA）
-  板框  自动（封装 bbox 面积 ×1.25，小板受板边间距约束会略大）· 2 层 · 封装 0603 · 只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）
-  模块  usb-c-power(4) + ldo-3v3(4) + mcu-min(8) + crystal(5) + i2c-sensor(5) + uart-bridge(7)
-  规模  33 parts · 20 nets
-  规则  电源轨 16 mil（注记，DRC 判导入铜时的每网下限）· clearance/track 用默认
-  待确认
-    · 板框有硬性限制吗？→ 本版自动按封装 bbox 面积 ×1.25 生成（小板以板边安全间距为准），不接受指定尺寸（只给层数即可）
-```
+需求解析完成后，按 [AI 布局布线](ai-layout.md) 补全几何，再运行 `build.js --plan` 和正式构建。
 
 ## 缓存与速度
 

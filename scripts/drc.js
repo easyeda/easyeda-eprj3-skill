@@ -66,6 +66,7 @@ function main() {
   // that legitimately declared fine-pitch rules.
   let pourNet = opts['pour-net'] || 'GND';
   let netWidths = {};
+  let noConnect;
   if (opts.design) {
     const D = require('./lib/design');
     const design = D.readDesign(path.resolve(opts.design));
@@ -78,6 +79,7 @@ function main() {
     if (dr.minAngle !== undefined) rules.minAngle = dr.minAngle;
     if (!opts['pour-net'] && design.pcbSpec.pour && design.pcbSpec.pour.net) pourNet = design.pcbSpec.pour.net;
     netWidths = design.netWidths || {};
+    noConnect = D.noConnectPins(design);
   }
 
   // The strategy ships placement-only boards; D004/D006 (routing + pour
@@ -87,7 +89,7 @@ function main() {
   if (opts['placed-only']) placedOnly = true;
   else if (opts.routed) placedOnly = false;
 
-  const r = runDrc(file, { rules, pourNet, netWidths, placedOnly });
+  const r = runDrc(file, { rules, pourNet, netWidths, placedOnly, noConnect });
   if (opts.json) {
     console.log(JSON.stringify(r, null, 2));
   } else {

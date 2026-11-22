@@ -71,6 +71,8 @@ function runErc(dir, opts) {
       for (const uid of m.units) baseOf.set(uid, base);
     }
   }
+  const { noConnectPins, NC_NET } = require('./design');
+  const unused = noConnectPins(options.design);
   const all = N.projectNetlist(dir);
   // PCB component refs are the BASE designators (units are re-merged into one
   // footprint), so a unit designator "U34A" normalizes to "U34". Exact via the
@@ -103,6 +105,7 @@ function runErc(dir, opts) {
 
     // E001 — unconnected pins
     for (const u of nl.unconnected) {
+      if (unused.has(`${norm(u.ref)}.${u.num}`)) continue;
       errors.push({
         id: 'E001',
         sheet: label,
@@ -229,6 +232,7 @@ function runErc(dir, opts) {
       }
     }
     for (const [net, want] of expected) {
+      if (NC_NET.test(net)) continue;
       const have = built.get(net);
       if (!have) {
         errors.push({
@@ -252,6 +256,7 @@ function runErc(dir, opts) {
       }
     }
     for (const net of built.keys()) {
+      if (NC_NET.test(net)) continue;
       if (!expected.has(net)) {
         errors.push({
           id: 'E003', net,

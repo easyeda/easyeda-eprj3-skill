@@ -137,37 +137,6 @@ function pointSegDist(p, s) {
   return Math.hypot(p.x - (s.x1 + t * dx), p.y - (s.y1 + t * dy));
 }
 
-/**
- * Route a 2-segment orthogonal path between two points.
- * Returns a list of segments; `mode` picks the corner that leaves the source
- * horizontally ('hv'), vertically ('vh'), or both candidates ('auto' = pick
- * the shorter, ties broken by 'hv').
- */
-function orthoPath(from, to, mode) {
-  const same = (a, b) => Math.abs(a.x - b.x) < EPS && Math.abs(a.y - b.y) < EPS;
-  if (same(from, to)) return [];
-  const hv = () => {
-    const segs = [];
-    const corner = { x: to.x, y: from.y };
-    if (!same(from, corner)) segs.push({ x1: from.x, y1: from.y, x2: corner.x, y2: corner.y });
-    if (!same(corner, to)) segs.push({ x1: corner.x, y1: corner.y, x2: to.x, y2: to.y });
-    return segs;
-  };
-  const vh = () => {
-    const segs = [];
-    const corner = { x: from.x, y: to.y };
-    if (!same(from, corner)) segs.push({ x1: from.x, y1: from.y, x2: corner.x, y2: corner.y });
-    if (!same(corner, to)) segs.push({ x1: corner.x, y1: corner.y, x2: to.x, y2: to.y });
-    return segs;
-  };
-  if (mode === 'hv') return hv();
-  if (mode === 'vh') return vh();
-  const a = hv(); const b = vh();
-  const la = a.reduce((n, s) => n + segLen(s), 0);
-  const lb = b.reduce((n, s) => n + segLen(s), 0);
-  return la <= lb ? a : b;
-}
-
 /** Bend count of a polyline (used to score route quality). */
 function bends(segs) {
   let n = 0;
@@ -207,7 +176,6 @@ module.exports = {
   segIntersectsRect,
   segsIntersect,
   pointSegDist,
-  orthoPath,
   bends,
   translateBox,
   mirrorY

@@ -15,7 +15,6 @@
  *   node scripts/eda.js netlist --dir <project> --out netlist.json
  *   node scripts/eda.js sch-drc --dir <project>
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
- *   node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--move-locked] [--no-save] [--timeout 900000]
  *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 (PCB data units, mil) [--layers 1,2] [--no-save]
  *
  * Requires the client V4.1.94+ (source APIs 4.1.83+). `--cli <path>` overrides
@@ -334,37 +333,6 @@ const pages = await pagesOf(); return pages.map((p) => ({ name: p.name }));`,
   });
 }
 
-function cmdPcb(args) {
-  withProject(args, (info, session) => {
-    const timeout = Number(args.timeout) || 900000;
-    const code = `
-${READY_HELPER}
-const pcbs = await pcbsOf();
-if (!pcbs.length) throw new Error('no PCB in this project');
-await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
-await new Promise((r) => setTimeout(r, 1200));
-const out = { pcb: pcbs[0].name, cleared: false, unlocked: 0, layout: null, route: null, saved: false };
-if (${!!args['move-locked']}) {
-  // the auto engine keeps primitiveLock'ed components in place; --move-locked
-  // clears every lock first, so the user's "yes, move locked parts" is honoured
-  try {
-    const comps = await eda.pcb_PrimitiveComponent.getAll();
-    for (const c of comps) {
-      const id = c.getState_PrimitiveId ? c.getState_PrimitiveId() : null;
-      if (id) { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: false }); out.unlocked += 1; }
-    }
-  } catch (e) { out.unlockErr = String(e && e.message || e); }
-}
-if (${!!args.clear}) { try { await eda.pcb_Document.clearRouting(); out.cleared = true; } catch (e) { out.clearErr = String(e && e.message || e); } }
-if (${!!args.layout}) { try { out.layout = await eda.pcb_Document.autoLayout(); } catch (e) { out.layoutErr = String(e && e.message || e); } }
-if (${!!args.route}) { try { out.route = await eda.pcb_Document.autoRouting(); } catch (e) { out.routeErr = String(e && e.message || e); } }
-if (${!args['no-save']}) { await eda.pcb_Document.save(); out.saved = true; }
-return out;
-`;
-    print(CLI.invoke(info.bin, session, code, { timeout }));
-  });
-}
-
 function cmdPour(args) {
   withProject(args, (info, session) => {
     const net = args.net;
@@ -430,8 +398,14 @@ function cmdPins(args) {
   const CLI_LIB = require('./lib/cli-lib');
   const lcsc = args.lcsc ? String(args.lcsc) : undefined;
   const name = args.device || args.q || undefined;
-  if (!lcsc && !name) throw new Error('--lcsc Cxxxx, --q <keyword> or --device <name> is required');
-  const rows = CLI_LIB.resolveDevices([{ key: lcsc || name, name, lcsc }], { cli: args.cli });
+  if (!lcsc && !name && !args.batch) throw new Error('--lcsc Cxxxx, --q <keyword>, --device <name>, or --batch <json> is required');
+  const req = args.batch ? JSON.parse(fs.readFileSync(path.resolve(args.batch), 'utf8')) : [{ key: lcsc || name, name, lcsc, subPartName: args['sub-part'] }];
+  const rows = CLI_LIB.resolveDevices(req, { cli: args.cli });
+  if (args.batch) {
+    if (args.out) fs.writeFileSync(path.resolve(args.out), JSON.stringify(rows, null, 2));
+    else print(rows);
+    return;
+  }
   const d = rows && rows[0];
   if (!d || d.error) return fail('DEVICE_NOT_FOUND', (d && d.error) || 'device not found', { value: d || null });
   const sym = d.symbol || {};
@@ -464,7 +438,6 @@ const COMMANDS = {
   netlist: cmdNetlist,
   'sch-drc': cmdSchDrc,
   screenshot: cmdScreenshot,
-  pcb: cmdPcb,
   pour: cmdPour
 };
 

@@ -87,10 +87,11 @@ for (const r of reqs) {
   if (!d) { out.push({ key: r.key, error: 'not found', name: r.name || r.lcsc }); continue; }
   const symUuid = (d.symbol && d.symbol.uuid) || d.symbolUuid;
   const fpUuid = (d.footprint && d.footprint.uuid) || d.footprintUuid;
-  const sym = symUuid ? await try2(() => eda.lib_Symbol.getGeometry(symUuid, sys)) : null;
+  const sym = symUuid ? await try2(() => eda.lib_Symbol.getGeometry(symUuid, sys, r.subPartName)) : null;
   const fp = fpUuid ? await try2(() => eda.lib_Footprint.getGeometry(fpUuid, sys)) : null;
   out.push({
     key: r.key,
+    subPartName: r.subPartName,
     name: d.name,
     uuid: d.uuid,
     libraryUuid: sys,
@@ -228,14 +229,12 @@ function placeInstances(projectDir, placement, opts) {
     moved: 0,
     shellsRemoved: 0,
     batches: 0,
-    layout: null,
-    locks: null,
     attrs: [],
     nc: { marked: [], failed: [] }
   };
   const timeout = Number((opts && opts.timeout) || 600000);
   // Designator/name rows go through the source API (updateAttribute): the
-  // positions are computed by the offline engine but applied by the client, so
+  // positions are derived from the authored schematic but applied by the client, so
   // they also cover symbols the client placed itself.
   const applyAttrs = (session) => {
     for (const chunk of chunkBySize(placement.attrPlan || [], 9000)) {
@@ -335,31 +334,6 @@ function placeInstances(projectDir, placement, opts) {
         });
         results.moved += (mv && mv.moved) || 0;
         results.footprints.push(...((mv && mv.footprints) || []));
-        results.batches += 1;
-      }
-      // Client auto layout: the board outline exists and every footprint is
-      // imported, so hand the board to the client's own layout engine (the
-      // same command as the UI's "auto layout"). The planned positions above
-      // stay as the fallback when the engine is missing or fails.
-      if (placement.autoLayout) {
-        // Explicit pcb.place parts are locked so the EDA auto layout keeps
-        // them; --move-locked unlocks everything first (the user allowed it).
-        if ((placement.lockRefs || []).length || placement.moveLocked) {
-          try {
-            results.locks = CLI.invoke(info.bin, session, SET_LOCKS, {
-              args: { plan: { lock: placement.lockRefs || [], unlock: !!placement.moveLocked } },
-              timeout
-            });
-          } catch (e) {
-            results.locks = { locked: [], unlocked: 0, error: String(e && e.message || e) };
-          }
-          results.batches += 1;
-        }
-        try {
-          results.layout = CLI.invoke(info.bin, session, AUTO_LAYOUT, { timeout });
-        } catch (e) {
-          results.layout = { ok: false, error: String(e && e.message || e) };
-        }
         results.batches += 1;
       }
       // fresh session: every component (authored + client-placed) is loaded,
@@ -470,6 +444,7 @@ for (const s of plan.sch || []) {
       pageName: page.name,
       libraryUuid: s.libraryUuid || sys,
       name: s.deviceName,
+      subPartName: s.subPartName,
       x: s.x, y: s.y,
       designator: s.designator,
       rotation: s.rotation || 0
@@ -708,86 +683,6 @@ for (const a of plan.attrs || []) {
   out.attrs.push(rec);
 }
 await eda.sch_Document.save().catch(() => {});
-return out;
-`;
-
-/** Lock / unlock PCB components before the client auto layout.
- *  The engine respects `primitiveLock`, so explicit pcb.place parts keep their
- *  coordinates; `unlock` (--move-locked) clears every lock and lets the engine
- *  move everything. */
-const SET_LOCKS = `
-${READY_HELPER}
-const plan = __CLI__.args.plan;
-const pcbs = await pcbsOf();
-if (!pcbs.length) return { locked: [], unlocked: 0, error: 'no PCB in this project' };
-await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
-await new Promise((r) => setTimeout(r, 1000));
-const comps = await eda.pcb_PrimitiveComponent.getAll();
-const want = new Set((plan.lock || []).map(String));
-const out = { locked: [], unlocked: 0, missing: [] };
-for (const c of comps) {
-  const d = c.getState_Designator ? String(c.getState_Designator()) : '';
-  const id = c.getState_PrimitiveId ? c.getState_PrimitiveId() : null;
-  if (!d || !id) continue;
-  if (plan.unlock) {
-    try { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: false }); out.unlocked += 1; } catch (e) { /* keep going */ }
-  } else if (want.has(d)) {
-    try { await eda.pcb_PrimitiveComponent.modify(id, { primitiveLock: true }); out.locked.push(d); } catch (e) { out.missing.push(d); }
-  }
-}
-await eda.pcb_Document.save();
-return out;
-`;
-
-/** Run the client's PCB auto layout on an imported board.
- *  The footprint positions from the offline placer are the fallback: if the
- *  engine is unavailable or reports a failure the board keeps them. */
-const AUTO_LAYOUT = `
-${READY_HELPER}
-const pcbs = await pcbsOf();
-if (!pcbs.length) return { ok: false, error: 'no PCB in this project' };
-await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
-await new Promise((r) => setTimeout(r, 1200));
-const out = {
-  pcb: pcbs[0].name, ok: false, started: false, durationMs: null,
-  successComponents: null, totalComponents: null, failed: null,
-  error: null, saved: false
-};
-const engine = eda.pcb_Document && eda.pcb_Document.autoLayout;
-if (typeof engine !== 'function') {
-  out.error = 'pcb_Document.autoLayout is not available in this client build';
-  return out;
-}
-try {
-  const r = await engine.call(eda.pcb_Document);
-  out.started = true;
-  if (r && typeof r === 'object') {
-    out.ok = r.success !== false;
-    if (!out.ok) out.error = 'auto layout reported failure';
-    if (typeof r.duration === 'number') out.durationMs = r.duration;
-    if (typeof r.successComponentsCount === 'number') out.successComponents = r.successComponentsCount;
-    if (typeof r.totalComponentsCount === 'number') out.totalComponents = r.totalComponentsCount;
-    if (Array.isArray(r.failedComponents)) out.failed = r.failedComponents.length;
-  } else {
-    out.ok = !!r;
-  }
-} catch (e) {
-  out.error = String(e && e.message || e);
-}
-// the engine commits asynchronously; give it a moment before persisting
-await new Promise((r) => setTimeout(r, 2000));
-// read the arranged positions: the build grows the board outline when the
-// engine's layout needs more room than the planned outline
-try {
-  const comps = await eda.pcb_PrimitiveComponent.getAll();
-  out.components = comps.map((c) => ({
-    designator: c.getState_Designator ? c.getState_Designator() : null,
-    x: c.getState_X ? c.getState_X() : null,
-    y: c.getState_Y ? c.getState_Y() : null,
-    rotation: c.getState_Rotation ? c.getState_Rotation() : 0
-  })).filter((c) => c.designator && typeof c.x === 'number' && typeof c.y === 'number');
-} catch (e) { out.components = []; }
-try { await eda.pcb_Document.save(); out.saved = true; } catch (e) { /* save error is not fatal */ }
 return out;
 `;
 

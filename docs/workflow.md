@@ -6,19 +6,19 @@ All coordinates are **mil** unless a script's help says otherwise.
 
 ## 0. Prerequisite — read easyeda-pro-format-skill (MANDATORY GATE)
 
-Before any other step in this document, the AI agent MUST locate and read the companion **easyeda-pro-format-skill** repo (https://github.com/easyeda/easyeda-pro-format-skill). This skill's scripts encode a subset of the format; the companion repo is the authoritative, machine-checkable spec (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). Do **not** generate, edit, or validate any `.eprj3` file based on this skill alone.
+Before any other step in this document, the AI agent MUST locate and read the companion **easyeda-pro-format-skill** repo (https://github.com/easyeda/easyeda-format-skill). This skill's scripts encode a subset of the format; the companion repo is the authoritative, machine-checkable spec (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). Do **not** generate, edit, or validate any `.eprj3` file based on this skill alone.
 
 1. **Locate** the repo (in order):
    - `c:\Users\easyeda\.claude\skills\easyeda-pro-format-skill\` (default skill directory)
    - Any path already registered under that name in the environment
-   - Otherwise: `git clone https://github.com/easyeda/easyeda-pro-format-skill <target-dir>`
+   - Otherwise: `git clone https://github.com/easyeda/easyeda-format-skill <target-dir>`
 2. **Read** its `SKILL.md`, then the relevant `schemas/*.json`, `primitives/*.md` and `examples/` entries for the record types this session will touch.
 3. **Keep the path** — later cross-checking uses it:
    ```bash
    node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
    ```
 
-**Hard rule:** if the repo cannot be found or cloned, STOP and tell the user it must be installed before any eprj3 authoring proceeds. Never guess record shapes from memory. Where this skill's docs, a schema, and a real record disagree, the real record wins (ground truth: https://github.com/easyeda/easyeda-pro-eprj3-format).
+**Hard rule:** if the repo cannot be found or cloned, STOP and tell the user it must be installed before any eprj3 authoring proceeds. Never guess record shapes from memory. Where this skill's docs, a schema, and a real record disagree, the real record wins (ground truth: https://github.com/easyeda/easyeda-eprj3-format).
 
 ## 1. Discover
 
@@ -27,7 +27,7 @@ Ask the user:
 1. **Storage path** (absolute, no existing `.eprj3`).
 2. **Project name** (defaults to folder basename).
 3. **Schematic requirements**: components (pin numbers/names), nets, net labels, power symbols, net ports, free text, graphic annotations, sheet count.
-4. **PCB requirements**: board outline size, placement, pad-to-net map, silkscreen text. Tracks, vias and copper pours are **not** authored by this skill (since 1.13) — note them for the client-side handoff, but do not expect the build to lay them.
+4. **PCB requirements**: board outline, layer stack, mechanical keepouts, electrical and manufacturing constraints, and silkscreen. The AI authors exact placement, tracks, vias, and any requested copper-region boundaries; EasyEDA Pro fills the specified regions and verifies the resulting board.
 5. **Component geometry**: pin/pad specs per part (from the datasheet). There is no `.elibz2` import — the scripts generate symbols/footprints from specs.
 
 Refuse to start until the answers are concrete.
@@ -116,6 +116,8 @@ These are non-electrical annotations — they carry no connectivity (use wires f
 
 ## 6. Wire it up
 
+Inspect the exact pin tips with `node scripts/pins.js --dir <dir>` and author each segment. The wire command does not compute a path between pins.
+
 ```bash
 node scripts/add-wire.js --dir <dir> --sch Schematic1 --sheet P1 \
   --segs "300,-420,300,-380" [--net SIG]
@@ -137,45 +139,9 @@ node scripts/set-refdes.js set --dir <dir> --sch Schematic1 --sheet P1 \
 
 Both commands act on the single sheet or PCB document passed (`--sch/--sheet` or `--pcb`); with multiple sheets, renumber each one and keep prefixes globally unique yourself.
 
-## 8. PCB placement (copper is the client's job)
+## 8. PCB placement and routing
 
-The declared strategy is placement-only **and always has been since 1.13**:
-`add-footprint` is the deliverable. The copper primitives
-(`add-track.js`, `add-via.js`, `add-pour.js`, `add-fill.js`, `pour-auto.js`)
-and the `build.js --route` / `--pour` flags were removed from the skill —
-tracks, vias and pours are drawn in the EasyEDA Pro client, which is exactly
-where a human has full control. `build.js` prints the `rats:` handoff list of
-nets still to connect. Keep-out regions (`add-region.js`) stay: a keepout is
-placement advice, not copper.
-
-```bash
-node scripts/add-footprint.js --dir <dir> --pcb PCB1 --symbol RES --footprint R0603 \
-  --x 300 --y 300 --angle 90 --refdes R1 --nets "1:VCC,2:SIG"
-```
-
-`--angle` defaults to `0` (no rotation) — pass it explicitly when the footprint should sit rotated.
-
-PCB graphics and keepout regions:
-
-```bash
-node scripts/add-pcb-shape.js rect   --dir <dir> --pcb PCB1 --x 500 --y 500 --w 400 --h 300 [--layer 1]
-node scripts/add-pcb-shape.js poly   --dir <dir> --pcb PCB1 --pts "500,500,900,500,700,800" [--closed]
-node scripts/add-pcb-shape.js circle --dir <dir> --pcb PCB1 --cx 700 --cy 650 --r 100
-node scripts/add-pcb-shape.js arc    --dir <dir> --pcb PCB1 \
-  --x1 500 --y1 500 --x2 900 --y2 500 --angle 90
-node scripts/add-pcb-text.js --dir <dir> --pcb PCB1 --value "REV A" \
-  --x 2000 --y 2800 [--layer 1] [--origin 4] [--angle 0]
-node scripts/add-region.js rect --dir <dir> --pcb PCB1 --prohibit "COMPONENT,TRACK" \
-  --x 200 --y 200 --w 300 --h 200 [--name KEEP1] [--region-type PROHIBIT|CONSTRAINT]
-```
-
-`--prohibit` accepts the format spec's string enums: `COMPONENT` `VIA` `TRACK` `FILL` `COPPER` `PLANE` (comma-separated, emitted as the `prohibitType` array). The legacy PROP record no longer exists in the format — per-primitive styling such as `specialColor` now lives on the ATTR record.
-
-POUR/LINE/VIA records remain fully readable and checkable — imported and client-saved projects contain them, and the DRC reviews that copper — but the skill no longer writes them. PCB shape arcs use a signed sweep angle (CCW positive).
-
-Rectangles (`init` board outline, `add-pcb-shape/add-region rect`) take the **bottom-left corner** (`--x --y`) plus size (`--w --h`) in the same coordinate space as the placements. The scripts emit the client's anchored rect form `["R", x, y+h, w, h]` (anchor = min-x/max-y corner, height extends toward −y) so the drawn area lands exactly where you intend — the default board outline is 4000×3000 mil covering `0..4000 × 0..3000` (resize with `init --board-w/--board-h`).
-
-`--nets num:NAME` maps pad numbers to net names and creates the NET records. Keep the pad geometry in mind when the human routes in the client: a 0402 pad at footprint x=-16.54 lands at page x = `300 + (-16.54)·cos(90°) - 0·sin(90°)` style transforms — good escape directions at placement time are what make the later copper work clean.
+Determine mechanical and electrical constraints, then author explicit coordinates, tracks and vias as described in [AI layout](ai-layout.md). On an existing board, use targeted editor operations when untouched tracks or positions must be preserved. Verify the resulting copper and fill in EasyEDA Pro.
 
 ## 9. Validate (loop)
 
@@ -220,8 +186,7 @@ Tell the user:
 <name>.eprj3 at <dir>
   - <N> schematic components + power symbols / ports
   - <M> wires / net labels, annotations
-  - <K> PCB footprints + pad-net links (placement only) — rats: <R> net(s) to
-    route/pour in the EasyEDA client
+  - <K> PCB footprints, explicit tracks and vias, and routed DRC findings
   - Validated (0 errors, 0 warnings)
   - Opened in EasyEDA Pro
 ```

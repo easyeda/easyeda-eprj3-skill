@@ -5,8 +5,8 @@
  *
  * The point of this command is to stop an agent from deriving coordinates by
  * hand: every pin is printed with its absolute tip (mil), the direction the
- * stub leaves the body, and the net it is on. Feed those numbers straight into
- * add-wire --from/--to, or use the references and let the script do the math.
+ * stub leaves the body, and the net it is on. Use the pin tips when authoring
+ * explicit segments for add-wire --segs.
  *
  *   node scripts/pins.js --dir <project> [--sch Schematic1] [--sheet P1]
  *                        [--ref R1] [--json]

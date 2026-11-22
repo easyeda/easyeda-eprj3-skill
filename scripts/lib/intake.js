@@ -286,15 +286,13 @@ function resolve(req, opts) {
     nets: {},
     pcb: {}
   };
-  // Strategy (1.13): the skill NEVER lays copper — no pour is ever written.
-  // Copper is finished by a human in the client; build.js reports the `rats`
-  // (nets awaiting copper) for that handoff.
+  // Preserve the circuit and mechanical constraints for AI geometry authoring.
   const bw = getPath(req, 'board.width');
   const bh = getPath(req, 'board.height');
-  if (bw && bh) design.board = { width: Number(bw), height: Number(bh) };
+  design.board = { layers: Number(getPath(req, 'board.layers') || 2) };
+  if (bw && bh) Object.assign(design.board, { width: Number(bw), height: Number(bh) });
   if (getPath(req, 'output.schematic_only')) design.pcb = false;
-  // 单页/多页：intake 的询问结果直接进 design 契约（blocks 自动按页分配，
-  // 也可以在 blocks[].sheet 里显式指定）
+  // AI assigns the blocks to explicit sheet numbers before build.
   const sheets = Number(getPath(req, 'schematic.sheets'));
   if (sheets > 1) design.sheets = Math.floor(sheets);
 
@@ -507,7 +505,7 @@ function renderPlan(plan) {
     }
   }
   for (const n of plan.notes) L.push(`  注意  ${n}`);
-  L.push('  下一步  node scripts/build.js --design <file> --dir <dir> --plan   # 先看方案，确认后去掉 --plan 构建');
+  L.push('  下一步：用 build.js --geometry 查看引脚和焊盘，补全 AI 布局布线后再 --plan');
   return L.join('\n');
 }
 

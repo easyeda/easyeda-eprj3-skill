@@ -68,7 +68,9 @@ function createAuthoring() {
     // ------- document level
     name(n) { design.name = n; return A; },
     sheets(n) { design.sheets = n; return A; },
-    board(w, h) { if (w || h) design.board = { width: w || 1600, height: h || 1000 }; return A; },
+    board(width, height, layers = 2) { design.board = { width, height, layers }; return A; },
+    schematicLayout(sch) { design.sch = sch; return A; },
+    pcbLayout(pcb) { design.pcb = { ...design.pcb, ...pcb }; return A; },
     power(net, dir) { design.powers[net] = dir === 'down' ? 'down' : 'up'; return A; },
     net(net, opts) { design.nets[net] = opts || {}; return A; },
     frame(opts) { design.frame = opts || {}; return A; },

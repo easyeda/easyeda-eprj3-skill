@@ -15,10 +15,12 @@
  */
 const N = require('./lib/netlist');
 const { compare } = require('./lib/netcheck');
+const D = require('./lib/design');
 const { parseArgs, printHelp } = require('./lib/utils');
 
 const SCHEMA = [
   { name: 'dir', desc: 'project directory', required: true },
+  { name: 'design', desc: 'design JSON (identifies intentionally unconnected pins)' },
   { name: 'json', desc: 'machine-readable report', hasValue: false },
   { name: 'quiet', desc: 'only the final verdict line', hasValue: false }
 ];
@@ -32,7 +34,8 @@ function main() {
   }
   const { opts } = parseArgs(argv, SCHEMA);
   const all = N.projectNetlist(opts.dir);
-  const report = compare(all);
+  const design = opts.design ? D.readDesign(opts.design) : null;
+  const report = compare(all, D.multiUnitBaseOf(design?.multiUnits), D.noConnectPins(design));
   const padTotal = report.summary.pcb.reduce((n, p) => n + p.pads, 0);
   const verdict = report.match
     ? `netcheck: OK — schematic and PCB netlists match (${report.summary.schematic.pins} pins ↔ ${padTotal} pads)`

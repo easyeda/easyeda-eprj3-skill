@@ -60,7 +60,7 @@ before any variant touches them.
 
 `key` is what an illegal variant refers to with `"base"`.
 
-**Copper on the baselines.** Since 1.13 `build.js` never routes and never pours,
+**Copper on the baselines.** Legacy mutation fixtures were written for copper-free boards. The default authored-layout regression lives in `test/pipeline.js`.
 so a generated baseline's PCB carries footprints and pad-net links only. The
 copper variants (POUR geometry in `format.json`, the erased/retagged tracks in
 `electrical.json`) would then tamper with nothing — to keep those `expect`s

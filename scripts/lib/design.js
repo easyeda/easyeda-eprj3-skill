@@ -3,7 +3,7 @@
  * design.js — the declaration layer.
  *
  * A design file (`design.json`) describes WHAT the circuit is; this module
- * turns that into a validated, fully-positioned plan (WHERE everything goes).
+ * normalizes the circuit and preserves explicitly authored geometry.
  * The build driver only executes plans, and the checkers only re-read the
  * resulting project, so both sides stay honest about the same data.
  *
@@ -19,8 +19,7 @@
  *     { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "330R",
  *       "pins": { "1": "VCC", "2": "LED_A" } }
  *   ],
- *   "pcb": { "place": { "R1": [300, 300, 0] }, "route": true,
- *            "pour": { "net": "GND" } }
+ *   "sch": { "place": { "R1": [300, 300, 0] }, "wires": [] }
  * }
  *
  * `symbol`/`footprint` accept a library entry name, an inline symbol spec
@@ -36,20 +35,13 @@ const G = require('./geom');
 // this dependency direction cannot form a cycle.
 const { readJsonText, parseJsonText } = require('./utils');
 const P = require('./parts');
-const T = require('./sch-tokens');
 
 const DEFAULTS = {
   schematic: 'Schematic1',
   sheet: 'P1',
   pcb: 'PCB1',
-  board: { width: 1600, height: 1000 },
-  layout: {
-    cols: 3, cellW: T.CELL_W, cellH: T.CELL_H,
-    blockGapX: T.BLOCK_GAP_X, blockGapY: T.BLOCK_GAP_Y, margin: T.MARGIN
-  }
+  board: { width: 1600, height: 1000 }
 };
-
-const BLOCK_TITLE_H = T.TITLE_H;
 
 class DesignError extends Error {}
 
@@ -101,7 +93,7 @@ function resolveIcPart(p) {
   if (p.symbol) fail(`part "${p.id}": give "ic" OR "symbol", not both`);
   if (p.footprint) fail(`part "${p.id}": give "ic" OR "footprint", not both (the system library ships one)`);
   return Object.assign({}, p, {
-    libraryRef: { name: String(p.ic), lcsc: p.lcsc === undefined ? null : String(p.lcsc) }
+    libraryRef: { name: String(p.ic), lcsc: p.lcsc === undefined ? null : String(p.lcsc), subPartName: p.subPartName || undefined }
   });
 }
 
@@ -144,7 +136,8 @@ function expandMultiUnits(rawParts) {
         ids.push(uid);
         out.push(Object.assign({}, p, {
           id: uid,
-          symbol: { name: sym.name, designator: sym.designator, multipart: base, partIndex: i },
+          symbol: p.ic ? undefined : { name: sym.name, designator: sym.designator, multipart: base, partIndex: i },
+          subPartName: u.subPartName,
           pins: Object.assign({}, u.pins),
           units: undefined,
           multiUnitBase: base,
@@ -182,8 +175,8 @@ function multiUnitBaseOf(multiUnits) {
 /** Apply defaults and resolve the shorthand forms into one canonical shape. */
 function normalize(raw, file) {
   if (!raw || typeof raw !== 'object') fail('design must be a JSON object');
-  const expanded = expandMultiUnits(Array.isArray(raw.parts) ? raw.parts.map((p) => resolveIcPart(p)) : []);
-  const rawParts = expanded.parts;
+  const expanded = expandMultiUnits(Array.isArray(raw.parts) ? raw.parts : []);
+  const rawParts = expanded.parts.map(resolveIcPart);
   const d = {
     file: file || null,
     name: raw.name || (file ? path.basename(file).replace(/\.json$/i, '') : 'project'),
@@ -191,10 +184,9 @@ function normalize(raw, file) {
     sheet: (raw.sheet && (raw.sheet.name || raw.sheet.title)) || raw.sheetName || DEFAULTS.sheet,
     pcb: raw.pcbName || DEFAULTS.pcb,
     board: Object.assign({}, DEFAULTS.board, raw.board || {}),
-    // an explicitly declared board is a floor (grown if needed); an undeclared
-    // one auto-fits the parts (build.js shrinks the 1600×1000 default to fit)
-    boardDeclared: !!(raw.board && Number(raw.board.width) > 0 && Number(raw.board.height) > 0),
-    layout: Object.assign({}, DEFAULTS.layout, raw.layout || {}),
+    boardDeclared: !!(raw.board && Object.hasOwn(raw.board, 'width') && Object.hasOwn(raw.board, 'height')),
+    schSpec: raw.sch,
+    frame: raw.frame || {},
     powers: Object.assign({}, raw.powers || {}),
     nets: Object.assign({}, raw.nets || {}),
     blocks: [],
@@ -324,7 +316,6 @@ function normalize(raw, file) {
       requiredRoles: p.requiredRoles || null,
       roles: Object.keys(roleNets).length ? roleNets : null,
       rotation: rot,
-      // the author chose this rotation — sch-tidy must not move it
       rotationExplicit: p.rotation !== undefined || p.rot !== undefined,
       // multi-unit component: this part is one unit of `multiUnitBase` (the PCB
       // stage re-merges units into ONE footprint with this base designator)
@@ -364,6 +355,7 @@ function normalize(raw, file) {
     if (!d.blocks.length) d.blocks.push({ title: 'CIRCUIT', parts: [], sheet: null });
     d.blocks[d.blocks.length - 1].parts.push(...leftovers);
   }
+  d.explicitSheetAssignments = leftovers.length === 0 && d.blocks.every((b) => b.sheet !== null);
   // drop empty blocks, then reindex every part → block
   d.blocks = d.blocks.filter((b) => b.parts.length);
   // sheet assignment: explicit per-block wins, otherwise blocks fill pages in
@@ -444,65 +436,17 @@ function validateDesign(d, lib) {
     }
   }
   // per-net track width sanity: below 4 mil does not etch reliably, above 100
-  // is never a trace (that is a plane). Since 1.13 widths are HANDOFF
-  // annotations — the skill never lays copper; the client honors them when a
-  // human routes, and the DRC uses them as floors for imported copper.
+  // is normally a plane. Width declarations are DRC floors, not routes.
   for (const [net, width] of Object.entries(d.netWidths || {})) {
     if (width < 4 || width > 100) {
       errors.push(`net "${net}": track width ${width} mil is out of range (4–100)`);
     } else if (width > 40) {
-      warnings.push(`net "${net}": track width ${width} mil is very wide — it is an annotation for the client; a plane (poured in the client) usually beats one fat trace`);
+      warnings.push(`net "${net}": track width ${width} mil is very wide; consider a plane`);
     }
   }
   return { errors, warnings, netUsers };
 }
 
-// ------------------------------------------------------------ auto layout
-/**
- * Order parts inside a block so electrically related parts sit next to each
- * other. Union-find over shared nets, then a BFS from the most connected part;
- * isolated parts keep their declaration order at the end.
- */
-function orderByConnectivity(parts) {
-  const parent = new Map(parts.map((p) => [p.id, p.id]));
-  const find = (a) => {
-    while (parent.get(a) !== a) {
-      parent.set(a, parent.get(parent.get(a)));
-      a = parent.get(a);
-    }
-    return a;
-  };
-  const union = (a, b) => {
-    const ra = find(a); const rb = find(b);
-    if (ra !== rb) parent.set(ra, rb);
-  };
-  const byNet = new Map();
-  const degree = new Map(parts.map((p) => [p.id, 0]));
-  for (const p of parts) {
-    for (const net of new Set(Object.values(p.pins))) {
-      if (!byNet.has(net)) byNet.set(net, []);
-      byNet.get(net).push(p.id);
-      degree.set(p.id, degree.get(p.id) + 1);
-    }
-  }
-  for (const ids of byNet.values()) {
-    for (let i = 1; i < ids.length; i += 1) union(ids[0], ids[i]);
-  }
-  const groups = new Map();
-  for (const p of parts) {
-    const r = find(p.id);
-    if (!groups.has(r)) groups.set(r, []);
-    groups.get(r).push(p);
-  }
-  const order = [];
-  for (const g of groups.values()) {
-    g.sort((a, b) => (degree.get(b.id) - degree.get(a.id)) || a.id.localeCompare(b.id));
-    order.push(...g);
-  }
-  return order;
-}
-
-/** Visual extent of a placed part: body box, pins and the two label rows. */
 function partExtent(sym, x, y, rotation) {
   const pts = [];
   const b = sym.bbox;
@@ -529,152 +473,26 @@ function partExtent(sym, x, y, rotation) {
   return G.bboxOfPoints(pts);
 }
 
-function unionRect(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  return {
-    x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1),
-    x2: Math.max(a.x2, b.x2), y2: Math.max(a.y2, b.y2)
-  };
-}
-
-/**
- * Lay blocks out left→right along the signal flow, each block as a grid of
- * parts, and return absolute placements plus the annotation boxes.
- *
- * Blocks wrap onto a new row when the next one would run past the A4 drawing
- * frame (lint.js FRAME width 11700 mil) — a one-row layout silently pushed
- * parts off-sheet on larger designs, and L007 only warned about it.
- */
-function layoutSchematic(d, lib) {
-  const L = d.layout;
-  // Pack blocks into a near-square (√N × √N) grid — N is the count of blocks
-  // ON THIS SHEET, not the whole design (the design-wide count spread a
-  // 9-block sheet across a 31-inch row of 8 columns).
-  const blocksPerSheet = new Map();
-  for (const b of d.blocks) blocksPerSheet.set(b.sheet, (blocksPerSheet.get(b.sheet) || 0) + 1);
-  const placements = [];
-  const blocks = [];
-  let cursorX = 0;
-  let colInRow = 0;
-  let rowBaseY = 100;           // y of the current block row top (y-down: increases)
-  let rowMaxH = 0;              // tallest block frame in the current row
-  let currentSheet = 0;         // sheet the cursors belong to (reset on change)
-  let colsPerRow = 1;
-
-  for (const block of d.blocks) {
-    // a new sheet starts a fresh cursor: blocks on sheet 2+ are laid out
-    // independently (multi-sheet = the intake's 单页/多页 answer)
-    if (block.sheet !== currentSheet) {
-      currentSheet = block.sheet;
-      colsPerRow = Math.max(1, Math.ceil(Math.sqrt(blocksPerSheet.get(block.sheet) || 1)));
-      cursorX = 0;
-      rowBaseY = 0;
-      rowMaxH = 0;
-      colInRow = 0;
+const NC_NET = /^(D?NC\d*|N\/C)$/i;
+function noConnectPins(design) {
+  const pins = new Set();
+  for (const part of design?.parts || []) {
+    for (const [num, net] of Object.entries(part.pins)) if (NC_NET.test(net)) {
+      pins.add(`${part.multiUnitBase || part.id}.${num}`);
     }
-    const members = block.parts
-      .map((id) => d.parts.find((p) => p.id === id))
-      .filter(Boolean);
-    if (!members.length) continue;
-    const ordered = orderByConnectivity(members);
-    const n = ordered.length;
-    const cols = Math.max(1, Math.min(L.cols, Math.ceil(Math.sqrt(n)) || 1));
-
-    // Row/column pitch adapts to the real symbol extents: small parts keep the
-    // default grid, a 48-pin IC stretches its cell instead of overlapping.
-    const rels = ordered.map((part) => {
-      const sym = lib.symbolOf(part);
-      const rot = part.rotation || 0;
-      return { part, sym, rot, rel: partExtent(sym, 0, 0, rot) };
-    });
-    const rows = Math.ceil(n / cols) || 1;
-    // Column/row pitches from the ACTUAL rotated extents, including their
-    // asymmetry: a rotated symbol's extent box may reach far to the LEFT of
-    // its origin (U2 rot 270 reached back 150 mil into the previous column),
-    // so each column/row tracks its backward reach separately.
-    const colBack = new Array(cols).fill(0);   // min rel.x1 (≤ 0) per column
-    const colFwd = new Array(cols).fill(0);    // max rel.x2 per column
-    const rowBack = new Array(rows).fill(0);   // min rel.y1 per row
-    const rowFwd = new Array(rows).fill(0);    // max rel.y2 per row
-    rels.forEach((r, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      colBack[col] = Math.min(colBack[col], r.rel.x1);
-      colFwd[col] = Math.max(colFwd[col], r.rel.x2);
-      rowBack[row] = Math.min(rowBack[row], r.rel.y1);
-      rowFwd[row] = Math.max(rowFwd[row], r.rel.y2);
-    });
-    // Origins of one column share an x; a rotated symbol's extent may reach
-    // BACKWARD past its origin (U2 rot 270 reaches 150 mil left), so each
-    // column's origins shift right by its backward reach and the pitch covers
-    // shift + forward reach + gutter. Rows are TOP-aligned (py anchors every
-    // part's extent top to the row line), so height alone governs rowPitch.
-    const colShift = colBack.map((b) => Math.max(0, -b));
-    const colPitch = colBack.map((b, c) => grid(Math.max(L.cellW, colShift[c] + colFwd[c] + 30)));
-    const rowPitch = rowBack.map((b, r) => grid(Math.max(L.cellH, (rowFwd[r] - b) + 30)));
-
-    // wrap after colsPerRow blocks — the √N grid keeps the sheet landscape
-    // instead of a tall sparse column
-    if (colInRow >= colsPerRow) {
-      rowBaseY += rowMaxH + L.blockGapY;
-      cursorX = 0;
-      rowMaxH = 0;
-      colInRow = 0;
-    }
-
-    let box = null;
-    rels.forEach((r, i) => {
-      const col = i % cols;
-      const row = Math.floor(i / cols);
-      // Y-down: rows march downward from the block's top (y increases),
-      // columns left→right. The part's extent TOP (smallest y) anchors to the
-      // row top line.
-      const colStart = colPitch.slice(0, col).reduce((a, b) => a + b, 0) + colShift[col];
-      const rowTop = L.margin + rowPitch.slice(0, row).reduce((a, b) => a + b, 0);
-      const px = grid(cursorX + L.margin + colStart);
-      const py = grid(rowBaseY + rowTop - r.rel.y1);
-      const pl = { part: r.part, sym: r.sym, x: px, y: py, rotation: r.rot, block, sheet: currentSheet };
-      pl.extent = partExtent(r.sym, px, py, r.rot);
-      placements.push(pl);
-      box = unionRect(box, pl.extent);
-    });
-
-    // Frame padding must hold the NET NAMES, port bodies and designator text,
-    // not just the symbol extents: ports print their net ~45 mil beyond a
-    // 40-mil body, and flags print theirs above/below. 36 mil left names
-    // outside the black frame (the user's complaint); 110 matches the layered
-    // placer and the chain macro.
-    const pad = T.FRAME_PAD;
-    // The client draws Y-UP: the bigger coordinate is the top edge. Reserve the
-    // title strip on the TOP so the module caption reads top-left (it used to
-    // sit at the bottom because the strip was subtracted from y1).
-    const rect = {
-      x1: grid(box.x1 - pad),
-      y1: grid(box.y1 - pad),
-      x2: grid(box.x2 + pad),
-      y2: grid(box.y2 + pad + BLOCK_TITLE_H)
-    };
-    blocks.push({ title: block.title, desc: block.desc, sheet: block.sheet, rect, members: ordered.map((p) => p.id) });
-    cursorX = rect.x2 + L.blockGapX;
-    rowMaxH = Math.max(rowMaxH, rect.y2 - rect.y1);
-    colInRow += 1;
   }
-  return { placements, blocks };
+  return pins;
 }
-
-const grid = (v) => Math.round(v / 10) * 10;
 
 module.exports = {
+  NC_NET,
+  noConnectPins,
   DEFAULTS,
   DesignError,
   readDesign,
   readSource,
   normalize,
   validateDesign,
-  layoutSchematic,
-  orderByConnectivity,
   partExtent,
-  unionRect,
   multiUnitBaseOf
 };

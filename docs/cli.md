@@ -1,7 +1,7 @@
 # CLI bridge (2.x)
 
 2.x moves the work the EDA client can do itself into the client: library
-search, component placement, **PCB** auto layout / auto route, copper pour,
+search, component placement, copper pour,
 netlist extraction and canvas screenshots. The skill ships thin Node scripts
 that open the project through the **LCEDA Pro / EasyEDA Pro CLI** and run the
 client's own `source` / auto APIs; the model calls these scripts instead of
@@ -42,7 +42,6 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 | `node scripts/eda.js netlist --dir <project> --out netlist.json` | export the schematic netlist as the EDA JSON, then simplify it to `parts[{ref,name,device,footprint,pins}]` + `nets{name:[ref.pin]}` | `sch_ManufactureData.getNetlistFile` |
 | `node scripts/eda.js sch-drc --dir <project>` | run the client's schematic DRC; print counts and every violation (rule, net, designator/pin) | `sch_Drc.check` |
 | `node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch\|pcb] [--page N]` | write PNGs of every schematic page, or the PCB canvas | `sch_ManufactureData.getPngFile`, `dmt_EditorControl.getCurrentRenderedAreaImage` |
-| `node scripts/eda.js pcb --dir <project> [--clear] [--layout] [--route] [--move-locked]` | PCB auto layout / auto route / clear routing and save; `--move-locked` unlocks every component first, otherwise `primitiveLock` components stay put | `pcb_Document.autoLayout` / `autoRouting` / `clearRouting` |
 | `node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 --layers 1,2` | create copper pour borders **and rebuild their fill**; `--outline` is in PCB data units (mil; the board rectangle is the board-outline path in the `.epcb2`) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
 
 `--keep` keeps the session open (debugging); by default every command closes
@@ -74,19 +73,8 @@ can plan positions, writes the project skeleton, then opens the project and:
 - marks every design `"NC"` pin with the client's real **no-connect** marker
   (`sch_PrimitiveComponent.getAllPinsByPrimitiveId` +
   `sch_PrimitivePin.modify({ noConnected: true })`, document API on the opened
-  page). The NC stub + net label stays, so the pin keeps a net name for the
-  client netlist and its PCB pad; the marker itself is client-managed state,
-  not a source record;
-- **runs the client's PCB auto layout** (`pcb_Document.autoLayout`) on the
-  imported board — the same engine as `eda.js pcb --layout`, but automatic,
-  after the board outline and the import exist — **only when the user chose the
-  EDA layout** (`--layout client`, the default for `ic` builds). Explicit
-  `pcb.place` parts are locked (`primitiveLock`) first, so the engine keeps
-  them; `--move-locked` clears every lock and lets it move everything.
-  `--layout skill` / `--skill-layout` / `--keep-layout` skip the pass and keep
-  the planner's coordinates. The outcome is recorded as `pcb.layout`
-  (`client-auto` / `skill-placement`), `pcb.autoLayout` (duration / failed
-  count / error) and `pcb.locks` in `build.json`;
+  page). The marker itself is client-managed state; leave the NC pin electrically open;
+- uses the exact AI-authored footprint coordinates, without client auto layout or routing; explicit tracks and vias are written after client import;
 - saves, after which validate / ERC / lint / DRC / netcheck read the
   client-written project. The import is complete by construction, but the
   offline `netcheck` still runs as an independent pin-by-pin diff and catches
@@ -104,9 +92,7 @@ on the finished schematic (client builds only). The report lands in
 pin); `fatalError`/`error` items fail the build unless `--allow-sch-drc` is
 passed. `eda.js sch-drc --dir <p>` re-runs it, which is the repair list.
 
-The layout snaps every wire vertex, flag, port and net label to the 50-mil
-grid (5 schematic units): the client's NETOBJECTONGRID rule wants net objects
-there, and router margins (+18, +53) otherwise leave a few jogs off it.
+The builder does not snap or move geometry. Use the client grid when authoring wire vertices, power flags and ports, and fix any off-grid findings in the authored layout.
 
 ## Why "source" APIs
 
@@ -117,7 +103,7 @@ source data directly; it has **no "current page" context** — every call names
 because it runs on the editor command space without rendering. The classic
 `sch_Document` / `sch_Primitive*` family acts on an open, rendered document.
 Prefer the source family for creation/editing; use the document family for
-auto layout / auto route / rendering, which are document-scoped by design.
+rendering, which are document-scoped by design.
 
 Schematic wiring now follows the same rule on client builds: the routed chains
 are drawn with `sch_SourcePrimitiveWire.add` (one connected polyline per chain)
@@ -147,18 +133,10 @@ component placement remain skill-authored.
 
 `node scripts/eda.js screenshot --dir <project> --out screenshots` writes one
 PNG per schematic page plus the PCB canvas. Read the PNGs to judge layout /
-routing quality and feed concrete defects back into the design or into a
-`pcb --layout` / `pcb --route` pass.
+routing quality and repair the explicit geometry in the design.
 
 Client-side limitations (4.1.94):
 
-- `pcb --layout` / `--route` change the board in place; pass `--clear` first
-  when re-routing an already-routed board.
-- `pcb_Document.autoLayout` is not part of the public 4.1.94 reference: on a
-  build that does not expose it, `build.js` logs
-  `PCB auto layout skipped — keeping the skill placement` and `build.json`
-  carries the error; the board is still delivered (with the planner's
-  positions).
 - `importChanges(uuid)` takes the **schematic** UUID (the page UUID is not the
   API contract). A `true` return with **zero** footprints means the schematic
   exposed no footprint-bearing component — only power flags / symbol-only
@@ -176,10 +154,6 @@ Client-side limitations (4.1.94):
   reports `filled:false` per layer — inset the outline and retry (a ~300 mil
   inset filled the same board). `pcb_PrimitivePoured.create` itself is a no-op;
   the rebuild call is the only way to make copper.
-- Schematic layout/wiring is **not** delegated to the client: the client's
-  schematic auto layout ignores this skill's module frames and reads worse.
-  The offline engine (`build.js`) owns it; 2.x only adds client-side review,
-  netlist and PCB copper.
 - `netcheck.js` reads the skill's `PAD_NET` records. It now also runs on
   client-imported boards: the import writes one PAD_NET per real pad, and the
   empty-shell records 4.1.94 used to leave behind are gone (see above), so the

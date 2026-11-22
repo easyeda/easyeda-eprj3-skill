@@ -134,8 +134,8 @@ function cmdResolve(opts) {
   if (outPath) console.log(`\ndesign → ${outPath}`);
   else console.log('\n(未写文件：加 --out design.json 输出)\n' + text.trimEnd());
   const target = outPath ? path.relative(process.cwd(), outPath) : 'design.json';
-  console.log(`\n下一步（先看方案，不要直接写盘）：`);
-  console.log(`  node scripts/build.js --design ${target} --dir <project dir> --plan`);
+  console.log(`\n下一步（检查库几何，再编写布局布线）：`);
+  console.log(`  node scripts/build.js --design ${target} --dir <project dir> --geometry`);
 }
 
 function main() {

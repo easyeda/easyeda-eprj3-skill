@@ -5,6 +5,85 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
+## [2.2.8] - 2026-11-22
+
+**AI-authored geometry replaces the layout engine (breaking).** The build no
+longer chooses positions, wires, footprints, tracks or the board size:
+`design.json` carries explicit schematic and PCB geometry, and the scripts
+resolve libraries, validate the declarations, write the records and run the
+gates.
+
+### Added
+- `build.js --geometry`: print the resolved symbol bbox/pins (number, name,
+  net, hotspot, rotation) and footprint pads (size, hole, layer, `boardAt`
+  once `pcb.place` exists) as JSON, writing no project. This is the AI's first
+  step before authoring geometry.
+- `scripts/lib/authored-layout.js`: validation of the declared geometry —
+  exactly one position per designator/footprint, 90° rotations, orthogonal
+  nonzero wire segments, no cross-net contact (wire↔wire,
+  wire↔pin/flag/port, terminal↔terminal), copper layers inside the declared
+  stack, via diameter/drill sanity, and a migration error for the legacy
+  `pcb.layout/route/pour` keys.
+- `docs/ai-layout.md`: the geometry contract (`sch.place/wires/flags/ports/
+  frames`, `board`, `pcb.place/tracks/vias/mode`), coordinate rules and the
+  migration notes.
+- `test/fixtures/ai-resistor-link.json`: a complete two-layer routed example
+  (tracks on layers 1 and 2, two vias); the rewritten pipeline suite builds
+  it and mutates it to prove the rejections.
+- `netcheck.js`, `report.js`, `audit.js` and ERC accept `--design` to treat
+  declared `NC`/`DNCn` pins (including multi-unit base designators) as
+  intentionally open instead of reporting them.
+- `eda.js pins --batch <json> [--out]` and `--sub-part` resolve several system
+  library devices (multi-unit `subPartName`) in one client call.
+
+### Changed
+- **`design.json` contract:** schematic geometry is required —
+  `sch.place` for every designator plus `sch.wires`; optional `sch.flags`,
+  `sch.ports`, `sch.frames`. The PCB needs an explicit `board`
+  (`width/height/layers`) and `pcb.place` for every footprint, plus
+  `pcb.tracks`/`pcb.vias` for routed builds. `pcb.mode` defaults to
+  `routed`; `placed-only` is an explicit agreed draft (D004/D006 skipped).
+- **DRC judges authored copper by default.** D002 uses the stricter of the
+  fabrication floor and the net width; D001 measures track–track,
+  track–via, via–pad and pad spacing with the real line geometry; D004 checks
+  connectivity across the declared layers (vias and through-hole pads are the
+  only layer change); D006 warns when a routed board with a ground pad has no
+  pour; D007 skips declared NC pads.
+- **`intake.js` emits a circuit definition, not a buildable layout.** It
+  keeps the mechanical constraints and `board.layers`; the AI assigns blocks
+  to sheets and completes all geometry before `--plan`/build.
+- **`add-wire.js` writes explicit `--segs` only** — the pin-reference router
+  (`--from/--to/--link/--stub`) is gone; `pins.js`/`--geometry` provide the
+  exact endpoints, and `--hide-net` remains.
+- **Docs rewritten around the AI-as-engineer workflow:** README and SKILL are
+  now the Chinese workflow (design as a senior electronics/PCB engineer,
+  scripts only write and check); build/checks/cli/corpus/development/intake/
+  workflow docs updated; the companion format skill is referenced as
+  `easyeda-format-skill` and ground truth as `easyeda/eprj3-format`.
+- `build.js --keep-layout` now only reuses existing footprint coordinates;
+  new parts and all intended copper must be explicit and old copper is not
+  preserved.
+- `npm test` drops the corpus from the default run (`test:corpus` remains);
+  `package.json` description updated.
+
+### Removed
+- The offline schematic engine (`lib/sch-place`, `sch-route`, `sch-patterns`,
+  `sch-tidy`, `sch-tokens`, `lib/quality`), the PCB placer (`lib/pcb-plan`),
+  the 1.25× auto board sizing, `floorplan.js` and `pattern-coverage.js`.
+- `build.js` flags `--layout skill|client`, `--move-locked`, `--skill-layout`,
+  `--no-tidy`, `--no-patterns`, `--no-search`.
+- `eda.js pcb` (client auto layout/route/clear) and the client lock/auto-layout
+  passes; the bridge now only resolves libraries, imports the schematic to the
+  PCB, exports netlists, runs schematic DRC, fills declared copper regions and
+  takes screenshots.
+- `add-wire.js --from/--to/--link/--stub` and the router helpers in `geom.js`.
+
+### Fixed
+- PCB pad parsing accepts both scalar and object hole fields and resolves the
+  pad layer correctly for back-side footprint records.
+- Netcheck/audit/report merge multi-unit base designators consistently, so a
+  multi-unit part no longer shows as missing on one side.
+
 ## [2.2.7] - 2026-11-09
 
 **PCB layout is an explicit user choice; `pcb.place` is never silently

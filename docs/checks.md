@@ -78,7 +78,7 @@ the accepted no-connect convention: a lone pin on one of them passes.
 | `L010` | warn | 2 | a wire endpoint touches nothing |
 
 `L001`/`L004` are the ones that make a schematic unreadable; they usually mean
-the block is too dense — raise `layout.cellW/cellH` or split the block.
+the block is too dense — move the affected symbols/wires or split the block.
 
 ## Copper — `drc.js`
 
@@ -101,19 +101,7 @@ the block is too dense — raise `layout.cellW/cellH` or split the block.
 pattern), but everything else is enforced. On a board that actually carries
 copper, `D004` skips nets a pour already connects — the plane is what joins them.
 
-**Copper policy.** Since 1.13 the skill has no router and no pour generator:
-every board it builds is **placed-only** — footprints, pad↔net links, board
-outline, and the `rats:` handoff list (`build.js` prints the nets to connect by
-hand in the client; the report says `pcb: {parts, mode: 'placed-only', rats}`).
-`D004` (net not routed) and `D006` (no ground pour) are therefore **never**
-judged on a self-built board — flagging copper that was never promised would
-punish every correct deliverable. Everything that applies to placement itself —
-`D001` pad spacing, `D003` edge, `D005` outline, `D007` orphan pad, and all four
-DFM rules — still runs. A project **imported from, or re-saved by, the client**
-that contains tracks/pours/vias is detected as a copper-carrying board and gets
-the full review, D004/D006 included. `runDrc` reports `mode` and, for placed
-only, `skipped: ['D004','D006']`; the CLI can force either reading with
-`--placed-only` / `--routed` (auto-detect: a board with no tracks is placed-only).
+**Copper checks.** The default build writes AI-authored tracks/vias and runs routed DRC, even with an empty track list. D004 requires groups of same-net pads to connect through copper on the appropriate layers; changing layers requires a via or plated pad. For explicitly agreed `pcb.mode: "placed-only"` drafts, D004 and D006 are skipped. Local DRC is a precheck, not a substitute for client DRC and plane verification.
 
 ### DFM rules (D009–D012)
 

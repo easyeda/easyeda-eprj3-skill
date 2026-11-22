@@ -62,7 +62,7 @@ easyeda-eprj3-skill/
 | `node scripts/netlist.js` | 网表：`--json`/`--pcb` 查看实际连通；`--design`/`--gen` + `--audit <file>` 写自包含网表审计包（spec↔built + 机械比对 + 复核清单），交给不继承上下文的子 agent 复核 |
 | `node scripts/report.js` | 生成 `project-report.md`（概述/功能描述/功能特性/BOM/信号框架图/电源树/网络/门禁/遗留/建议；`--report build.json` 回填门禁结果与官方封装名） |
 | `node scripts/autofix.js` | 机械修复：NC、补去耦电容 |
-| `node scripts/build.js` | design.json 一键构建 + 全部门禁；**只布局**（本 skill 永不布线/铺铜，铜皮在客户端完成；构建输出含 `rats:` 交接清单）；`--plan` 只打印方案摘要并真实预演，不写盘（人工确认点） |
+| `node scripts/build.js` | 写入 AI 布局布线并检查；`--geometry` 查看引脚/焊盘；`--plan` 预检 |
 | `node scripts/intake.js` | 需求采集：`template`/`fields`/`check`（追问协议）/`resolve`（recipe 选型 + 电源链推导 + 线宽注记，选型结果缓存于 `.cache/`） |
 | `node scripts/recipe.js` | 子电路模板 list/show/apply（与 intake 共用 `scripts/lib/merge.js` 合并引擎） |
 | `node scripts/eval.js` | 回归基准（`--diff` 对比历史、`--design` 度量新设计；逐案记录 ~tokens 与秒数） |
@@ -108,16 +108,9 @@ node scripts/add-netlabel.js --dir ./myboard --sch Schematic1 --sheet P1 --net S
 node scripts/set-refdes.js renumber --dir ./myboard --sch Schematic1 --sheet P1 --prefix R
 ```
 
-### 6. PCB 布局（交付物就是布局）
+### 6. PCB 布局布线
 
-`build.js` 只放置封装、绑定焊盘网络、生成板框——**永不布线、永不铺铜**。想精确控制某个元件的落位，用 `add-footprint.js` 显式落位或在 design 里写 `pcb.place`；走线/过孔/铺铜一律在 EasyEDA 客户端完成，`build.js` 打印的 `rats:` 行就是要手工连接的网络清单。
-
-```bash
-# 布局（交付内容）
-node scripts/add-footprint.js --dir ./myboard --pcb PCB1 --symbol RES --footprint R0603 --x 300 --y 300 --refdes R1 --nets "1:VCC,2:SIG"
-# 禁布区不是铜皮，仍由脚本维护
-node scripts/add-region.js rect --dir ./myboard --pcb PCB1 --prohibit "COMPONENT,TRACK" --x 200 --y 200 --w 300 --h 200
-```
+按 [AI 布局布线](ai-layout.md) 编写明确坐标、铜层、线宽、走线拐点和过孔。构建器不再自动摆放或走线。
 
 ### 7. 验证并打开
 
@@ -181,7 +174,7 @@ node scripts/eval.js --design my-new-design.json   # 用同一把尺子度量新
 | 封装库里没有？ | `"footprint": { "auto": "LQFP48" }`（SOP/QFN/DIP/HDR/SOT23-5/USB-C 等都支持）或手写 inline pads |
 | 电路原理怎么保证？ | `parts[].polarity` + `expect` 块（decoupling/pairs/valueRange/divider），第五道门禁查 |
 | 用户只给了一句话需求？ | 走 intake：`intake.js check --req`（缺必填→一次问完）→ `resolve`（选型+电源链+规则推导）→ `build.js --plan`（确认）→ `build.js` |
-| 交付板要布线/铺铜怎么办？ | 超出本 skill 范围——永不布线、永不铺铜，铜皮在 EasyEDA 客户端人工完成；`build.js` 打印 `rats:` 交接清单（待手工连接的网络与焊盘数） |
+| 交付板要布线/铺铜怎么办？ | AI 按几何规范编写走线；用客户端填充明确指定的铜区并复查 |
 | 导入/客户端返存的板 DRC 一片 D001？ | 那是文件里已有的铜（本 skill 自建的板没有铜）——在客户端调整或删除相应铜线；根因若是焊盘太近，改 `pcb.place`/`pcb.rules.clearance` 后 `build.js --force` 重放布局，再做铜 |
 | LDO 该接输入轨还是上一级的 5V？ | 接"高于自身输出的最近轨"（12V→buck→5V→ldo→3V3）；intake 的 upstream 推导已处理，压差过大只告警不改 BOM |
 | 构建前想给用户过目？ | `build.js --plan`：真实预演（lint/drc 分数是真的），目标目录零写入 |

@@ -278,7 +278,7 @@ function buildProjectReport(design, all, netcheck, build) {
   lines.push(`| 源 | ${design.file ? `\`${path.basename(design.file)}\`` : '（生成器）'} |`);
   lines.push(`| 板框 | ${board} |`);
   const pcbLayout = build && build.pcb && build.pcb.layout;
-  if (pcbLayout) lines.push(`| PCB 布局 | ${pcbLayout === 'client-auto' ? '客户端自动布局（pcb_Document.autoLayout）' : 'skill 规划摆放'} |`);
+  if (pcbLayout) lines.push(`| PCB 布局 | ${pcbLayout === 'ai-authored' ? 'AI 显式布局' : pcbLayout} |`);
   if (meta.input) lines.push(`| 输入电源 | ${meta.input}${meta.current_mA ? ` · ${meta.current_mA} mA` : ''} |`);
   if (upRails.length) lines.push(`| 电源轨 | ${railOrder.join(' / ')}${downRails.length ? ` · 地 ${downRails.join(' / ')}` : ''} |`);
   if (meta.interfaces && meta.interfaces.length) lines.push(`| 对外接口 | ${meta.interfaces.join('、')} |`);
@@ -466,11 +466,9 @@ function buildProjectReport(design, all, netcheck, build) {
   lines.push('## 遗留问题');
   lines.push('');
   const warns = hasBuild ? ((build.erc && build.erc.warnings) || []) : [];
-  const known = [
-    '交付物只含原理图 + 布局好的 PCB；自动布线、铺铜、制造文件导出（坐标 / Gerber / 客户端 BOM 格式）都不归本 skill 管，在 EasyEDA Pro 客户端完成（本报告的 BOM 一节是设计侧清单，可直接核对）。',
-    '跨模块/跨页信号用网络端口（按名全局合并）而非长导线；短距离同模块网络才画可见导线。',
-    'PCB 是 placement-only（`rats:` 交接清单列出还需手工连的网络）；铜皮由人在客户端完成。'
-  ];
+  const known = ['铺铜填充、叠层参数、信号完整性和制造文件仍需在客户端复核。'];
+  if (build?.pcb?.mode === 'placed-only') known.push(`PCB 仅布局：${build.pcb.rats} 个多焊盘网络尚未布线。`);
+  if (build?.pcb?.mode === 'routed') known.push(`PCB 写入 ${build.pcb.tracks} 段 AI 走线和 ${build.pcb.vias} 个过孔；DRC 报告 ${build.pcb.rats} 个未连通网络。`);
   for (const k of known) lines.push(`- ${k}`);
   for (const w of warns) if (w && (w.id || w.code)) lines.push(`- \`${w.id || w.code}\` ${w.msg || ''}`);
   lines.push('');

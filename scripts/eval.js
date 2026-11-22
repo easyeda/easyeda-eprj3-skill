@@ -42,94 +42,13 @@ const SCHEMA = [
 ];
 const DEFAULTS = { minLint: 85, minDrc: 80, maxSeconds: 20 };
 
-/**
- * Build cases from the design corpus, plus one derived case per intake
- * requirement: the requirement is resolved through the real intake path into a
- * throwaway design.json, then measured with the same yardstick. That is what
- * makes "省 Token" a regression number instead of a claim — the token proxy of
- * the AI-authored file now includes the requirement + generated design.
- */
-/**
- * A recipe file is a fragment; a typed recipe even carries a `$device`
- * placeholder. To benchmark such a case the fragment is resolved + merged into
- * an empty design first (device chosen by class + roles), then built like any
- * other design. Plain designs/recipes are used as-is.
- */
-function materialise(file, name) {
-  let raw;
-  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return file; }
-  if (!(raw.bind && raw.bind.device)) return file;
-  try {
-    const M = require('./lib/merge');
-    const resolved = M.resolveRecipe(raw.name || name.split('/').pop());
-    const merged = M.merge(M.ensureShape({ name: raw.name || name.split('/').pop() }), resolved.recipe, {});
-    const out = path.join(ROOT, 'eval', '.build', `${path.basename(file, '.json')}.typed.json`);
-    fs.mkdirSync(path.dirname(out), { recursive: true });
-    fs.writeFileSync(out, JSON.stringify(merged.design, null, 2), 'utf8');
-    return out;
-  } catch (e) {
-    // model-specific devices are resolved through the EDA client (2.x); a clean
-    // checkout cannot build a typed recipe, so the case is skipped, not failed
-    console.log(`  note: skipping typed recipe ${name} — ${e.message.split('—')[0].trim()}`);
-    return null;
-  }
-}
-
+// Benchmarks use complete authored layouts, not circuit-only recipes.
 function cases(cfg) {
-  const out = [];
-  for (const dir of ['recipe', 'examples/designs']) {
-    const d = path.join(ROOT, dir);
-    if (!fs.existsSync(d)) continue;
-    for (const f of fs.readdirSync(d)) {
-      if (!f.endsWith('.json')) continue;
-      const name = `${dir.split('/')[0]}/${f.replace(/\.json$/, '')}`;
-      const over = (cfg && cfg[name]) || {};
-      const file = materialise(path.join(d, f), name);
-      if (!file) continue;                    // typed recipe with no cached device
-      out.push({
-        name,
-        file,
-        minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
-        minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
-        maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds
-      });
-    }
-  }
-  const reqDir = path.join(ROOT, 'examples', 'intake');
-  if (fs.existsSync(reqDir)) {
-    const I = require('./lib/intake');
-    const tmpDir = path.join(ROOT, 'eval', '.intake');
-    fs.mkdirSync(tmpDir, { recursive: true });
-    for (const f of fs.readdirSync(reqDir).filter((x) => x.endsWith('.req.json')).sort()) {
-      const name = `intake/${f.replace(/\.req\.json$/, '')}`;
-      const over = (cfg && cfg[name]) || {};
-      const req = JSON.parse(stripBom(fs.readFileSync(path.join(reqDir, f), 'utf8')));
-      let resolved;
-      try {
-        resolved = I.resolve(JSON.parse(JSON.stringify(req)), {});
-      } catch (e) {
-        // An incomplete requirement is a valid corpus entry: the gate that must
-        // answer is intake itself, and `check` is what the run then exercises.
-        out.push({ name, file: path.join(reqDir, f), requirement: true, error: e.message,
-          intake: e.intake || null,
-          minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
-          minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
-          maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds });
-        continue;
-      }
-      const gen = path.join(tmpDir, `${f.replace(/\.req\.json$/, '')}.design.json`);
-      fs.writeFileSync(gen, JSON.stringify(resolved.design, null, 2), 'utf8');
-      out.push({
-        name,
-        file: gen,
-        requirement: path.join(reqDir, f),
-        minLint: over.minLint !== undefined ? over.minLint : DEFAULTS.minLint,
-        minDrc: over.minDrc !== undefined ? over.minDrc : DEFAULTS.minDrc,
-        maxSeconds: over.maxSeconds !== undefined ? over.maxSeconds : DEFAULTS.maxSeconds
-      });
-    }
-  }
-  return out.sort((a, b) => a.name.localeCompare(b.name));
+  const dir = path.join(ROOT, 'test', 'fixtures');
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort().map((f) => {
+    const name = `ai/${path.basename(f, '.json')}`;
+    return { ...DEFAULTS, ...cfg[name], name, file: path.join(dir, f) };
+  });
 }
 
 function stripBom(t) { return t.charCodeAt(0) === 0xFEFF ? t.slice(1) : t; }
@@ -267,8 +186,7 @@ function main() {
     const name = path.basename(c.file, '.json');
     const target = path.join(buildDir, name);
     fs.rmSync(target, { recursive: true, force: true });
-    // The skill never lays copper: every case builds the same placement-only
-    // deliverable and is scored on placement/format/electric quality.
+    // Rebuild the authored layout and measure its format, electrical and geometry gates.
     const build = run('scripts/build.js', ['--design', c.file, '--dir', target, '--report',
       path.join(buildDir, `${name}.report.json`)], timeoutSec * 1000);
     const validate = build.ok ? run('scripts/validate.js', ['--dir', target], 30000) : { ok: false, out: '' };

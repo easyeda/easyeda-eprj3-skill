@@ -16,6 +16,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseArgs, printHelp } = require('./lib/utils');
 const N = require('./lib/netlist');
+const D = require('./lib/design');
 const { compare } = require('./lib/netcheck');
 const { buildProjectReport } = require('./lib/report');
 
@@ -54,7 +55,7 @@ function main() {
   }
 
   const all = N.projectNetlist(opts.dir);
-  const netcheck = compare(all);
+  const netcheck = compare(all, D.multiUnitBaseOf(design?.multiUnits), D.noConnectPins(design));
   const designStub = {
     name: path.basename(path.resolve(opts.dir)),
     powerNets: new Map(),

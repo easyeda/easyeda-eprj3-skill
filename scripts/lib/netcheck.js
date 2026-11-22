@@ -10,7 +10,7 @@ const N = require('./netlist');
 /** Compare schematic and PCB netlists. Returns {match, summary, issues}.
  *  `baseOf` maps a multi-unit designator ("U34A") to its base ("U34") so a
  *  unit's schematic pins match the single footprint that carries them. */
-function compare(all, baseOf) {
+function compare(all, baseOf, noConnect = new Set()) {
   // normalize multi-unit designators: exact via `baseOf` when the design is
   // available; otherwise strip the trailing unit letter ("U34A"→"U34") — safe
   // because the PCB component carries the base designator and only multi-unit
@@ -36,10 +36,10 @@ function compare(all, baseOf) {
       }
     }
   }
-  const schRefs = new Set([...schByPin.keys()].map((k) => k.split('.')[0]));
+  const schRefs = new Set([...schByPin.keys(), ...noConnect].map((k) => k.split('.')[0]));
   const unconnected = [];
   for (const s of all.perSheet) {
-    for (const u of s.netlist.unconnected) unconnected.push({ ref: u.ref, pin: u.num, where: `${s.schematic}/${s.sheet}` });
+    for (const u of s.netlist.unconnected) if (!noConnect.has(`${norm(u.ref)}.${u.num}`)) unconnected.push({ ref: u.ref, pin: u.num, where: `${s.schematic}/${s.sheet}` });
   }
 
   const issues = [];
@@ -48,7 +48,7 @@ function compare(all, baseOf) {
     const netless = [];
     for (const pad of pcbDoc.netlist.pads) {
       const key = `${norm(pad.ref)}.${pad.num}`;
-      if (!pad.net) { netless.push(key); continue; }
+      if (!pad.net) { if (!noConnect.has(key)) netless.push(key); continue; }
       pcbByPin.set(key, pad.net);
     }
     // per-pad agreement

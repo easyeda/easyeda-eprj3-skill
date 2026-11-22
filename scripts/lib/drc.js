@@ -111,8 +111,8 @@ function pcbGeometry(file) {
         y: G.round(b.y + off.y),
         w: d.width || 20,
         h: d.height || 20,
-        hole: typeof pb.hole === 'number' && pb.hole > 0 ? pb.hole : null,
-        layer: pb.layerId || 1
+        hole: typeof pb.hole === 'number' ? pb.hole : pb.hole?.width || null,
+        layer: (pb.layerId === 1 && b.layerId === 2 ? 2 : pb.layerId) || 1
       });
     }
   }
@@ -246,14 +246,13 @@ function runDrc(file, opts) {
   }
   const board = geo.outline || G.rect(0, 0, 4000, 3000);
 
-  // D002 — track width. A net with a declared width satisfies its own contract
-  // at that width, so the floor is the narrower of the two.
+  // D002 — honor both the fabrication floor and the net-specific floor.
   for (const t of geo.tracks) {
-    const floor = Math.min(rules.minTrack, netWidths[t.net] || Infinity);
+    const floor = Math.max(rules.minTrack, netWidths[t.net] || 0);
     if ((t.width || 10) < floor) {
       add('D002', `track on net "${t.net}" is ${t.width} mil wide (min ${floor === rules.minTrack ? rules.minTrack : netWidths[t.net]})`, {
         net: t.net,
-        fix: `raise pcb.rules.trackWidth (or the net's width in "nets") and re-run build.js --force`
+        fix: `increase the explicit width in pcb.tracks and re-run the build`
       });
     }
   }
@@ -261,23 +260,42 @@ function runDrc(file, opts) {
   // D001 — copper spacing. Copper on DIFFERENT layers never conflicts, except
   // through-hole pads (MULTI, layer 12) which exist on every layer.
   const copper = [];
-  for (const t of geo.tracks) copper.push({ net: t.net, rect: segRect(t), kind: 'track', layer: t.layer });
+  for (const t of geo.tracks) copper.push({ net: t.net, rect: segRect(t), kind: 'track', layer: t.layer, track: t });
   for (const p of geo.pads) {
     copper.push({ net: p.net, rect: padRect(p), kind: 'pad', ref: p.ref, num: p.num, layer: p.layer });
   }
+  for (const v of geo.vias) copper.push({ net: v.net, kind: 'via', layer: 12, via: v,
+    rect: G.rect(v.x - v.width / 2, v.y - v.width / 2, v.x + v.width / 2, v.y + v.width / 2) });
+  const pointToBox = (p, box) => rectGap(G.rect(p.x, p.y, p.x, p.y), box);
+  const lineGap = (a, b) => G.segsIntersect(a, b, true) ? 0 : Math.min(
+    G.pointSegDist({ x: a.x1, y: a.y1 }, b), G.pointSegDist({ x: a.x2, y: a.y2 }, b),
+    G.pointSegDist({ x: b.x1, y: b.y1 }, a), G.pointSegDist({ x: b.x2, y: b.y2 }, a));
+  const trackGap = (track, other) => {
+    if (other.track) return lineGap(track, other.track) - (track.width + other.track.width) / 2;
+    if (other.via) return G.pointSegDist(other.via, track) - (track.width + other.via.width) / 2;
+    const { x1, y1, x2, y2 } = other.rect;
+    if (G.segIntersectsRect(track, other.rect)) return -track.width / 2;
+    const corners = [{ x: x1, y: y1 }, { x: x1, y: y2 }, { x: x2, y: y1 }, { x: x2, y: y2 }];
+    return Math.min(pointToBox({ x: track.x1, y: track.y1 }, other.rect),
+      pointToBox({ x: track.x2, y: track.y2 }, other.rect), ...corners.map((p) => G.pointSegDist(p, track))) - track.width / 2;
+  };
   const onSameLayer = (a, b) => a.layer === b.layer || a.layer === 12 || b.layer === 12;
   for (let i = 0; i < copper.length; i += 1) {
     for (let j = i + 1; j < copper.length; j += 1) {
       const a = copper[i]; const b = copper[j];
-      if (!a.net || !b.net || a.net === b.net) continue;
+      if ((!a.net && !b.net) || (a.net && a.net === b.net)) continue;
       if (!onSameLayer(a, b)) continue;
       // pads of the SAME footprint are the package's own business — their
       // spacing comes from the datasheet land pattern, not a routing rule
       if (a.kind === 'pad' && b.kind === 'pad' && a.ref && a.ref === b.ref) continue;
-      const gap = rectGap(a.rect, b.rect);
+      if (rectGap(a.rect, b.rect) >= rules.clearance - 0.001) continue;
+      const gap = Math.max(0, a.track ? trackGap(a.track, b) : b.track ? trackGap(b.track, a)
+        : a.via && b.via ? Math.hypot(a.via.x - b.via.x, a.via.y - b.via.y) - (a.via.width + b.via.width) / 2
+        : a.via ? pointToBox(a.via, b.rect) - a.via.width / 2
+        : b.via ? pointToBox(b.via, a.rect) - b.via.width / 2 : rectGap(a.rect, b.rect));
       if (gap < rules.clearance - 0.001) {
-        const la = a.kind === 'pad' ? `pad ${a.ref}.${a.num}` : 'track';
-        const lb = b.kind === 'pad' ? `pad ${b.ref}.${b.num}` : 'track';
+        const la = a.kind === 'pad' ? `pad ${a.ref}.${a.num}` : a.kind;
+        const lb = b.kind === 'pad' ? `pad ${b.ref}.${b.num}` : b.kind;
         const mid = { x: (a.rect.x1 + a.rect.x2) / 2, y: (a.rect.y1 + a.rect.y2) / 2 };
         add('D001', `${la} (${a.net}) is ${gap.toFixed(1)} mil from ${lb} (${b.net}) at [${mid.x.toFixed(0)},${mid.y.toFixed(0)}] — min ${rules.clearance}`, {
           a: a.net, b: b.net, at: [Math.round(mid.x), Math.round(mid.y)],
@@ -301,52 +319,48 @@ function runDrc(file, opts) {
   }
 
   // D004 — net connectivity through copper
-  const uf = new Map();
-  const find = (k) => {
-    if (!uf.has(k)) uf.set(k, k);
-    let r = k;
-    while (uf.get(r) !== r) r = uf.get(r);
-    return r;
-  };
-  const union = (a, b) => { const ra = find(a); const rb = find(b); if (ra !== rb) uf.set(ra, rb); };
-  const keyPoint = (x, y) => `${Math.round(x)},${Math.round(y)}`;
-  for (const t of geo.tracks) {
-    union(keyPoint(t.x1, t.y1), keyPoint(t.x2, t.y2));
-    if (t.net) union(keyPoint(t.x1, t.y1), `net:${t.net}`);
-  }
-  for (const v of geo.vias) {
-    union(keyPoint(v.x, v.y), `net:${v.net}`);
-  }
-  const byNet = new Map();
-  for (const p of geo.pads) {
-    if (!p.net) continue;
-    byNet.set(p.net, (byNet.get(p.net) || 0) + 1);
-    // a pad joins its net when a copper endpoint or via sits on it
-    const onPad = [
-      ...geo.tracks.filter((t) => t.net === p.net
-        && (G.rectContains(padRect(p), { x: t.x1, y: t.y1 }) || G.rectContains(padRect(p), { x: t.x2, y: t.y2 }))),
-      ...geo.vias.filter((v) => v.net === p.net && G.rectContains(padRect(p), { x: v.x, y: v.y }))
-    ];
-    if (onPad.length) union(keyPoint(p.x, p.y), `net:${p.net}`);
-  }
   const pouredNets = new Set(geo.pours.map((p) => p.net).filter(Boolean));
-  // D004 judges routing that was promised. A placement-only board promised
-  // none — flagging every signal net would punish the deliverable for
-  // following the strategy.
-  if (!placedOnly) for (const [net, count] of byNet) {
-    if (count < 2) continue;
-    // a poured net is connected by the plane, not by tracks
-    if (pouredNets.has(net)) continue;
-    const pads = geo.pads.filter((p) => p.net === net);
-    const attached = pads.filter((p) => geo.tracks.some((t) => t.net === net
-      && (G.rectContains(padRect(p), { x: t.x1, y: t.y1 }) || G.rectContains(padRect(p), { x: t.x2, y: t.y2 })))
-      || geo.vias.some((v) => v.net === net && G.rectContains(padRect(p), { x: v.x, y: v.y })));
-    if (attached.length < count) {
-      add('D004', `net "${net}" is not fully routed (${attached.length}/${count} pads have copper)`, {
-        net,
-        // Only fires on boards that DO have copper (imported or client-saved):
-        // this skill never routes, so its own boards run in placed-only mode.
-        fix: `finish this net's routing in the EasyEDA client (this skill does not route); if the copper was already there, a track endpoint may have moved — check pads that lost their trace`
+  if (!placedOnly) {
+    const byNet = new Map();
+    const group = (net) => {
+      if (!byNet.has(net)) byNet.set(net, { pads: [], tracks: [], vias: [] });
+      return byNet.get(net);
+    };
+    for (const kind of ['pads', 'tracks', 'vias']) {
+      for (const item of geo[kind]) if (item.net && !/^(D?NC\d*)$/i.test(item.net)) group(item.net)[kind].push(item);
+    }
+    for (const [net, { pads, tracks, vias }] of byNet) {
+      if (pads.length < 2 || pouredNets.has(net)) continue;
+      const items = [...pads, ...tracks, ...vias];
+      const parent = items.map((_, i) => i);
+      const find = (i) => {
+        while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
+        return i;
+      };
+      const layerOk = (a, b) => a === b || a === 12 || b === 12;
+      const ends = (t) => [{ x: t.x1, y: t.y1 }, { x: t.x2, y: t.y2 }];
+      const isTrack = (item) => item.x1 !== undefined;
+      const isPad = (item) => item.ref !== undefined;
+      function connected(a, b) {
+        if (!layerOk(a.layer || 12, b.layer || 12)) return false;
+        if (isTrack(a) && isTrack(b)) return G.segsIntersect(a, b, true);
+        if (isTrack(a) || isTrack(b)) {
+          const t = isTrack(a) ? a : b;
+          const p = t === a ? b : a;
+          if (isPad(p)) return ends(t).some((pt) => G.rectContains(padRect(p), pt));
+          return G.pointSegDist(p, t) < 0.001;
+        }
+        if (isPad(a) && isPad(b)) return false;
+        if (isPad(a) || isPad(b)) return isPad(a) ? G.rectContains(padRect(a), b) : G.rectContains(padRect(b), a);
+        return Math.hypot(a.x - b.x, a.y - b.y) < 0.001;
+      }
+      for (let i = 0; i < items.length; i += 1) {
+        for (let j = i + 1; j < items.length; j += 1) if (connected(items[i], items[j])) parent[find(i)] = find(j);
+      }
+      const padGroups = new Set(pads.map((_, i) => find(i)));
+      if (padGroups.size > 1) add('D004', `net "${net}" is not fully routed (${pads.length} pads in ${padGroups.size} disconnected groups)`, {
+        net, pads: pads.length,
+        fix: 'connect the isolated pad groups with explicit pcb.tracks and use pcb.vias where the layer changes'
       });
     }
   }
@@ -357,14 +371,14 @@ function runDrc(file, opts) {
     add('D006', `a pour exists but none on net "${pourNet}"`, {
       fix: `the board has pours but none on "${pourNet}" — fix the pour's net in the client, or judge with --pour-net <net>`
     });
-  } else if (!placedOnly && !geo.pours.length) {
+  } else if (!placedOnly && !geo.pours.length && geo.pads.some((p) => p.net === pourNet)) {
     add('D006', 'no copper pour on the board (expected a ground plane)', {
-      fix: `add the ground pour in the EasyEDA client (this skill never pours); or if this board is intentionally planeless, run drc with --placed-only`
+      fix: `add the ground pour in the EasyEDA client (this skill never pours); or record why a plane is not required`
     });
   }
 
   // D007 — pads without a net
-  const orphan = geo.pads.filter((p) => !p.net);
+  const orphan = geo.pads.filter((p) => !p.net && !(opts?.noConnect?.has(`${p.ref}.${p.num}`)));
   if (orphan.length) {
     add('D007', `${orphan.length} pad(s) have no net: ${orphan.slice(0, 6).map((p) => `${p.ref}.${p.num}`).join(' ')}`, {
       fix: `re-run build.js --force — PCB pad nets come from parts[].pins; a pad with no net means its pin mapping lost an entry`
@@ -375,7 +389,7 @@ function runDrc(file, opts) {
   for (const v of geo.vias) {
     if (v.width < rules.viaMin || v.width > rules.viaMax || v.hole >= v.width) {
       add('D008', `via at ${v.x},${v.y} has size ${v.width}/drill ${v.hole}`, {
-        fix: `set pcb.rules.viaDiameter/viaDrill inside ${rules.viaMin}–${rules.viaMax} with drill < diameter`
+        fix: `set pcb.vias[].diameter/drill inside ${rules.viaMin}–${rules.viaMax} with drill < diameter`
       });
     }
   }
@@ -386,7 +400,7 @@ function runDrc(file, opts) {
     if (v.hole < rules.minDrill - 0.001) {
       add('D009', `via at ${v.x},${v.y} on net "${v.net}" has a ${v.hole} mil drill (min ${rules.minDrill})`, {
         net: v.net,
-        fix: `raise pcb.rules.viaDrill to ${rules.minDrill} mil (0.3 mm) or more and re-run build.js --force`
+        fix: `raise pcb.vias[].drill to ${rules.minDrill} mil (0.3 mm) or more and re-run build.js --force`
       });
     }
   }
@@ -406,7 +420,7 @@ function runDrc(file, opts) {
     if (ring < rules.minRing - 0.001) {
       add('D010', `via at ${v.x},${v.y} has a ${ring.toFixed(1)} mil annular ring (outer ${v.width}, drill ${v.hole}) — min ${rules.minRing}`, {
         net: v.net,
-        fix: `enlarge pcb.rules.viaDiameter (or shrink viaDrill) so (diameter − drill)/2 reaches ${rules.minRing} mil, then re-run build.js --force`
+        fix: `enlarge the via diameter (or shrink its drill) so (diameter − drill)/2 reaches ${rules.minRing} mil, then re-run build.js --force`
       });
     }
   }
@@ -448,7 +462,7 @@ function runDrc(file, opts) {
   const joints = new Map();
   geo.tracks.forEach((t, ti) => {
     if (!t.net) return;
-    if (t.layer !== 1 && t.layer !== 2) return; // copper layers only
+    if (t.layer !== 1 && t.layer !== 2 && !(t.layer >= 15 && t.layer <= 44)) return;
     const ends = [
       { vx: t.x2 - t.x1, vy: t.y2 - t.y1, x: t.x1, y: t.y1 },
       { vx: t.x1 - t.x2, vy: t.y1 - t.y2, x: t.x2, y: t.y2 }

@@ -8,7 +8,7 @@
  * The checker only needs the record shape, so most fixtures are synthetic
  * single-file PCB documents (PCB DOCHEAD + one component with a footprint +
  * the geometry under test). The last group is the regression contract: a real
- * blink build must gain ZERO DFM findings — the shipped footprints are SMD and
+ * authored sample build must gain ZERO DFM findings — the shipped footprints are SMD and
  * the default via is 24/12 mil, and every eval case keeps minDrc 100.
  *
  * Exits 1 when any assertion fails.
@@ -104,7 +104,7 @@ function main() {
   let d = forCode(r, 'D009')[0];
   ok(!!d && d.level === 'error', 'D009: sub-minimum via drill is an error', JSON.stringify(r.findings));
   ok(d && /drill/i.test(d.msg) && d.net === 'SIG', 'D009 msg names the drill and net', d && d.msg);
-  ok(d && typeof d.fix === 'string' && /viaDrill/.test(d.fix), 'D009 fix names pcb.rules.viaDrill', d && d.fix);
+  ok(d && typeof d.fix === 'string' && /pcb\.vias/.test(d.fix), 'D009 fix names pcb.vias[].drill', d && d.fix);
   ok(!codes(r).includes('D010'), 'D009 fixture does not also fire D010', JSON.stringify(codes(r)));
 
   // exactly 12 mil is legal — the shipped default via sits right on the limit.
@@ -129,7 +129,7 @@ function main() {
   r = runDrc(f, {});
   d = forCode(r, 'D010')[0];
   ok(!!d && d.level === 'warn', 'D010: thin via ring is a warning', JSON.stringify(r.findings));
-  ok(d && /ring/i.test(d.msg) && typeof d.fix === 'string' && /viaDiameter/.test(d.fix), 'D010 fix names pcb.rules.viaDiameter', d && d.fix);
+  ok(d && /ring/i.test(d.msg) && typeof d.fix === 'string' && /via diameter/.test(d.fix), 'D010 fix names the via diameter', d && d.fix);
   ok(!codes(r).includes('D009'), 'D010 via fixture does not also fire D009', JSON.stringify(codes(r)));
 
   // the shipped 24/12 via → ring 6 → quiet
@@ -249,29 +249,26 @@ function main() {
   ok(r.errors === 1 && r.warnings === 1, 'errors/warnings counted', `${r.errors}/${r.warnings}`);
 
   // --------------------------------------------------------- no-regression
-  // The shipped deliverable carries NO copper (policy since 1.13): this probe
-  // asserts the placed board is copper-free AND that the DFM floors stay quiet
-  // on pads alone. The copper floors themselves are judged by the synthetic
-  // fixtures above — imported client boards still get the full DRC.
-  const proj = path.join(TMP, 'blink');
-  const design = path.join(ROOT, 'examples', 'designs', 'blink.json');
+  // Validate that an authored routed board also passes the DFM checks.
+  const proj = path.join(TMP, 'authored sample');
+  const design = path.join(ROOT, 'test', 'fixtures', 'ai-resistor-link.json');
   const rb = spawnCaptured(process.execPath, [path.join(ROOT, 'scripts/build.js'), '--design', design, '--dir', proj], { cwd: ROOT, encoding: 'utf8' });
   const buildOut = `${rb.stdout || ''}${rb.stderr || ''}`;
-  ok(rb.status === 0, 'blink builds for the DFM regression probe', buildOut.slice(-500));
-  const blinkPcb = path.join(proj, 'pcb', 'PCB1.epcb2');
-  if (fs.existsSync(blinkPcb)) {
-    const geo = pcbGeometry(blinkPcb);
-    ok(geo.tracks.length === 0 && geo.vias.length === 0 && geo.pours.length === 0,
-      'the shipped board carries zero copper — by policy, not by luck',
+  ok(rb.status === 0, 'authored sample builds for the DFM regression probe', buildOut.slice(-500));
+  const samplePcb = path.join(proj, 'pcb', 'PCB1.epcb2');
+  if (fs.existsSync(samplePcb)) {
+    const geo = pcbGeometry(samplePcb);
+    ok(geo.tracks.length === 4 && geo.vias.length === 2 && geo.pours.length === 0,
+      'the authored board carries the specified copper',
       `${geo.tracks.length} tracks / ${geo.vias.length} vias / ${geo.pours.length} pours`);
     ok(geo.pads.length > 0, 'footprints and pads are placed (the deliverable is placement)', String(geo.pads.length));
     ok(geo.pads.every((p) => !p.hole || p.hole >= DEFAULTS.minDrill), 'no shipped pad drill breaks the floor');
-    const rr = runDrc(blinkPcb, {});
-    ok(rr.mode === 'placed-only', 'drc auto-detects the placed-only mode', rr.mode);
-    ok(rr.findings.length === 0, 'blink gains no DFM findings', JSON.stringify(rr.findings));
-    ok(rr.score === 100, 'blink still scores 100', rr.score);
+    const rr = runDrc(samplePcb, {});
+    ok(rr.mode === 'routed', 'drc detects routed copper', rr.mode);
+    ok(rr.findings.length === 0, 'authored sample gains no DFM findings', JSON.stringify(rr.findings));
+    ok(rr.score === 100, 'authored sample still scores 100', rr.score);
   } else {
-    ok(false, 'blink PCB document exists', blinkPcb);
+    ok(false, 'authored sample PCB document exists', samplePcb);
   }
 
   // the --rules table printed by the CLI includes the new codes

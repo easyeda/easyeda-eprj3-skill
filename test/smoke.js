@@ -4,8 +4,7 @@
  * smoke.js — end-to-end regression test for the eprj3 skill scripts.
  *
  * Builds a complete project (temp library staging in <project>/.tmp/library,
- * preset-first placement on the schematic and PCB, wires, net label — copper
- * is never built: since 1.13 the skill cannot route or pour)
+ * preset-first placement on the schematic and PCB, wires, and a net label)
  * with the real scripts in a throwaway temp dir, then asserts the format
  * invariants derived from the official easyeda-pro-eprj3-format example:
  *   - folder layout: index + sch/<sch>/{P1.esch2,<sch>.ecfg,<sch>.evar} + pcb + panel
@@ -593,11 +592,11 @@ function main() {
     // ---- declarative pipeline: build a design file end to end ----
     // The record-level checks above prove the primitives; this proves they still
     // compose into a project that passes every gate.
-    const design = path.join(ROOT, 'examples', 'designs', 'blink.json');
+    const design = path.join(__dirname, 'fixtures', 'ai-resistor-link.json');
     const built = path.join(tmp, 'built');
-    if (fs.existsSync(design)) {
+    {
       const rBuild = run([SCRIPTS + '/build.js', '--design', design, '--dir', built, '--quiet']);
-      assert(rBuild.status === 0, 'build.js exits 0 on examples/designs/blink', rBuild.stderr.trim());
+      assert(rBuild.status === 0, 'build.js accepts the explicit AI layout fixture', rBuild.stderr.trim());
       assert(/lint 100\/100/.test(rBuild.stdout), 'build reports a perfect layout score', rBuild.stdout.trim());
       assert(/drc 100\/100/.test(rBuild.stdout), 'build reports a perfect DRC score', rBuild.stdout.trim());
       assert(!fs.existsSync(path.join(built, '.tmp')), 'build removes its own .tmp staging area');
@@ -612,32 +611,26 @@ function main() {
       let nl = null;
       try { nl = JSON.parse(rNl.stdout.slice(rNl.stdout.indexOf('['))); } catch { /* leave null */ }
       const names = nl && nl[0] ? nl[0].nets.map((n) => n.name).sort().join(',') : '';
-      assert(names === 'GND,LED_A,VCC,V_LED', 'netlist recovers exactly the four designed nets', names);
+      assert(names === 'LINK,RETURN', 'netlist recovers exactly the two designed nets', names);
 
       const rPins = run([SCRIPTS + '/pins.js', '--dir', built]);
       assert(/R1\.2/.test(rPins.stdout), 'pins.js lists placed pins with their nets', rPins.stdout.trim());
 
       const rWire = run([SCRIPTS + '/add-wire.js', '--dir', built, '--sch', 'Schematic1',
-        '--sheet', 'P1', '--from', 'R1.2', '--to', 'D2.1', '--net', 'LED_A']);
-      assert(/R1\.2/.test(rWire.stdout) && /D2\.1/.test(rWire.stdout),
-        'add-wire resolves pin references instead of raw coordinates', rWire.stdout.trim());
+        '--sheet', 'P1', '--from', 'R1.2', '--to', 'R2.1', '--net', 'LINK'], 1);
+      assert(/Unknown option: --from/.test(rWire.stderr), 'add-wire rejects implicit routing', rWire.stderr.trim());
 
       const rDry = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'dry'), '--dry-run', '--quiet']);
       assert(/dry run/.test(rDry.stdout), 'build --dry-run says so', rDry.stdout.trim());
       assert(!fs.existsSync(path.join(tmp, 'dry')), 'build --dry-run leaves no directory behind');
 
-      // ---- copper policy: the skill cannot route or pour ----
-      const rRats = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'rats')]);
-      assert(/placement-only \(this skill never routes or pours\)/.test(rRats.stdout),
-        'build states the copper policy on the pcb line', rRats.stdout.trim());
-      assert(/rats: \d+ net\(s\) to connect by hand in the client/.test(rRats.stdout),
-        'build prints the rats handoff (what to wire in the client)', rRats.stdout.trim());
+      // Automatic routing is not a build option.
       const rRoute = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'noguard'), '--route'], 1);
       assert(/Unknown option/.test(`${rRoute.stderr}${rRoute.stdout}`),
-        'build --route is rejected — routing left the skill (1.13)', `${rRoute.stderr}${rRoute.stdout}`.trim().slice(0, 200));
+        'build --route is rejected; supply explicit tracks', `${rRoute.stderr}${rRoute.stdout}`.trim().slice(0, 200));
       const rPourFlag = run([SCRIPTS + '/build.js', '--design', design, '--dir', path.join(tmp, 'noguard2'), '--pour'], 1);
       assert(/Unknown option/.test(`${rPourFlag.stderr}${rPourFlag.stdout}`),
-        'build --pour is rejected — pouring left the skill (1.13)', `${rPourFlag.stderr}${rPourFlag.stdout}`.trim().slice(0, 200));
+        'build --pour is rejected; specify a copper region and fill it in the client', `${rPourFlag.stderr}${rPourFlag.stdout}`.trim().slice(0, 200));
     }
 
     // ---- recipe library: list / show / apply ----

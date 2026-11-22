@@ -1,20 +1,19 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "2.2.7",
-  "description": "AI agent skill that builds EasyEDA Pro .eprj3 projects from one design.json — offline schematic layout/placement plus a 2.x CLI bridge (LCEDA/EasyEDA Pro 4.1.94+) for library search, client-built PCBs, auto layout/route, pour, netlist export and screenshots; zero npm dependencies.",
+  "version": "2.2.8",
+  "description": "EasyEDA Pro project authoring and checks for AI-authored schematic and PCB placement and routing.",
   "main": "scripts/lib/eprj3.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/easyeda/easyeda-eprj3-skill.git"
   },
   "scripts": {
-    "test": "node test/smoke.js && node test/pipeline.js && node test/dfm.js && node test/corpus.js && node scripts/depcheck.js",
+    "test": "node test/smoke.js && node test/pipeline.js && node test/dfm.js && node scripts/depcheck.js",
     "test:pipeline": "node test/pipeline.js",
     "test:smoke": "node test/smoke.js",
     "test:dfm": "node test/dfm.js",
     "test:corpus": "node test/corpus.js",
     "depcheck": "node scripts/depcheck.js",
-    "coverage": "node scripts/pattern-coverage.js",
     "intake": "node scripts/intake.js",
     "eval": "node scripts/eval.js",
     "build": "node scripts/build.js",
@@ -47,7 +46,6 @@
     "netcheck": "node scripts/netcheck.js",
     "report": "node scripts/report.js",
     "make-board": "node scripts/make-board.js",
-    "floorplan": "node scripts/floorplan.js",
     "select": "node scripts/recipe.js devices",
     "eda": "node scripts/eda.js",
     "pack": "node scripts/pack.js"

@@ -5,7 +5,7 @@
  *
  *   node scripts/make-board.js --design <design.json> --dir <project> [--report build.json] [--force]
  *
- * Pipeline: build (schematic + placement + 5 gates + netcheck) → netlist audit
+ * Pipeline: build (AI-authored schematic and PCB + gates + netcheck) → netlist audit
  * package (the spec↔built view a fresh reviewer reads) → a brief JSON/one-line
  * digest. The AI writes only the design file and reads back the report — no
  * temp scripts, no verbose build logs on every iteration.
@@ -19,7 +19,7 @@ const SCHEMA = [
   { name: 'design', desc: 'design.json file (or use --gen)' },
   { name: 'gen', desc: 'generator module (A) => design — see lib/authoring.js' },
   { name: 'dir', desc: 'project directory to create', required: true },
-  { name: 'report', desc: 'write the digest JSON here (default: <dir>/build.json)', hasValue: false },
+  { name: 'report', desc: 'write the digest JSON here (default: <dir>/build.json)' },
   { name: 'force', desc: 'rebuild an existing project', hasValue: false },
   { name: 'quiet', desc: 'suppress the build stdout (report only)', hasValue: false }
 ];
@@ -70,7 +70,7 @@ function main() {
       audit = { ok: pkg.mechanical.ok, file: auditFile };
 
       const all = N.projectNetlist(dir);
-      const md = R.buildProjectReport(design, all, NC.compare(all), report);
+      const md = R.buildProjectReport(design, all, NC.compare(all, D.multiUnitBaseOf(design.multiUnits), D.noConnectPins(design)), report);
       const reportMd = path.join(dir, 'project-report.md');
       fs.writeFileSync(reportMd, `${md}\n`, 'utf8');
       projectReport = reportMd;

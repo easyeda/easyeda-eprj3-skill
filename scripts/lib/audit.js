@@ -23,7 +23,7 @@ const { compare } = require('./netcheck');
 const SCHEMA = 'eprj3-netlist-audit/1';
 
 // "no connect" conventions accepted by the ERC (E002 exemption).
-const NC_NET = /^(NC|DNC\d*|N\/C)$/i;
+const { NC_NET, noConnectPins, multiUnitBaseOf } = require('./design');
 // names that LOOK like a rail — same family the ERC uses for W001/W002.
 const POWER_ISH = /^(VCC|VDD|VSS|GND|AGND|PGND|VBAT|VBUS|VIN|VOUT|\+?\d+V\d*|3V3|5V|12V|12V0|1V8|2V5|\+5V|\+3V3)$/i;
 
@@ -147,7 +147,10 @@ function diffSpec(spec, built) {
   const nets = [];
   for (const name of names) {
     const want = spec.groups.get(name) || new Set();
-    const have = built.groups.has(name) ? built.groups.get(name).pins : new Set();
+    const have = new Set(built.groups.get(name)?.pins || []);
+    if (NC_NET.test(name)) {
+      for (const entry of built.unconnected) if (want.has(entry.pin)) have.add(entry.pin);
+    }
     const missing = [...want].filter((p) => !have.has(p)).sort();
     const extra = [...have].filter((p) => !want.has(p)).sort();
     if (!missing.length && !extra.length) continue;
@@ -248,7 +251,8 @@ function buildPackage(dir, design) {
   const all = N.projectNetlist(dir);
   const spec = design ? specGroups(design) : null;
   const built = builtGroups(all);
-  const netcheck = compare(all);
+  const unused = noConnectPins(design);
+  const netcheck = compare(all, multiUnitBaseOf(design?.multiUnits), unused);
 
   const diff = spec ? diffSpec(spec, built) : null;
   const missing = spec ? missingPins(spec, built) : [];
@@ -259,7 +263,7 @@ function buildPackage(dir, design) {
   const unitBase = design ? unitBaseMap(design) : new Map();
 
   const mechanicalOk = netcheck.match
-    && built.unconnected.length === 0
+    && built.unconnected.every((u) => unused.has(u.pin))
     && twistBuilt.length === 0
     && (!spec || (diff.ok && missing.length === 0 && twistSpec.length === 0 && nc.length === 0));
 

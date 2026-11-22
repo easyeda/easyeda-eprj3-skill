@@ -7,13 +7,7 @@
  *
  *   node scripts/build.js --design design.json --dir <projectDir> [--force]
  *
- * It bootstraps the project, resolves every library entry (presets, inline
- * specs, or staged files), lays the schematic out in signal-flow blocks, routes
- * every net on the SHEET (wire / L / Z / stub+label / power flag), annotates
- * the blocks, places the footprints on the PCB — placement only: this skill
- * NEVER auto-routes or pours copper; the rats list tells the human what to
- * finish in the client. Then it validates and reports, so an agent gets the
- * same information a human reviewer would.
+ * Validates and emits an explicit schematic and PCB layout; it never chooses geometry.
  *
  * Re-running over an existing project requires --force, which deletes ONLY the
  * files this skill owns (index, sch/, pcb/, panel/, .tmp/).
@@ -21,12 +15,12 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const E = require('./lib/eprj3');
 const G = require('./lib/geom');
 const P = require('./lib/parts');
 const D = require('./lib/design');
-const R = require('./lib/sch-route');
-const PAT = require('./lib/sch-patterns');
+const Layout = require('./lib/authored-layout');
 const FA = require('./lib/fp-auto');
 const { parseArgs, printHelp, die } = require('./lib/utils');
 
@@ -46,14 +40,9 @@ const SCHEMA = [
   { name: 'digest', desc: 'print a one-page design digest (counts, gates, rats) — for resuming a session without re-reading logs', hasValue: false },
   { name: 'plan', desc: 'print what would be built (parts, nets, rules, intent gate) and write nothing', hasValue: false },
   { name: 'quiet', desc: 'only print the final summary line', hasValue: false },
-  { name: 'no-tidy', desc: 'keep declared rotations (skip the sch-tidy orientation pass)', hasValue: false },
-  { name: 'no-patterns', desc: 'skip the circuit-pattern macros (two-pin chains)', hasValue: false },
-  { name: 'no-search', desc: 'skip the local block-move search pass', hasValue: false },
-  { name: 'keep-tmp', desc: 'keep the .tmp staging area (normally removed after a clean build)', hasValue: false },
-  { name: 'layout', desc: 'PCB layout engine: "skill" (AI-planned coordinates, explicit pcb.place always wins) or "client" (EDA auto layout); default from design.pcb.layout, else "client" for ic builds' },
-  { name: 'move-locked', desc: 'client layout: unlock every component before auto layout (also moves explicitly placed / user-locked parts)', hasValue: false },
-  { name: 'keep-layout', desc: 'rebuild an existing project while keeping its current footprint positions (reads the old PCB into pcb.place; implies --layout skill)', hasValue: false },
-  { name: 'skill-layout', desc: 'alias of --layout skill (keep the skill\'s own PCB placement; no client auto layout)', hasValue: false }
+  { name: 'geometry', desc: 'print resolved symbol and footprint geometry as JSON; write no project', hasValue: false },
+  { name: 'keep-tmp', desc: 'keep the .tmp staging area', hasValue: false },
+  { name: 'keep-layout', desc: 'reuse existing PCB coordinates; supply explicit positions for new footprints and all intended copper', hasValue: false }
 ];
 
 const SKILL_OWNED = ['sch', 'pcb', 'panel', '.tmp'];
@@ -137,97 +126,6 @@ class Emitter {
   }
 }
 
-/**
- * Sheet coordinates are y-UP (the client reads them that way when every record
- * carries yAxisDirection "up"), so the page origin is the BOTTOM-left. The
- * layout packs from y=0 upward and lets a block's title strip dip below it;
- * lift each sheet's content by a margin so nothing hangs outside the border.
- */
-function shiftSheetsIntoPage(placements, blocks) {
-  const MARGIN = 40;
-  const minY = new Map();
-  const put = (s, y) => minY.set(s, Math.min(minY.has(s) ? minY.get(s) : Infinity, y));
-  for (const pl of placements) put(pl.sheet || 1, pl.extent.y1);
-  for (const b of blocks) put(b.sheet || 1, b.rect.y1);
-  const dy = new Map();
-  // snap the shift itself to the 10-mil grid: extents include the label band
-  // (+16/+34 may be off-grid), and an unsnapped shift moves EVERY part off the
-  // grid at once (lint L008 on parts nobody touched)
-  for (const [s, y] of minY) dy.set(s, Math.round((MARGIN - y) / 10) * 10);
-  for (const pl of placements) {
-    const d = dy.get(pl.sheet || 1) || 0;
-    if (!d) continue;
-    pl.y += d;
-    pl.extent.y1 += d;
-    pl.extent.y2 += d;
-  }
-  for (const b of blocks) {
-    const d = dy.get(b.sheet || 1) || 0;
-    if (!d) continue;
-    b.rect.y1 += d;
-    b.rect.y2 += d;
-  }
-}
-
-/**
- * Center each sheet's block group inside its page. The page is the smallest
- * standard size that fits (A4 for a small design), so without this the circuit
- * hugs the bottom-left border and the sheet reads as empty. Wires, flags and
- * ports move with the parts; the frame itself stays pinned to the page origin.
- */
-/**
- * Module frames are sized from part extents before routing, but the router
- * then prints text OUTSIDE those extents: net-port names (45 units beyond the
- * port), power-flag names and stub-label names. Grow every frame to contain
- * the text that belongs to it (nearest frame within 200 units), with a 12-unit
- * margin, and never let a grown side come closer than 20 units to another
- * frame on the same sheet.
- */
-/**
- * The client's NETOBJECTONGRID rule requires every net object on the 50-mil
- * grid (5 schematic units; the official example has every component at
- * 0/5 mod 10, and the DRC flags only the few routed jogs that end up off it).
- * Pin tips are already on the grid; the odd vertices come from router margins
- * (e.g. +18 / +53). Snap every wire vertex, flag and port with the same
- * mapping, so shared endpoints stay shared and connections survive.
- */
-function snapNetObjectsToGrid(routed, grid) {
-  const g = grid || 5;
-  const snap = (v) => Math.round(v / g) * g;
-  for (const w of routed.wires || []) {
-    for (const s of w.segs) {
-      s.x1 = snap(s.x1); s.y1 = snap(s.y1);
-      s.x2 = snap(s.x2); s.y2 = snap(s.y2);
-    }
-  }
-  for (const f of routed.flags || []) { f.x = snap(f.x); f.y = snap(f.y); }
-  for (const p of routed.ports || []) { p.x = snap(p.x); p.y = snap(p.y); }
-}
-
-/** Tight union of every footprint's extent (body + pads) at its placed
- *  position — the footprint bbox the auto board size is derived from. */
-function planBBox(plan, lib) {
-  const { footprintExtent } = require('./lib/pcb-plan');
-  let box = null;
-  for (const pl of plan.placements || []) {
-    const fp = lib.footprintOf(pl.part);
-    if (!fp) continue;
-    const [x, y, angle] = pl.pcbPos;
-    const ext = footprintExtent(fp, angle || 0);
-    const b = { x1: ext.x1 + x, y1: ext.y1 + y, x2: ext.x2 + x, y2: ext.y2 + y };
-    box = box
-      ? {
-        x1: Math.min(box.x1, b.x1),
-        y1: Math.min(box.y1, b.y1),
-        x2: Math.max(box.x2, b.x2),
-        y2: Math.max(box.y2, b.y2)
-      }
-      : b;
-  }
-  return box;
-}
-
-/** System-library power-flag type for a net name (addNetFlag enum). */
 function powerFlagKind(net) {
   const n = String(net).toUpperCase();
   if (/(^|[_-])(AGND|GNDA|ANALOG)/.test(n)) return 'AnalogGround';
@@ -236,154 +134,8 @@ function powerFlagKind(net) {
   return 'Power';
 }
 
-/** Split a wire group's segments into connected polylines (one per chain).
- *  The client's `sch_SourcePrimitiveWire.add` accepts one connected polyline
- *  per call; a branch (T) becomes several chains that the client merges. */
-function segChains(segs) {
-  const eps = 0.01;
-  const same = (a, b) => Math.abs(a - b) < eps;
-  const remaining = (segs || []).filter((s) => !(same(s.x1, s.x2) && same(s.y1, s.y2)));
-  const chains = [];
-  while (remaining.length) {
-    const first = remaining.shift();
-    const pts = [first.x1, first.y1, first.x2, first.y2];
-    let grew = true;
-    while (grew) {
-      grew = false;
-      let ex = pts[pts.length - 2];
-      let ey = pts[pts.length - 1];
-      let idx = remaining.findIndex((s) => (same(s.x1, ex) && same(s.y1, ey)) || (same(s.x2, ex) && same(s.y2, ey)));
-      if (idx >= 0) {
-        const s = remaining.splice(idx, 1)[0];
-        if (same(s.x1, ex) && same(s.y1, ey)) pts.push(s.x2, s.y2);
-        else pts.push(s.x1, s.y1);
-        grew = true;
-        continue;
-      }
-      const sx = pts[0];
-      const sy = pts[1];
-      idx = remaining.findIndex((s) => (same(s.x1, sx) && same(s.y1, sy)) || (same(s.x2, sx) && same(s.y2, sy)));
-      if (idx >= 0) {
-        const s = remaining.splice(idx, 1)[0];
-        if (same(s.x2, sx) && same(s.y2, sy)) pts.unshift(s.x1, s.y1);
-        else pts.unshift(s.x2, s.y2);
-        grew = true;
-      }
-    }
-    chains.push(pts);
-  }
-  return chains;
-}
-
-function growFramesToLabels(blocks, routed) {
-  const textW = (s) => Math.max(20, String(s).length * 5.5);
-  const boxes = [];
-  for (const p of routed.ports || []) {
-    const w = textW(p.net) + 45;
-    const d = p.dir || { x: 1, y: 0 };
-    let r;
-    if (d.x > 0) r = G.rect(p.x, p.y - 8, p.x + w, p.y + 8);
-    else if (d.x < 0) r = G.rect(p.x - w, p.y - 8, p.x, p.y + 8);
-    else if (d.y > 0) r = G.rect(p.x - textW(p.net) / 2, p.y, p.x + textW(p.net) / 2, p.y + 58);
-    else r = G.rect(p.x - textW(p.net) / 2, p.y - 58, p.x + textW(p.net) / 2, p.y);
-    boxes.push({ sheet: p.sheet || 1, at: { x: p.x, y: p.y }, r });
-  }
-  for (const f of routed.flags || []) {
-    const hw = textW(f.net) / 2;
-    const r = f.style === 'down'
-      ? G.rect(f.x - hw, f.y - 32, f.x + hw, f.y)
-      : G.rect(f.x - hw, f.y, f.x + hw, f.y + 24);
-    boxes.push({ sheet: f.sheet || 1, at: { x: f.x, y: f.y }, r });
-  }
-  for (const w of routed.wires || []) {
-    if (!w.net || w.segs.length !== 1) continue;
-    const s = w.segs[0];
-    if (s.y1 !== s.y2 || s.x1 === s.x2) continue;
-    const left = s.x2 < s.x1;
-    const tw = textW(w.net);
-    const r = left ? G.rect(s.x2 - tw, s.y2 - 7, s.x2, s.y2 + 7) : G.rect(s.x2, s.y2 - 7, s.x2 + tw, s.y2 + 7);
-    boxes.push({ sheet: w.sheet || 1, at: { x: s.x2, y: s.y2 }, r });
-  }
-  const original = blocks.map((b) => Object.assign({}, b.rect));
-  const grown = blocks.map((b) => Object.assign({}, b.rect));
-  for (const bx of boxes) {
-    let best = -1;
-    let bestD = Infinity;
-    blocks.forEach((b, i) => {
-      if ((b.sheet || 1) !== bx.sheet) return;
-      const r = original[i];
-      const dx = Math.max(r.x1 - bx.at.x, 0, bx.at.x - r.x2);
-      const dy = Math.max(r.y1 - bx.at.y, 0, bx.at.y - r.y2);
-      const d = Math.hypot(dx, dy);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    if (best < 0 || bestD > 200) continue;
-    const g = grown[best];
-    g.x1 = Math.min(g.x1, bx.r.x1 - 12);
-    g.y1 = Math.min(g.y1, bx.r.y1 - 12);
-    g.x2 = Math.max(g.x2, bx.r.x2 + 12);
-    g.y2 = Math.max(g.y2, bx.r.y2 + 12);
-  }
-  const snapDown = (v) => Math.floor(v / 10) * 10;
-  const snapUp = (v) => Math.ceil(v / 10) * 10;
-  blocks.forEach((b, i) => {
-    const g = { x1: snapDown(grown[i].x1), y1: snapDown(grown[i].y1), x2: snapUp(grown[i].x2), y2: snapUp(grown[i].y2) };
-    const o = original[i];
-    blocks.forEach((n, j) => {
-      if (i === j || (n.sheet || 1) !== (b.sheet || 1)) return;
-      // clamp against the OTHER block's CURRENT rect (it may already have grown
-      // towards this gap): the clamp may only pull a grown side back, never
-      // push it further out — both blocks growing into the same gap used to
-      // cross by 10 units (lint L005)
-      const r = grown[j];
-      const og = original[j];
-      const vOverlap = g.y1 < r.y2 + 20 && r.y1 - 20 < g.y2;
-      const hOverlap = g.x1 < r.x2 + 20 && r.x1 - 20 < g.x2;
-      if (vOverlap && og.x1 >= o.x2 && g.x2 > r.x1 - 20) g.x2 = Math.max(o.x2, Math.min(g.x2, snapDown(r.x1 - 20)));
-      if (vOverlap && og.x2 <= o.x1 && g.x1 < r.x2 + 20) g.x1 = Math.min(o.x1, Math.max(g.x1, snapUp(r.x2 + 20)));
-      if (hOverlap && og.y1 >= o.y2 && g.y2 > r.y1 - 20) g.y2 = Math.max(o.y2, Math.min(g.y2, snapDown(r.y1 - 20)));
-      if (hOverlap && og.y2 <= o.y1 && g.y1 < r.y2 + 20) g.y1 = Math.min(o.y1, Math.max(g.y1, snapUp(r.y2 + 20)));
-    });
-    b.rect = g;
-  });
-}
-
-function centerSheetsInPage(placements, blocks, routed, sheetFrames) {
-  for (const [s, frame] of sheetFrames) {
-    let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
-    const see = (r) => {
-      x1 = Math.min(x1, r.x1); y1 = Math.min(y1, r.y1);
-      x2 = Math.max(x2, r.x2); y2 = Math.max(y2, r.y2);
-    };
-    for (const b of blocks) if ((b.sheet || 1) === s) see(b.rect);
-    for (const p of placements) if ((p.sheet || 1) === s) see(p.extent);
-    if (!Number.isFinite(x1)) continue;
-    // keep the whole sheet on the 10-mil grid (L008): round the centering
-    // offset itself, not the moved records
-    const snap = (v) => Math.round(v / 10) * 10;
-    const dx = snap((frame.width - (x2 - x1)) / 2 - x1);
-    const dy = snap((frame.height - (y2 - y1)) / 2 - y1);
-    if (!dx && !dy) continue;
-    for (const p of placements) {
-      if ((p.sheet || 1) !== s) continue;
-      p.x += dx; p.extent.x1 += dx; p.extent.x2 += dx;
-      p.y += dy; p.extent.y1 += dy; p.extent.y2 += dy;
-    }
-    for (const b of blocks) {
-      if ((b.sheet || 1) !== s) continue;
-      b.rect.x1 += dx; b.rect.x2 += dx;
-      b.rect.y1 += dy; b.rect.y2 += dy;
-    }
-    for (const w of routed.wires) {
-      if ((w.sheet || 1) !== s) continue;
-      for (const seg of w.segs) { seg.x1 += dx; seg.x2 += dx; seg.y1 += dy; seg.y2 += dy; }
-    }
-    for (const f of routed.flags) if ((f.sheet || 1) === s) { f.x += dx; f.y += dy; }
-    for (const p of routed.ports) if ((p.sheet || 1) === s) { p.x += dx; p.y += dy; }
-  }
-}
-
-function makeLibrary(project, design) {  const symbolCache = new Map();
+function makeLibrary(project, design) {
+  const symbolCache = new Map();
   const footprintCache = new Map();
   const ctx = { ownerUuid: project.index.owner_uuid, client: project.client, ms: project.ms() };
 
@@ -392,7 +144,7 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
     // layout; the client places the official symbol itself (no doc download)
     if (part.libraryEntry) {
       const e = part.libraryEntry;
-      const key = `lib:${e.name}`;
+      const key = `lib:${e.name}:${e.subPartName || ''}`;
       if (!symbolCache.has(key)) {
         const sym = e.symbol || {};
         const b = sym.bodyBBox || sym.fullBBox || null;
@@ -443,8 +195,7 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
         const raw = m.symbol.name;
         const spec = Object.assign({}, m.symbol, { name: `SYM_${raw}`, title: raw });
         const entry = P.buildMultiPartSymbolEntry(spec, ctx);
-        project.saveLibrary(entry);
-        symbolCache.set(cacheKey, { entry, parsed: P.parseSymbolEntry(entry), partIds: entry.multipart || [] });
+          symbolCache.set(cacheKey, { entry, parsed: P.parseSymbolEntry(entry), partIds: entry.multipart || [] });
       }
       const cached = symbolCache.get(cacheKey);
       const partId = cached.partIds[part.symbol.partIndex];
@@ -472,7 +223,6 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
       const raw = part.symbol.name || part.id;
       const spec = Object.assign({}, part.symbol, { name: `SYM_${raw}`, title: raw });
       const entry = P.buildInlineSymbolEntry(spec, ctx);
-      project.saveLibrary(entry);
       symbolCache.set(key, Object.assign(P.parseSymbolEntry(entry), { entry }));
     }
     return symbolCache.get(key);
@@ -521,7 +271,6 @@ function makeLibrary(project, design) {  const symbolCache = new Map();
       const raw = expanded.name || part.id;
       const spec = Object.assign({}, expanded, { name: `FP_${raw}`, title: raw });
       const entry = P.buildInlineFootprintEntry(spec, ctx);
-      project.saveLibrary(entry);
       footprintCache.set(key, Object.assign(P.parseFootprintEntry(entry), { entry }));
     }
     return footprintCache.get(key);
@@ -718,7 +467,7 @@ function placePcbComponent(em, project, design, pl, lib, opts) {
   const pads = fp.pads.map((p) => ({
     num: p.num,
     elemId: p.elemId,
-    net: netsByNum[p.num] || ''
+    net: Layout.isNC(netsByNum[p.num]) ? '' : netsByNum[p.num] || ''
   }));
   const result = {
     blockPads: pads,
@@ -754,24 +503,17 @@ function main() {
   const argv = process.argv.slice(2);
   if (!argv.length || argv[0] === '-h' || argv[0] === '--help') {
     printHelp('build.js [options]', SCHEMA,
-      'Build a complete .eprj3 project from a design.json (schematic + PCB PLACEMENT; routing/pour are done in the client, not here).');
+      'Build an .eprj3 project from explicit schematic and PCB geometry, or inspect the resolved library with --geometry.');
     return;
   }
   const { opts } = parseArgs(argv, SCHEMA);
   const requestedDir = path.resolve(opts.dir);
-  // --dry-run and --plan both build into a throwaway sibling and delete it on
-  // exit: a rehearsal costs nothing and never touches the real project dir.
-  // --plan is the human confirmation gate — it shows the *real* stats (because
-  // it really built them) while writing nothing.
   const rehearsal = !!(opts['dry-run'] || opts.plan);
-  const dir = rehearsal ? requestedDir + `.${opts.plan ? 'plan' : 'dryrun'}` + process.pid : requestedDir;
-  if (rehearsal) {
-    process.on('exit', () => { try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } });
-  }
   // Design source: a plain design.json (--design) or a generator module
   // (--gen board.gen.js exporting (A) => design, see lib/authoring.js) — big
   // boards are authored as a short generator, never as thousands of JSON lines
   // and never as an agent-invented temp script.
+  if (!!opts.design === !!opts.gen) die('pass exactly one of --design or --gen');
   let designSource = opts.design ? path.resolve(opts.design) : path.resolve(opts.gen);
   let design;
   if (opts.gen) {
@@ -783,40 +525,23 @@ function main() {
   } else {
     design = D.readDesign(designSource);
   }
-  const declaredW = design.board.width;   // declared size, for the --plan blow-up check
-  const declaredH = design.board.height;
   const t0 = Date.now();                  // report.elapsed_ms
   const doPcb = !opts['schematic-only'] && !design.skipPcb;
 
-  // ---- layout engine choice (the AI asks the user; see SKILL.md) ----------
-  //  new project      → AI-planned coordinates (skill) or the EDA auto layout?
-  //  existing project → keep the current layout, or re-layout (and, if so,
-  //                     allow moving locked components)?
-  const layoutArg = opts.layout ? String(opts.layout).toLowerCase() : null;
-  if (layoutArg && !['skill', 'client'].includes(layoutArg)) {
-    die(`--layout must be "skill" or "client" (got "${opts.layout}")`);
-  }
   if (opts['keep-layout']) {
     if (!doPcb) die('--keep-layout needs the PCB (drop --schematic-only)');
     const existing = readExistingPlacements(requestedDir);
     if (!existing.size) {
       die(`--keep-layout: no footprint positions found in ${requestedDir} — build the project once, then rebuild with --keep-layout`);
     }
-    const place = Object.assign({}, design.pcbSpec.place || {});
-    let kept = 0;
+    const place = { ...design.pcbSpec.place };
     for (const p of design.parts) {
       const ref = p.multiUnitBase || p.id;
-      // the PCB's current position is authoritative for "keep the layout"
-      if (existing.has(ref)) { place[p.id] = existing.get(ref); kept += 1; }
+      if (existing.has(ref)) place[ref] = existing.get(ref);
     }
-    design.pcbSpec.place = place;
-    // "keep the existing layout" means: use those coordinates, never auto-layout
-    opts.layout = 'skill';
-    if (!opts.quiet) {
-      const total = Object.keys(place).length;
-      console.log(`layout: keep existing — ${total} footprint position(s) kept (${kept} read from the current PCB)`);
-    }
+    design.pcbSpec = { ...design.pcbSpec, place };
   }
+  if (!doPcb) design.skipPcb = true;
 
   // ---- system-library devices, resolved through the client CLI (2.x) -------
   // No local cache and no document download: the client returns the device
@@ -826,16 +551,17 @@ function main() {
   if (libRefs.length) {
     const CLI_LIB = require('./lib/cli-lib');
     const uniq = new Map();
-    for (const p of libRefs) if (!uniq.has(p.libraryRef.name)) uniq.set(p.libraryRef.name, p.libraryRef);
+    const libraryKey = (r) => JSON.stringify([r.name, r.lcsc, r.subPartName]);
+    for (const p of libRefs) uniq.set(libraryKey(p.libraryRef), p.libraryRef);
     let resolved;
     try {
-      resolved = CLI_LIB.resolveDevices([...uniq.values()].map((r) => ({ key: r.name, name: r.name, lcsc: r.lcsc || undefined })));
+      resolved = CLI_LIB.resolveDevices([...uniq].map(([key, r]) => ({ key, name: r.name, lcsc: r.lcsc || undefined, subPartName: r.subPartName })));
     } catch (e) {
       die(`resolving system-library device(s) needs the LCEDA/EasyEDA Pro CLI (V4.1.94+): ${e.message}`);
     }
     const byKey = new Map((resolved || []).map((e) => [e.key, e]));
     for (const p of libRefs) {
-      const e = byKey.get(p.libraryRef.name);
+      const e = byKey.get(libraryKey(p.libraryRef));
       if (!e || e.error || !e.symbol) {
         die(`part "${p.id}": device "${p.libraryRef.name}" was not found in the client's system library`
           + `${e && e.error ? ` (${e.error})` : ''} — check the name or add "lcsc": "C<id>"`);
@@ -850,39 +576,54 @@ function main() {
       }
     }
   }
-  // Strategy: the skill NEVER lays copper — no auto routing, no pours, no flags
-  // to turn them on. The deliverable is footprints placed with pad-net links
-  // bound and the board outline; copper is finished in the EasyEDA client by a
-  // human. The build reports `rats` (nets awaiting copper) so the handoff is
-  // explicit; the DRC is told the board is placement-only (D004/D006 never
-  // fire here, but stay live for imported client-authored boards).
   const log = (msg) => { if (!opts.quiet) console.log(msg); };
 
-  // ------------------------------------------------------------ bootstrap
-  if (fs.existsSync(dir) && fs.readdirSync(dir).length) {
-    if (!opts.force) {
-      die(`${dir} is not empty — pass --force to rebuild it (only skill-owned files are removed)`);
-    }
-    safeClean(dir);
-  }
-  const project = E.Project.create(dir, design.name);
-  project.ensureBoard();
-  // sheet documents are created AFTER the schematic layout (see below) so the
-  // drawing frame can be sized around what the packing actually produced
-  const pcbDoc = project.ensurePcbDocument(design.pcb, {
-    outline: E.rectPath(0, 0, design.board.width, design.board.height)
-  });
-  log(`created ${design.name} at ${dir} (board ${design.board.width}×${design.board.height} mil)`
-    + (design.sheets > 1 ? `, ${design.sheets} schematic sheets` : ''));
-
-  // ------------------------------------------------------------ library
-  const lib = makeLibrary(project, design);
+  // Resolve library and validate authored geometry before touching the output.
+  const sourceProject = new E.Project(requestedDir);
+  sourceProject.index = { owner_uuid: E.uuid32() };
+  const lib = makeLibrary(sourceProject, design);
   const check = D.validateDesign(design, lib);
   if (check.errors.length) {
     console.error('design errors:');
     for (const e of check.errors) console.error(`  ✗ ${e}`);
     process.exit(2);
   }
+  if (opts.geometry) {
+    console.log(JSON.stringify(Layout.geometry(design, lib, doPcb), null, 2));
+    return;
+  }
+  const { placements, blocks, routed } = Layout.schematic(design, lib);
+  const pcbLayout = doPcb ? Layout.pcb(design, lib) : null;
+  const pcbMode = pcbLayout?.mode ?? null;
+  const usesClient = placements.some((p) => p.part.libraryEntry);
+  const clientBuild = !rehearsal && usesClient;
+  if (opts.plan && usesClient) {
+    console.log(`Plan: ${design.name} — ${placements.length} symbols, ${routed.stats.segments} wire segments, ${pcbLayout?.tracks.length ?? 0} copper segments. Client import and gates not run.`);
+    return;
+  }
+  if (opts['dry-run'] && usesClient) die('client-library projects support --plan; real client import and verification require an actual build');
+  const dir = rehearsal ? fs.mkdtempSync(path.join(os.tmpdir(), 'eprj3-preview-')) : requestedDir;
+  if (rehearsal) process.on('exit', () => {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+  if (fs.existsSync(dir) && fs.readdirSync(dir).length) {
+    if (!opts.force) die(`${dir} is not empty — pass --force to rebuild it`);
+    safeClean(dir);
+  }
+  const project = E.Project.create(dir, design.name);
+  project.ensureBoard();
+  const pcbDoc = doPcb ? project.ensurePcbDocument(design.pcb, {
+    outline: E.rectPath(0, 0, design.board.width, design.board.height)
+  }) : null;
+  if (pcbLayout) {
+    const layers = E.readLines(pcbDoc.file).map((line) => {
+      const r = E.parseRecord(line);
+      if (r?.type !== 'LAYER' || !pcbLayout.copperLayers.has(r.body.layerId) || r.body.use) return line;
+      return E.formatRecord(r.head, { ...r.body, use: true, show: true });
+    });
+    E.writeLines(pcbDoc.file, layers);
+  }
+  log(`created ${design.name} at ${dir}`);
   // Library fidelity: a real multi-pin device drawn from an inline pin list is
   // NOT the official symbol (shape, pin order and names differ from the
   // library). Name every such part so the author pins the system-library
@@ -904,8 +645,7 @@ function main() {
     const rules = design.pcbSpec.rules || {};
     const nets = [...new Set(design.parts.flatMap((p) => Object.values(p.pins || {})))].sort();
     console.log(`方案 ${design.name} → ${requestedDir}`);
-    console.log(`  板框  自动：封装 bbox 面积 ×1.25（小板受板边间距约束会略大）${design.boardDeclared ? `（设计里的 ${design.board.width}×${design.board.height} mil 被忽略）` : ''} · `
-      + `${doPcb ? '只布局（本 skill 不做布线/铺铜，铜皮在客户端完成）' : '仅原理图 (--schematic-only)'}`);
+    console.log(doPcb ? `  PCB ${design.board.width}×${design.board.height} mil · ${pcbMode}` : '  Schematic only');
     console.log(`  电源  ${Object.entries(design.powers).map(([n, s]) => `${n}${s === 'up' ? '↑' : '↓'}`).join(' ')}`);
     const widths = Object.entries(design.netWidths || {});
     if (widths.length) console.log(`  线宽  ${widths.map(([n, w]) => `${n}=${w}mil`).join(' ')}`);
@@ -925,235 +665,7 @@ function main() {
     }
   }
 
-  // ------------------------------------------------------------ schematic
-  // PLACEMENT CANDIDATES (idea absorbed from the reference implementation,
-  // report §4/§7): two layout strategies — the declaration-order shelf and a
-  // signal-flow LAYERED layout — are each laid out, tidied, routed and scored
-  // with one quality model; the best wins under a safe gate, so a new strategy
-  // can never make a sheet worse than the baseline.
-  //
-  // Robustness: at tight densities two nets' stubs can meet (the client merges
-  // them), so every candidate is verified for cross-net contacts and retried on
-  // a looser grid before it may be selected.
-  const T = require('./lib/sch-tidy');
-  const Q = require('./lib/quality');
-  const SP = require('./lib/sch-place');
-  const baseRotations = new Map(design.parts.map((p) => [p.id, {
-    r: p.rotation, e: p.rotationExplicit, t: p.rotationTidied
-  }]));
-  const restoreRotations = () => {
-    for (const p of design.parts) {
-      const b = baseRotations.get(p.id);
-      p.rotation = b.r;
-      p.rotationExplicit = b.e;
-      p.rotationTidied = b.t;
-    }
-  };
-  const layoutFor = (kind, passDesign) => (kind === 'layered'
-    ? SP.layoutLayered(passDesign, lib)
-    : D.layoutSchematic(passDesign, lib));
-
-  const bodyOf = (pl) => {
-    const bb = pl.sym && pl.sym.bbox;
-    if (!bb) return pl.extent;
-    const pts = [[bb.x1, bb.y1], [bb.x2, bb.y1], [bb.x2, bb.y2], [bb.x1, bb.y2]].map(([x, y]) => {
-      const r = G.rotate(x, y, pl.rotation || 0);
-      return { x: pl.x + r.x, y: pl.y + r.y };
-    });
-    return G.bboxOfPoints(pts);
-  };
-
-  /** Route + score one placement state (positions must already be shifted). */
-  const assess = (placements, blocks, patternNets) => {
-    const routed = R.routeSchematic(design, placements, { patternPortNets: patternNets });
-    const contacts = R.countCrossNetContacts(routed);
-    const quality = Q.evaluate({
-      parts: placements.map((p) => ({ extent: p.extent, body: bodyOf(p), sheet: p.sheet || 1 })),
-      wires: routed.wires,
-      blocks
-    });
-    return { routed, contacts, quality };
-  };
-
-  /** Two block frames on one sheet must never overlap. */
-  const framesOverlap = (blocks) => {
-    for (let i = 0; i < blocks.length; i += 1) {
-      for (let j = i + 1; j < blocks.length; j += 1) {
-        if ((blocks[i].sheet || 1) !== (blocks[j].sheet || 1)) continue;
-        if (G.rectsOverlap(blocks[i].rect, blocks[j].rect)) return true;
-      }
-    }
-    return false;
-  };
-
-  /**
-   * Group-level local search (idea from the reference engine's local-search
-   * pass, re-derived): move one block at a time on the 10-mil grid, re-route,
-   * and keep a move only when the sheet stays contact-free, block frames stay
-   * apart, and the SAME safe gate as candidate selection accepts it. Bounded
-   * by design size: a large sheet skips the per-trial routing.
-   */
-  const refineLayout = (state) => {
-    if (state.placements.length > 48 || state.blocks.length > 8) return state;
-    let cur = state;
-    let moved = 0;
-    const from = state.quality.score;
-    const deltas = [[20, 0], [-20, 0], [0, 20], [0, -20], [40, 0], [-40, 0], [0, 40], [0, -40]];
-    for (let round = 0; round < 2; round += 1) {
-      let improved = false;
-      for (let bi = 0; bi < cur.blocks.length; bi += 1) {
-        const block = cur.blocks[bi];
-        const ids = new Set(block.members || []);
-        const sheet = block.sheet || 1;
-        for (const [dx, dy] of deltas) {
-          const placements = cur.placements.map((pl) => Object.assign({}, pl, {
-            extent: Object.assign({}, pl.extent)
-          }));
-          const blocks = cur.blocks.map((b) => Object.assign({}, b, { rect: Object.assign({}, b.rect) }));
-          for (const pl of placements) {
-            if (!ids.has(pl.part.id) || (pl.sheet || 1) !== sheet) continue;
-            pl.x += dx;
-            pl.extent.x1 += dx; pl.extent.x2 += dx;
-            pl.y += dy;
-            pl.extent.y1 += dy; pl.extent.y2 += dy;
-          }
-          blocks[bi].rect.x1 += dx; blocks[bi].rect.x2 += dx;
-          blocks[bi].rect.y1 += dy; blocks[bi].rect.y2 += dy;
-          shiftSheetsIntoPage(placements, blocks);
-          if (framesOverlap(blocks)) continue;
-          const trial = assess(placements, blocks, cur.patternNets);
-          if (trial.contacts !== 0 || !Q.safelyImproves(trial.quality, cur.quality)) continue;
-          if (trial.quality.score >= cur.quality.score) continue;
-          cur = Object.assign({}, cur, trial, { placements, blocks });
-          moved += 1;
-          improved = true;
-          break;
-        }
-      }
-      if (!improved) break;
-    }
-    if (!moved) return state;
-    return Object.assign({}, cur, { search: { moves: moved, from, to: cur.quality.score } });
-  };
-
-  function makeCandidate(kind, scale, rotatedNote, patternOpts) {
-    const passDesign = scale === 1 ? design : Object.assign({}, design, {
-      layout: {
-        cols: design.layout.cols,
-        cellW: Math.round(design.layout.cellW * scale),
-        cellH: Math.round(design.layout.cellH * scale),
-        blockGapX: Math.round(design.layout.blockGapX * scale),
-        blockGapY: Math.round(design.layout.blockGapY * scale),
-        margin: design.layout.margin
-      }
-    });
-    let { placements, blocks } = layoutFor(kind, passDesign);
-    if (!opts['no-tidy']) {
-      const tidy = T.tidyRotations(design, lib, placements);
-      if (tidy.rotated.length) {
-        ({ placements, blocks } = layoutFor(kind, passDesign));
-        if (rotatedNote && tidy.rotated.length) {
-          log(`sch-tidy: rotated ${tidy.rotated.length} part(s) onto their signal axes (${tidy.rotated.slice(0, 8).join(' ')}${tidy.rotated.length > 8 ? ' …' : ''})`);
-        }
-      }
-      // the re-layout may have moved a part away from the position its
-      // rotation was scored for; re-check 2-pin parts on the FINAL spot
-      const aligned = T.alignRotations(placements, blocks, design);
-      if (rotatedNote && aligned.length) {
-        log(`sch-tidy: re-aligned ${aligned.length} part(s) after placement (${aligned.slice(0, 8).join(' ')}${aligned.length > 8 ? ' …' : ''})`);
-      }
-    }
-    // Circuit pattern macros: a block that is a pure two-pin chain (LED +
-    // resistor, RC, divider) is re-laid as a vertical chain with the supply up
-    // and ground down; frame clashes are resolved by pushing blocks apart.
-    const pat = opts['no-patterns']
-      ? { changed: 0, subBanks: 0, portNets: new Set() }
-      : PAT.applyPatterns(design, placements, blocks, patternOpts);
-    // Sheet coordinates are y-UP: place each sheet's content a margin above
-    // the page origin so no block frame or label hangs below the border.
-    shiftSheetsIntoPage(placements, blocks);
-    const { routed, contacts, quality } = assess(placements, blocks, pat.portNets);
-    // a pin the router could not even leave ("no clean exit") is electrically
-    // unconnected — same retry tier as a cross-net contact, because a looser
-    // grid is the fix (dense ICs need room around their pin columns)
-    const noExit = routed.issues.filter((s) => /no clean exit/.test(s)).length;
-    return {
-      kind, scale, placements, blocks, routed, contacts, noExit, quality,
-      patternNets: pat.portNets, subBanks: pat.subBanks || 0
-    };
-  }
-
-  const candidates = [];
-  const kinds = process.env.EPRJ3_NO_LAYERED === '1' ? ['shelf'] : ['shelf', 'layered'];
-  for (const kind of kinds) {
-    for (const scale of [1, 1.7, 2.9, 5, 8]) {
-      restoreRotations();
-      let c = makeCandidate(kind, scale, candidates.length === 0);
-      if (c.contacts > 0 && c.subBanks > 0 && !opts['no-patterns']) {
-        // A mixed-block row can crowd a dense block until the router has no
-        // clean path left. Retry THIS density with the generic placement
-        // before loosening the whole sheet: the row is an optimisation, never
-        // a reason to fail a design that used to build.
-        restoreRotations();
-        const flat = makeCandidate(kind, scale, false, { noSubBanks: true });
-        if (flat.contacts < c.contacts) c = flat;
-      }
-      candidates.push(c);
-      if (c.contacts === 0 && c.noExit === 0) break;
-      log(`layout(${kind}): ${c.contacts} cross-net contact(s), ${c.noExit} pin(s) with no clean exit`
-        + ` at this density — retrying on a ${Math.round(scale * 1.7 * 100)}% looser grid`);
-    }
-  }
-  restoreRotations();
-  const usable = candidates.filter((c) => c.contacts === 0 && c.noExit === 0 && c.quality.valid);
-  if (!usable.length) {
-    const worst = candidates.reduce((a, b) => ((a.contacts + a.noExit) <= (b.contacts + b.noExit) ? a : b));
-    const q = worst.quality || {};
-    die(`schematic layout failed: ${worst.contacts} cross-net contact(s), ${worst.noExit} pin(s) with no clean exit`
-      + `, ${q.parts ? q.parts.overlaps : '?'} overlapping part pair(s), ${q.wires ? q.wires.through : '?'} wire(s) through a body`
-      + ' — at every density. Two nets would be merged or a symbol would be corrupted in the client. '
-      + 'Split the dense block (blocks[].parts) or set "layout": { "cellW", "cellH" } explicitly.');
-  }
-  const baseline = usable.find((c) => c.kind === 'shelf') || usable[0];
-  let best = baseline;
-  for (const c of usable) {
-    if (Q.safelyImproves(c.quality, baseline.quality) && c.quality.score < best.quality.score) best = c;
-  }
-  if (usable.length > 1) {
-    log(`layout: ${best.kind}${best.scale > 1 ? ` ×${best.scale}` : ''} chosen — score ${best.quality.score.toFixed(2)}`
-      + ` (shelf baseline ${baseline.quality.score.toFixed(2)}; ${usable.length} candidate(s), `
-      + `${best.quality.wires.bends} bends, ${best.quality.wires.crossings} crossings)`);
-  }
-  if (!opts['no-search']) {
-    const refined = refineLayout(best);
-    if (refined !== best) {
-      log(`layout: local search accepted ${refined.search.moves} move(s) — score `
-        + `${refined.search.from.toFixed(2)} → ${refined.search.to.toFixed(2)}`);
-      best = refined;
-    }
-  }
-  const placements = best.placements;
-  const patternNets = best.patternNets || new Set();
-  const blocks = best.blocks;
-  const routed = best.routed;
-  // Client builds draw the wiring and the power flags through the source API;
-  // offline builds keep the record emitters below.
-  const clientBuild = !rehearsal && placements.some((p) => p.part && p.part.libraryEntry);
-  // Layout engine: "skill" = the AI/planner coordinates (pcb.place always
-  // wins, no client auto layout); "client" = the EDA client's own auto layout.
-  // Precedence: --layout > --skill-layout > design.pcb.layout > "client".
-  const layoutMode = (opts.layout && String(opts.layout).toLowerCase())
-    || (opts['skill-layout'] ? 'skill' : null)
-    || (design.pcbSpec && design.pcbSpec.layout === 'skill' ? 'skill' : 'client');
-  const clientLayout = clientBuild && doPcb && layoutMode === 'client';
-  if (opts['move-locked'] && layoutMode !== 'client') {
-    log('layout: --move-locked has no effect without --layout client');
-  }
-  snapNetObjectsToGrid(routed);
-  growFramesToLabels(blocks, routed);
-  const sheetFrames = new Map();
-  // per-sheet frame: sized around what the packing produced, 明细表 off by
-  // default (design.frame.titleBlock opts back in)
+  // Emit the exact drawing coordinates; size the page decoration around them.
   const sheetDocs = new Map();
   const usedSheetTitles = new Set();
   const sheetTitleBySheet = new Map();
@@ -1166,27 +678,24 @@ function main() {
     // says otherwise) — there is no page list to tell apart.
     let sheetTitle = (design.sheetNames && design.sheetNames[s - 1])
       || (design.sheets <= 1 ? design.sheet : null)
-      || (sheetBlocks.length ? sheetBlocks[0].title : `P${s}`);
+      || (design.blocks.find((b) => b.sheet === s)?.title || `P${s}`);
     // a title becomes a FILE name — strip path-hostile characters and cap the
     // length; a repeated title gets the page number appended to stay unique
     sheetTitle = String(sheetTitle).replace(/[\\/:*?"<>|]+/g, ' ').trim().slice(0, 40) || `P${s}`;
     if (usedSheetTitles.has(sheetTitle)) sheetTitle = `${sheetTitle} ${s}`;
     usedSheetTitles.add(sheetTitle);
     sheetTitleBySheet.set(s, sheetTitle);
-    let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
-    for (const bl of sheetBlocks) { x1 = Math.min(x1, bl.rect.x1); y1 = Math.min(y1, bl.rect.y1); x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
-    for (const p of sheetPls) { const e = p.extent; x1 = Math.min(x1, e.x1); y1 = Math.min(y1, e.y1); x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
-    // y-down sheet space: content occupies y1..y2 (both positive), so the
-    // frame must reach past y2 (bottom) and keep a title strip at the top
-    if (x1 > x2) { x1 = 0; x2 = 1000; y1 = 0; y2 = 600; }
-    // The client draws the drawing frame from the Width/Height attributes, so
-    // size them from the REAL content box (both ends, including negative x/y):
-    // A4 when it fits, otherwise a custom frame just large enough — never snap
-    // up to the next paper size and leave the circuit in a mostly empty sheet.
-    const MARGIN = 60;
-    const needW = Math.ceil((x2 - x1) + 2 * MARGIN);
-    const needH = Math.ceil((y2 - y1) + 2 * MARGIN
-      + (design.frame && design.frame.titleBlock === true ? 100 : 0));
+    let x2 = 0, y2 = 0;
+    for (const bl of sheetBlocks) { x2 = Math.max(x2, bl.rect.x2); y2 = Math.max(y2, bl.rect.y2); }
+    for (const p of sheetPls) { const e = p.extent; x2 = Math.max(x2, e.x2); y2 = Math.max(y2, e.y2); }
+    for (const w of routed.wires.filter((w) => w.sheet === s)) for (const seg of w.segs) {
+      x2 = Math.max(x2, seg.x1, seg.x2); y2 = Math.max(y2, seg.y1, seg.y2);
+    }
+    for (const t of [...routed.flags, ...routed.ports].filter((t) => t.sheet === s)) {
+      x2 = Math.max(x2, t.x); y2 = Math.max(y2, t.y);
+    }
+    const needW = Math.ceil(Math.max(0, x2) + 60);
+    const needH = Math.ceil(Math.max(0, y2) + 60 + (design.frame?.titleBlock === true ? 100 : 0));
     const stds = [['A4', 1170, 825], ['A3', 1680, 1170], ['A2', 2360, 1656], ['A1', 3350, 2360], ['A0', 4740, 3350]];
     const a4 = stds[0];
     let fit;
@@ -1209,12 +718,7 @@ function main() {
       titleBlock: design.frame && design.frame.titleBlock === true ? 1 : 0
     };
     sheetDocs.set(s, project.ensureSheetDocument(design.schematic, sheetTitle, frame));
-    sheetFrames.set(s, { ...frame, wMil: fit[1] * 10, hMil: fit[2] * 10 });
   }
-
-  // the page is chosen to fit the content, so center the circuit in it — a
-  // small design must not sit in the bottom-left corner of an A4 sheet
-  centerSheetsInPage(placements, blocks, routed, sheetFrames);
 
   // one emitter per sheet; blocks/components/flags/ports/wires land on the
   // sheet their block was assigned to
@@ -1252,6 +756,7 @@ function main() {
         schematicName: design.schematic,
         pageName: sheetTitleBySheet.get(pl.sheet || 1),
         deviceName: pl.part.libraryEntry.name,
+        subPartName: pl.part.libraryEntry.subPartName,
         libraryUuid: pl.part.libraryEntry.libraryUuid,
         designator: pl.part.multiUnitBase || pl.part.id,
         x: pl.x,
@@ -1272,8 +777,8 @@ function main() {
         net: flag.net,
         x: flag.x,
         y: flag.y,
-        type: powerFlagKind(flag.net),
-        rotation: 0
+        type: flag.style === 'down' && powerFlagKind(flag.net) === 'Power' ? 'Ground' : powerFlagKind(flag.net),
+        rotation: flag.rot
       });
       continue;
     }
@@ -1301,115 +806,27 @@ function main() {
     placeNetPort(emitters.get(port.sheet || 1), project, port, portEntries.get(kind));
   }
 
-  // A wire that lands on a power flag or a net port already carries its name
-  // there; repeating it as the wire's NET text puts a second copy tight against
-  // the pin, on top of the part's designator/value. The client's own saves leave
-  // the NET value empty in that case (see examples/eprj3-example).
-  //
-  // A pin's path can be split into several WIRE records (pin → jog → flag), so
-  // decide by CONNECTED WIRE PATH, not per record: a record whose segment chain
-  // reaches a flag/port at the same net loses the printed name. A disjoint
-  // stub+label wire keeps its NET value — same-named wires are what joins those
-  // pins in the client (clearing them disconnected JP1/C156 on the H6 board).
-  const hiddenWire = new Set();
-  for (let s = 1; s <= design.sheets; s += 1) {
-    const key = (x, y) => `${Math.round(x * 100)},${Math.round(y * 100)}`;
-    const parent = new Map();
-    const ensure = (k) => { if (!parent.has(k)) parent.set(k, k); };
-    const find = (k) => {
-      let r = k;
-      while (parent.has(r) && parent.get(r) !== r) r = parent.get(r);
-      return r;
-    };
-    const union = (a, b) => {
-      const ra = find(a); const rb = find(b);
-      if (ra !== rb) parent.set(ra, rb);
-    };
-    routed.wires.forEach((w) => {
-      if ((w.sheet || 1) !== s) return;
-      for (const g of w.segs) {
-        const a = key(g.x1, g.y1); const b = key(g.x2, g.y2);
-        ensure(a); ensure(b); union(a, b);
-      }
-    });
-    const terminalRoots = new Set();
-    const mark = (x, y) => { const k = key(x, y); if (parent.has(k)) terminalRoots.add(find(k)); };
-    for (const f of routed.flags) if ((f.sheet || 1) === s) mark(f.x, f.y);
-    for (const p of routed.ports) if ((p.sheet || 1) === s) mark(p.x, p.y);
-    routed.wires.forEach((w, i) => {
-      if ((w.sheet || 1) !== s) return;
-      if (w.segs.some((g) => terminalRoots.has(find(key(g.x1, g.y1)))
-        || terminalRoots.has(find(key(g.x2, g.y2))))) hiddenWire.add(i);
-    });
-  }
-
-  // Short pin-to-pin links (a chain member to its neighbour) are self-evident:
-  // printing the net name there only covers the two symbols' own labels.
-  const pinKeysBySheet = new Map();
-  const ptKey = (x, y) => `${Math.round(x * 100)},${Math.round(y * 100)}`;
-  for (const pl of placements) {
-    const s = pl.sheet || 1;
-    if (!pinKeysBySheet.has(s)) pinKeysBySheet.set(s, new Set());
-    const set = pinKeysBySheet.get(s);
-    for (const pin of (pl.sym && pl.sym.pins) || []) {
-      const t = G.pinTip(pin, pl.x, pl.y, pl.rotation || 0);
-      set.add(ptKey(t.x, t.y));
-    }
-  }
-
-  // Client builds draw the wires through the source API (layout still belongs
-  // to the offline engine); offline builds keep the record emitter.
   const wirePlan = [];
-  const flagPointKeys = new Set((routed.flags || []).map((f) => `${f.sheet || 1}|${f.net}|${ptKey(f.x, f.y)}`));
-  const portPointKeys = new Set((routed.ports || []).map((p) => `${p.sheet || 1}|${p.net}|${ptKey(p.x, p.y)}`));
-  routed.wires.forEach((w, i) => {
-    const em = emitters.get(w.sheet || 1);
-    const pinKeys = pinKeysBySheet.get(w.sheet || 1) || new Set();
-    const short = w.segs.length === 1 && G.segLen(w.segs[0]) <= 80
-      && pinKeys.has(ptKey(w.segs[0].x1, w.segs[0].y1))
-      && pinKeys.has(ptKey(w.segs[0].x2, w.segs[0].y2));
-    // a chain's shared net reads from the chain itself; its name only clutters
-    const chainNet = patternNets.has(w.net);
-    // a zero-length anchor (a port/flag sitting on a bare pin) carries no
-    // readable label — the port/flag symbol already prints the net name
-    const anchorOnly = w.segs.every((s) => G.segLen(s) < G.EPS);
-    if (clientBuild && !anchorOnly) {
-      const sheet = w.sheet || 1;
-      let touchesPort = false;
-      let touchesFlag = false;
-      for (const s of w.segs) {
-        const k1 = `${sheet}|${w.net}|${ptKey(s.x1, s.y1)}`;
-        const k2 = `${sheet}|${w.net}|${ptKey(s.x2, s.y2)}`;
-        if (portPointKeys.has(k1) || portPointKeys.has(k2)) touchesPort = true;
-        if (flagPointKeys.has(k1) || flagPointKeys.has(k2)) touchesFlag = true;
-      }
-      const chains = segChains(w.segs);
-      if (chains.length) {
-        wirePlan.push({
-          pageName: sheetTitleBySheet.get(w.sheet || 1) || `P${w.sheet || 1}`,
-          // Power flags name the net in the client's netlister; net ports do
-          // not, so port-named wires must carry the name themselves. When the
-          // wire lands on a same-net port, the port already prints that name —
-          // keep the NET assignment for the netlister but hide its label so
-          // the schematic does not show the net twice in a row.
-          net: touchesPort || !touchesFlag ? w.net : null,
-          hideLabel: touchesPort,
-          chains
-        });
-      }
-      return;
+  for (const w of routed.wires) {
+    const em = emitters.get(w.sheet);
+    if (clientBuild) {
+      const [first] = w.segs;
+      wirePlan.push({
+        pageName: sheetTitleBySheet.get(w.sheet), net: w.net, hideLabel: !w.label,
+        chains: [[first.x1, first.y1, ...w.segs.flatMap((seg) => [seg.x2, seg.y2])]]
+      });
+      continue;
     }
-    const nameShown = !hiddenWire.has(i) && !short && !chainNet && !anchorOnly;
     const block = E.wireBlock({
       segs: w.segs.map((s) => ({ startX: s.x1, startY: s.y1, endX: s.x2, endY: s.y2 })),
       net: w.net,
-      netVisible: nameShown,
+      netVisible: w.label,
       zIndex: em.nextZ(),
       ticketBase: em.nextTicket() - 1
     });
     em.addLines(block.lines);
     em.t = block.nextTicket + 1;
-  });
+  }
 
   for (const em of emitters.values()) em.flush();
   project.save();
@@ -1422,92 +839,7 @@ function main() {
   const bom = [];          // per-designator device/footprint for project-report.md
   let ratNets = [];
   if (doPcb) {
-    const { planPcb } = require('./lib/pcb-plan');
-    // Board size: area = 1.25× the tight union of every footprint's bbox, with
-    // the bbox's own aspect (a wide layout gets a wide board). No minimum-area
-    // and no declared-size floor: a size declared in the design is ignored.
-    // The placer's own edge clearance (>= 15 mil, D003 needs 12) is already
-    // part of `required`; the board grows above 1.25× only when that clearance
-    // cannot fit inside the target — for a small board the fixed edge margin
-    // dominates (the log says so and reports the real factor).
-    // The placer packs into the target, tightening its part spacing when
-    // needed; only if even the densest packing does not fit does the
-    // rectangle grow, and the log says so.
-    const snap10 = (v) => Math.max(10, Math.round(v / 10) * 10);
-    const growTo = (v) => Math.max(10, Math.ceil(v));
-    const SCALES = [1, 0.8, 0.65, 0.5, 0.4, 0.3, 0.25];
-    const SCALE_125 = Math.sqrt(1.25);
-    const packAt = (w, h) => {
-      let last = null;
-      for (const s of SCALES) {
-        design.board.width = w;
-        design.board.height = h;
-        design.gapScale = s;
-        const p = planPcb(design, lib, placements);
-        last = { plan: p, scale: s, fits: p.required.width <= w && p.required.height <= h };
-        if (last.fits) return last;
-      }
-      return last;
-    };
-    const dimsFor = (b) => {
-      const w = b ? b.x2 - b.x1 : 100;
-      const h = b ? b.y2 - b.y1 : 100;
-      return [snap10(w * SCALE_125), snap10(h * SCALE_125)];
-    };
-    const tightBox = (p) => planBBox(p, lib);
-    // From here on the board size is OUR decision: tell the placer to pack into
-    // it (fill its width) instead of aiming for a square of its own.
-    design.boardFixed = true;
-    let plan = planPcb(design, lib, placements);
-    {
-      let target = dimsFor(tightBox(plan));
-      let best = null;
-      // Fixed point: a denser re-pack shrinks the bbox, so retarget from the
-      // layout the target actually produces. Packing that still overflows
-      // grows to the dense packing's own 1.25 target plus the edge-clearance
-      // requirement — the floor for a board too small for 1.25×.
-      for (let round = 0; round < 8; round += 1) {
-        let [w, h] = target;
-        let r = packAt(w, h);
-        let grown = false;
-        if (!r.fits) {
-          // Retarget from THIS (dense) packing, not the stale loose one: a
-          // one-sided overflow used to inflate the other dimension too.
-          const nb = dimsFor(tightBox(r.plan));
-          w = Math.max(nb[0], growTo(r.plan.required.width));
-          h = Math.max(nb[1], growTo(r.plan.required.height));
-          r = packAt(w, h);
-          grown = true;
-        }
-        best = Object.assign({ w, h }, r);
-        // The grown size is the edge-clearance floor for this packing; the
-        // 1.25× target is below it, so retargeting would only re-grow.
-        if (grown) break;
-        const next = dimsFor(tightBox(best.plan));
-        if (Math.abs(next[0] - w) <= w * 0.02 && Math.abs(next[1] - h) <= h * 0.02) break;
-        target = next;
-      }
-      design.board.width = best.w;
-      design.board.height = best.h;
-      design.gapScale = best.scale;
-      plan = best.plan;
-      const bb = tightBox(plan);
-      const bw = Math.max(bb ? bb.x2 - bb.x1 : 1, 1);
-      const bh = Math.max(bb ? bb.y2 - bb.y1 : 1, 1);
-      const factor = (best.w * best.h) / (bw * bh);
-      log(`board set to ${best.w}×${best.h} mil (footprint bbox ${Math.round(bw)}×${Math.round(bh)} → ${factor.toFixed(2)}× area`
-        + `${best.scale < 1 ? `, part spacing ×${best.scale}` : ''}`
-        + `${design.boardDeclared ? ', declared size ignored' : ''}`
-        + `${factor > 1.25 * 1.10 ? ` — the ${(plan && plan.edge) || 15}-mil edge clearance (D003 needs 12) sets the floor` : ''})`);
-    }
-    {
-      const targetW = design.board.width;
-      const targetH = design.board.height;
-      E.updateRecord(pcbDoc.file,
-        (r) => r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE',
-        (r) => { r.body.path = E.rectPath(0, 0, targetW, targetH); });
-    }
-    const placementPlan = plan.placements;
+    const placementPlan = pcbLayout.placements;
     const pcbEm = new Emitter(pcbDoc.file);
     for (const pl of placementPlan) {
       if (pl.part.libraryEntry) {
@@ -1545,34 +877,8 @@ function main() {
       }
     }
 
-    const pcbCfg = design.pcbSpec || {};
-    void pcbCfg; // kept for shape compatibility; copper keys are ignored by design
-
-    // Strategy: the skill NEVER lays copper. No router, no pour planner — the
-    // deliverable is a placed board and a rats list the human finishes in the
-    // client. (--route/--pour no longer exist, so a copper-hungry design file
-    // cannot accidentally opt in.)
-    const rats = new Map();
-    for (const p of pcbGeoPads) {
-      if (!p.net || /^NC\d*$/i.test(p.net) || /^DNC\d*$/i.test(p.net)) continue;
-      rats.set(p.net, (rats.get(p.net) || 0) + 1);
-    }
-    ratNets = [...rats.entries()].filter(([, n]) => n >= 2);
-
-    const nets = new Set();
-    for (const p of pcbGeoPads) if (p.net) nets.add(p.net);
     pcbEm.flush();
-    if (nets.size) E.ensurePcbNets(pcbDoc.file, [...nets]);
     project.save();
-    log(`pcb: ${pcbParts.length} footprints · placement-only (this skill never routes or pours)`);
-    // partial-place notice (report 5.1): a hand-written pcb.place that covers
-    // only SOME parts silently auto-places the rest — say so loudly
-    const explicitCount = Object.keys(design.pcbSpec.place || {}).length;
-    if (explicitCount > 0 && explicitCount < design.parts.length) {
-      const autoIds = design.parts.filter((p) => !(design.pcbSpec.place || {})[p.id]).map((p) => p.id);
-      log(`  pcb.place: ${explicitCount}/${design.parts.length} placed explicitly — auto-placed: ${autoIds.join(' ')}`);
-    }
-    log(`  rats: ${ratNets.length} net(s) to connect by hand in the client — ${ratNets.map(([n, c]) => `${n}(${c}p)`).join(' ') || 'none'}`);
   }
 
   // Attribute rows (designator/name) for every placement. Client builds apply
@@ -1618,7 +924,7 @@ function main() {
       const pageName = sheetTitleBySheet.get(pl.sheet || 1);
       if (!pageName) continue;
       const pins = Object.entries(pl.part.pins || {})
-        .filter(([, n]) => /^(NC|DNC\d*)$/i.test(String(n)))
+        .filter(([, n]) => Layout.isNC(n))
         .map(([num]) => String(num));
       if (!pins.length) continue;
       const k = `${pageName}|${ref}`;
@@ -1639,7 +945,6 @@ function main() {
   // netcheck then read the client-saved project.
   const pcbPlan = [];
   let pcbImported = false;   // the client built the PCB from the schematic
-  let clientPlacement = null; // cli-lib result (symbols, wires, footprint moves, layout)
   let schDrcResult = null;   // client schematic DRC (2.x, client builds only)
   if (doPcb) {
     const seenPcbRefs = new Set();
@@ -1651,146 +956,86 @@ function main() {
     }
   }
   if (librarySch.length) {
-    if (rehearsal) {
-      log(`library: ${librarySch.length} symbol(s) + PCB import would run through the client (skipped in --plan/--dry-run)`);
-    } else {
-      const CLI_LIB = require('./lib/cli-lib');
-      log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client (headless — no window opens)`);
-      let placed;
-      try {
-        // Explicit pcb.place parts are locked for the auto-layout pass unless
-        // the user allowed moving locked components (--move-locked).
-        const explicitRefs = clientLayout && !opts['move-locked']
-          ? Object.keys(design.pcbSpec.place || {})
-          : [];
-        placed = CLI_LIB.placeInstances(dir, {
-          sch: librarySch,
-          flagPlan,
-          wirePlan,
-          pcbPlan,
-          attrPlan,
-          ncPlan,
-          autoLayout: clientLayout,
-          lockRefs: explicitRefs,
-          moveLocked: !!opts['move-locked'],
-          schematicName: design.schematic
-        });
-        clientPlacement = placed;
-      } catch (e) {
-        die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
+    const CLI_LIB = require('./lib/cli-lib');
+    log(`library: placing ${librarySch.length} symbol(s) and updating the PCB from the schematic through the EDA client (headless — no window opens)`);
+    let placed;
+    try {
+      placed = CLI_LIB.placeInstances(dir, {
+        sch: librarySch,
+        flagPlan,
+        wirePlan,
+        pcbPlan,
+        attrPlan,
+        ncPlan,
+        schematicName: design.schematic
+      });
+    } catch (e) {
+      die(`client placement failed — is the EDA client (V4.1.94+) running? ${e.message}`);
+    }
+    if (pcbPlan.length && !placed.imported) {
+      die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`
+        + ` (schematic ${placed.schematicParts}/${pcbPlan.length} part(s), ${placed.wires.length} wire chain(s) drawn, ${placed.removed} stale footprint(s) removed)`);
+    }
+    if (pcbPlan.length && placed.imported && placed.importEmpty) {
+      die(`client PCB import created 0 footprint(s): ${placed.importEmpty}`
+        + ` — schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); check that every placed component is a device with a footprint`);
+    }
+    pcbImported = !!(pcbPlan.length && placed.imported);
+    if (pcbPlan.length) {
+      log(`  client: schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); removed ${placed.removed} stale footprint(s), moved ${placed.moved}`);
+      if (placed.missing && placed.missing.length) {
+        die(`client import did not create ${placed.missing.length} part(s): ${placed.missing.slice(0, 8).join(' ')}${placed.missing.length > 8 ? ' …' : ''}`);
       }
-      if (pcbPlan.length && !placed.imported) {
-        die(`client PCB import failed — ${placed.importError || 'importChanges returned false'}`
-          + ` (schematic ${placed.schematicParts}/${pcbPlan.length} part(s), ${placed.wires.length} wire chain(s) drawn, ${placed.removed} stale footprint(s) removed)`);
+    }
+    if (placed.flags && placed.flags.length) {
+      log(`  client: placed ${placed.flags.length} power flag(s) through the source API`);
+    }
+    if (placed.wires && placed.wires.length) {
+      log(`  client: drew ${placed.wires.length} wire chain(s) through the source API`);
+    }
+    if (placed.attrs && placed.attrs.length) {
+      const badRows = placed.attrs.filter((a) => !a.ok);
+      log(`  client: placed ${placed.attrs.length - badRows.length}/${placed.attrs.length} designator/name row(s) via updateAttribute`);
+      if (badRows.length) {
+        log(`  client: ${badRows.length} row(s) kept their authored position (${badRows.slice(0, 4).map((b) => `${b.ref}.${b.key}`).join(', ')}${badRows.length > 4 ? ' …' : ''})`);
       }
-      if (pcbPlan.length && placed.imported && placed.importEmpty) {
-        die(`client PCB import created 0 footprint(s): ${placed.importEmpty}`
-          + ` — schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); check that every placed component is a device with a footprint`);
+    }
+    if (placed.nc && (placed.nc.marked.length || placed.nc.failed.length)) {
+      log(`  client: marked ${placed.nc.marked.length} NC pin(s) no-connect`);
+      if (placed.nc.failed.length) {
+        log(`  client: ${placed.nc.failed.length} NC pin(s) not marked (${placed.nc.failed.slice(0, 4).map((b) => `${b.ref}.${b.pin || '?'}`).join(', ')}${placed.nc.failed.length > 4 ? ' …' : ''})`);
       }
-      pcbImported = !!(pcbPlan.length && placed.imported);
-      if (pcbPlan.length) {
-        log(`  client: schematic netlist ${placed.schematicParts}/${pcbPlan.length} part(s); removed ${placed.removed} stale footprint(s), moved ${placed.moved}`);
-        if (placed.missing && placed.missing.length) {
-          log(`  client: import did not create ${placed.missing.length} part(s): ${placed.missing.slice(0, 8).join(' ')}${placed.missing.length > 8 ? ' …' : ''}`);
-        }
-        if (clientLayout) {
-          const lay = placed.layout || {};
-          const keptLocked = (placed.locks && placed.locks.locked && placed.locks.locked.length) || 0;
-          // locked explicit parts are reported by the engine as "not placed";
-          // only the remainder is a real failure
-          const unexpected = Math.max(0, (lay.failed || 0) - keptLocked);
-          if (lay.ok) {
-            log(`  client: PCB auto layout done${lay.durationMs ? ` in ${lay.durationMs} ms` : ''}`
-              + `${unexpected ? ` — ${unexpected} footprint(s) not placed` : ''}`);
-          } else {
-            log(`  client: PCB auto layout skipped — keeping the skill placement${lay.error ? ` (${lay.error})` : ''}`);
-          }
-          if (keptLocked) {
-            log(`  client: kept ${keptLocked} explicit pcb.place part(s) locked (pass --move-locked to let auto layout move them)`);
-          }
-          if (opts['move-locked']) log('  client: unlocked every component before auto layout (--move-locked)');
-        }
-      }
-      if (placed.flags && placed.flags.length) {
-        log(`  client: placed ${placed.flags.length} power flag(s) through the source API`);
-      }
-      if (placed.wires && placed.wires.length) {
-        log(`  client: drew ${placed.wires.length} wire chain(s) through the source API`);
-      }
-      if (placed.attrs && placed.attrs.length) {
-        const badRows = placed.attrs.filter((a) => !a.ok);
-        log(`  client: placed ${placed.attrs.length - badRows.length}/${placed.attrs.length} designator/name row(s) via updateAttribute`);
-        if (badRows.length) {
-          log(`  client: ${badRows.length} row(s) kept their authored position (${badRows.slice(0, 4).map((b) => `${b.ref}.${b.key}`).join(', ')}${badRows.length > 4 ? ' …' : ''})`);
-        }
-      }
-      if (placed.nc && (placed.nc.marked.length || placed.nc.failed.length)) {
-        log(`  client: marked ${placed.nc.marked.length} NC pin(s) no-connect`);
-        if (placed.nc.failed.length) {
-          log(`  client: ${placed.nc.failed.length} NC pin(s) not marked (${placed.nc.failed.slice(0, 4).map((b) => `${b.ref}.${b.pin || '?'}`).join(', ')}${placed.nc.failed.length > 4 ? ' …' : ''})`);
-        }
-      }
-      const bad = [
-        ...((placed && placed.symbols) || []),
-        ...((placed && placed.flags) || []),
-        ...((placed && placed.wires) || []),
-        ...((placed && placed.footprints) || [])
-      ].filter((x) => !x.ok);
-      if (bad.length) {
-        die(`client placement failed for ${bad.length} item(s): ${bad.slice(0, 8).map((b) => `${b.ref || b.net}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
-      }
-      // Schematic DRC: the client checks the finished sheet (unconnected pins,
-      // near-but-not-connected points, off-grid net objects, …). Its report is
-      // the repair list for the next design/layout iteration.
-      try {
-        schDrcResult = CLI_LIB.schDrc(dir);
-      } catch (e) {
-        if (!opts.quiet) console.log(`  note: schematic DRC skipped — ${e.message}`);
-      }
+    }
+    const bad = [
+      ...((placed && placed.symbols) || []),
+      ...((placed && placed.flags) || []),
+      ...((placed && placed.wires) || []),
+      ...((placed && placed.footprints) || [])
+    ].filter((x) => !x.ok);
+    if (bad.length) {
+      die(`client placement failed for ${bad.length} item(s): ${bad.slice(0, 8).map((b) => `${b.ref || b.net}${b.error ? ` (${b.error})` : ''}`).join(', ')}`);
+    }
+    // Schematic DRC: the client checks the finished sheet (unconnected pins,
+    // near-but-not-connected points, off-grid net objects, …). Its report is
+    // the repair list for the next design/layout iteration.
+    try {
+      schDrcResult = CLI_LIB.schDrc(dir);
+    } catch (e) {
+      if (!opts.quiet) console.log(`  note: schematic DRC skipped — ${e.message}`);
     }
   }
 
-  // The client's auto layout arranges for spacing, so it can park a footprint
-  // just outside the planned outline (the DRC edge rule then rejects it).
-  // Grow the board to contain what the engine actually placed: the planned
-  // size stays the floor, the origin stays at 0 when possible.
-  if (clientPlacement && clientPlacement.layout && clientPlacement.layout.ok
-    && Array.isArray(clientPlacement.layout.components) && clientPlacement.layout.components.length) {
-    const byRef = new Map(pcbParts.map((p) => [String(p.part.multiUnitBase || p.part.id), p]));
-    let x1 = Infinity; let y1 = Infinity; let x2 = -Infinity; let y2 = -Infinity;
-    for (const c of clientPlacement.layout.components) {
-      const p = byRef.get(String(c.designator));
-      if (!p) continue;
-      const fp = lib.footprintOf(p.part);
-      const pads = fp ? P.placedPads(fp, c.x, c.y, c.rotation || 0) : [];
-      const boxes = pads.length
-        ? pads.map((g) => [g.x - g.w / 2, g.y - g.h / 2, g.x + g.w / 2, g.y + g.h / 2])
-        : [[c.x - 50, c.y - 50, c.x + 50, c.y + 50]];
-      for (const [a, b, cc, d] of boxes) {
-        x1 = Math.min(x1, a); y1 = Math.min(y1, b);
-        x2 = Math.max(x2, cc); y2 = Math.max(y2, d);
-      }
-    }
-    if (x1 < x2) {
-      const MARGIN = 50;
-      const nx = Math.min(0, Math.floor(x1 - MARGIN));
-      const ny = Math.min(0, Math.floor(y1 - MARGIN));
-      const nw = Math.max(design.board.width, Math.ceil(x2 + MARGIN)) - nx;
-      const nh = Math.max(design.board.height, Math.ceil(y2 + MARGIN)) - ny;
-      if (nx !== 0 || ny !== 0 || nw !== design.board.width || nh !== design.board.height) {
-        const { resizeBoardOutline } = require('./lib/cli-lib');
-        const files = resizeBoardOutline(dir, { x: nx, y: ny, w: nw, h: nh });
-        if (files) {
-          design.board.width = nw;
-          design.board.height = nh;
-          log(`  client: board grown to ${nw}×${nh} mil to contain the auto-laid footprints`);
-        }
-      }
-    }
+  if (pcbLayout) {
+    // Client import must finish before copper is written, or it can overwrite it.
+    const em = new Emitter(pcbDoc.file);
+    for (const track of pcbLayout.tracks) em.addLines([E.pcbTrackLine({ ...track, ticketBase: em.nextTicket() })]);
+    for (const via of pcbLayout.vias) em.addLines([E.pcbViaLine({ ...via, ticketBase: em.nextTicket() })]);
+    em.flush();
+    const nets = new Set(pcbGeoPads.map((p) => p.net).filter((n) => n && !Layout.isNC(n)));
+    if (nets.size) E.ensurePcbNets(pcbDoc.file, [...nets]);
+    log(`pcb: ${pcbParts.length} footprints · ${pcbLayout.tracks.length} copper segments · ${pcbLayout.vias.length} vias (${pcbMode})`);
   }
 
-  // ------------------------------------------------------------ validate
-  if (!opts.design && !opts.gen) die('nothing to build: pass --design <file> or --gen <generator.js>');
   const report = {
     dir: requestedDir,
     design: design.file,
@@ -1798,33 +1043,17 @@ function main() {
     schematic: {
       parts: placements.length,
       blocks: blocks.map((b) => b.title),
-      wiring: clientBuild ? 'client-source-api' : 'skill-emitter',
+      wiring: 'ai-authored',
       ...routed.stats,
-      layout: {
-        strategy: best.kind,
-        scale: best.scale,
-        quality: {
-          score: +best.quality.score.toFixed(3),
-          areaNorm: +best.quality.areaNorm.toFixed(3),
-          wireNorm: +best.quality.wireNorm.toFixed(3),
-          bendNorm: +best.quality.bendNorm.toFixed(3),
-          crossings: best.quality.wires.crossings,
-          bends: best.quality.wires.bends,
-          wireLength: Math.round(best.quality.wires.length),
-          box: best.quality.box
-        }
-      }
+      layout: { strategy: 'ai-authored' }
     },
     pcb: {
       parts: pcbParts.length,
-      mode: doPcb ? 'placed-only' : null,
-      source: doPcb ? (pcbImported ? 'client-update' : 'skill-placement') : null,
-      layout: doPcb
-        ? (clientLayout && clientPlacement && clientPlacement.layout && clientPlacement.layout.ok
-          ? 'client-auto' : 'skill-placement')
-        : null,
-      autoLayout: (clientPlacement && clientPlacement.layout) || null,
-      locks: (clientPlacement && clientPlacement.locks) || null,
+      mode: pcbMode,
+      source: doPcb ? (pcbImported ? 'client-update' : 'record-emitter') : null,
+      layout: doPcb ? 'ai-authored' : null,
+      tracks: pcbLayout?.tracks.length ?? 0,
+      vias: pcbLayout?.vias.length ?? 0,
       board: doPcb ? { width: design.board.width, height: design.board.height } : null,
       rats: ratNets.length
     },
@@ -1871,9 +1100,12 @@ function main() {
   let netcheck = null;
   if (doPcb) {
     const NC = require('./lib/netcheck');
-    netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir), D.multiUnitBaseOf(design.multiUnits));
+    netcheck = NC.compare(require('./lib/netlist').projectNetlist(dir), D.multiUnitBaseOf(design.multiUnits), D.noConnectPins(design));
     report.netcheck = { match: netcheck.match, summary: netcheck.summary, issues: netcheck.issues };
   }
+
+  const audit = require('./lib/audit').buildPackage(dir, design);
+  report.audit = audit.mechanical;
 
   // Fifth gate: design intent (polarity, decoupling, declared pairs, ranges).
   // It fails the build like the others; --allow-intent skips it. Polarity
@@ -1882,7 +1114,7 @@ function main() {
   let intent = null;
   if (design.expect || design.parts.some((p) => p.polarity || p.roles)) {
     const { runIntent } = require('./lib/intent');
-    intent = runIntent(design, { placedOnly: true });
+    intent = runIntent(design, { placedOnly: pcbMode !== 'routed' });
     report.intent = intent;
   }
 
@@ -1893,15 +1125,11 @@ function main() {
   let drc = null;
   if (doPcb) {
     const { runDrc } = require('./lib/drc');
-    const pcbDoc2 = project.requirePcb(design.pcb);
     const dr = design.pcbSpec.rules || {};
-    drc = runDrc(project.pcbFile(pcbDoc2), {
-      pourNet: (design.pcbSpec.pour && design.pcbSpec.pour.net) || 'GND',
+    drc = runDrc(pcbDoc.file, {
       netWidths: design.netWidths || {},
-      // The deliverable is placement-only by policy: D004/D006 (copper
-      // promises) never judge it. The floors below still guard the placement
-      // itself, and stay live when a client-authored board is re-checked.
-      placedOnly: true,
+      noConnect: D.noConnectPins(design),
+      placedOnly: pcbMode === 'placed-only',
       rules: {
         clearance: dr.clearance,
         minTrack: dr.trackWidth,
@@ -1914,6 +1142,13 @@ function main() {
         minAngle: dr.minAngle
       }
     });
+    ratNets = drc.findings.filter((f) => f.code === 'D004').map((f) => [f.net, f.pads]);
+    if (pcbMode === 'placed-only') {
+      const counts = new Map();
+      for (const p of pcbGeoPads) if (p.net && !Layout.isNC(p.net)) counts.set(p.net, (counts.get(p.net) || 0) + 1);
+      ratNets = [...counts].filter(([, n]) => n > 1);
+    }
+    report.pcb.rats = ratNets.length;
     report.drc = drc;
   }
 
@@ -1977,7 +1212,7 @@ function main() {
       + ` · lint ${lint.score} · drc ${drc ? drc.score : '-'}`
       + `${report.schDrc ? ` · sch drc ${report.schDrc.counts ? `${report.schDrc.counts.error || 0}E/${report.schDrc.counts.warn || 0}W` : '?'}` : ''}`
       + `${netcheck ? ` · netcheck ${netcheck.match ? 'OK' : `${netcheck.issues.length} 失配`}` : ''}`);
-    if (ratNets.length) console.log(`布线交接 rats ${ratNets.length} 网络 → ${ratNets.slice(0, 12).map(([n, c]) => `${n}(${c}p)`).join(' ')}${ratNets.length > 12 ? ' …' : ''}`);
+    if (ratNets.length) console.log(`待布线网络 rats ${ratNets.length} 网络 → ${ratNets.slice(0, 12).map(([n, c]) => c ? `${n}(${c}p)` : n).join(' ')}${ratNets.length > 12 ? ' …' : ''}`);
     console.log('— end digest —');
   }
   if (opts.report) {
@@ -2010,6 +1245,8 @@ function main() {
     console.error(`build finished with ${schDrcErrors} schematic DRC error(s) — fix the schematic or pass --allow-sch-drc`);
     process.exit(1);
   }
+  if (!report.audit.ok) die('built schematic does not match the declared circuit; see audit in the build report');
+  if (netcheck && !netcheck.match) die('schematic and PCB netlists do not match; see netcheck or the build report');
   const extra = [];
   if (erc.warnings.length) extra.push(`${erc.warnings.length} ERC warning(s)`);
   if (intent && intent.warnings.length) extra.push(`${intent.warnings.length} intent warning(s)`);
@@ -2020,13 +1257,10 @@ function main() {
       ? `${design.name} → ${requestedDir} (plan only, nothing written)`
       : `${design.name}.eprj3 at ${dir}`;
   console.log(`${where} — ${placements.length} components, ${routed.stats.segments} wire segments, `
-    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100 (placed-only)` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
-  // --plan: show the REHEARSED board (declared sizes are ignored now, so the
-  // only honest line is the auto-sized rectangle)
-  if (opts.plan) {
-    console.log(`  板框（演练）  ${design.board.width}×${design.board.height} mil`
-      + `${design.boardDeclared ? `（声明 ${declaredW}×${declaredH} 已忽略）` : '（自动：封装 bbox ×1.25）'}`);
-  }
+    + `lint ${lint.score}/100${drc ? `, drc ${drc.score}/100 (${pcbMode})` : ''}${extra.length ? `, ${extra.join(', ')}` : ''}.`);
 }
 
-main();
+try { main(); } catch (e) {
+  if (e instanceof D.DesignError) die(e.message);
+  else throw e;
+}
