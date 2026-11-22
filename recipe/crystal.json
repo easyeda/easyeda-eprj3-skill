@@ -1,5 +1,9 @@
 {
   "name": "crystal",
+  "notes": [
+    "负载电容按晶体 CL=20pF 配：C=(CL−Cstray)×2≈33pF（Cstray 取 3–5pF）。CL 不同的晶体必须重算——CL 偏小会拉高振荡频率几十 ppm",
+    "两颗负载电容尽量等值、靠近晶振两侧，走线短且包地"
+  ],
   "board": {
     "width": 1200,
     "height": 800
@@ -73,7 +77,7 @@
         ]
       },
       "name": "XTAL_8M",
-      "value": "8MHz",
+      "value": "8MHz CL=20pF",
       "pins": {
         "1": "XIN",
         "2": "XOUT"
@@ -83,7 +87,7 @@
       "id": "C1",
       "symbol": "CAP",
       "footprint": "C0402",
-      "value": "20pF",
+      "value": "33pF",
       "pins": {
         "1": "XIN",
         "2": "GND"
@@ -93,7 +97,7 @@
       "id": "C2",
       "symbol": "CAP",
       "footprint": "C0402",
-      "value": "20pF",
+      "value": "33pF",
       "pins": {
         "1": "XOUT",
         "2": "GND"

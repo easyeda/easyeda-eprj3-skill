@@ -8,9 +8,12 @@
  * this skill produces, and it never depends on the router's own bookkeeping.
  *
  * Codes:
- *   D001 copper-to-copper spacing below clearance (different nets)
+ *   D001 copper-to-copper spacing below clearance (different nets); also
+ *        two pads of ONE footprint overlapping on different nets — that is a
+ *        shorted land pattern, not a spacing quibble
  *   D002 track width below the minimum
- *   D003 copper too close to the board edge
+ *   D003 copper too close to the board edge (measured against the real
+ *        outline polygon when the path has 3+ points, not its bbox)
  *   D004 net with 2+ pads is not fully connected by copper
  *   D005 board outline missing / degenerate
  *   D006 no copper pour on a ground net (warning)
@@ -20,6 +23,8 @@
  *   D010 annular ring below the minimum (DFM, warning)
  *   D011 silkscreen text overlapping a copper pad (DFM, warning)
  *   D012 same-net track segments meeting at an acute angle (DFM, warning)
+ *   D013 footprint body extents overlap (DFM/error)
+ *   D014 footprint body outside the board outline (error)
  */
 
 const fs = require('fs');
@@ -39,7 +44,9 @@ const RULES = {
   D009: { level: 'error', weight: 6, text: 'drill below the manufacturing minimum' },
   D010: { level: 'warn', weight: 3, text: 'annular ring below the minimum' },
   D011: { level: 'warn', weight: 2, text: 'silkscreen text overlaps a pad' },
-  D012: { level: 'warn', weight: 2, text: 'track bends at an acute angle' }
+  D012: { level: 'warn', weight: 2, text: 'track bends at an acute angle' },
+  D013: { level: 'error', weight: 6, text: 'footprint body extents overlap' },
+  D014: { level: 'error', weight: 6, text: 'footprint body outside the board outline' }
 };
 
 // minDrill 12 mil = 0.30 mm (JLC basic process); minRing 4 mil ≈ 0.10 mm,
@@ -90,6 +97,7 @@ function pcbGeometry(file) {
   }
 
   const pads = [];
+  const footprints = [];   // body extents per placed footprint (courtyard proxy)
   for (const r of recs) {
     if (r.type !== 'COMPONENT') continue;
     const b = r.body || {};
@@ -97,31 +105,67 @@ function pcbGeometry(file) {
     const fpAttr = recs.find((a) => a.type === 'ATTR' && a.body && a.body.key === 'Footprint' && a.body.parentId === r.id);
     const fpDoc = fpAttr ? fpDocs.get(fpAttr.body.value) : null;
     if (!fpDoc) continue;
+    // Footprint body extent: the FOOTPRINT doc's PART BBOX rotated into board
+    // coordinates. Pads-only fallback when the doc has no PART record.
+    let bodyRect = null;
+    const partRec = fpDoc.records.find((pr) => pr.type === 'PART' && pr.body && Array.isArray(pr.body.BBOX));
+    if (partRec) {
+      const [x1, y1, x2, y2] = partRec.body.BBOX;
+      const corners = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+        .map(([cx, cy]) => G.rotate(cx, cy, b.angle || 0))
+        .map((p) => ({ x: G.round(b.x + p.x), y: G.round(b.y + p.y) }));
+      bodyRect = G.bboxOfPoints(corners);
+    }
     for (const pr of fpDoc.records) {
       if (pr.type !== 'PAD') continue;
       const pb = pr.body;
       const d = pb.defaultPad || {};
       const off = G.rotate(pb.centerX, pb.centerY, b.angle || 0);
       const net = netByPad.get(`${r.id}|${pb.num}|${pr.id}`) || netByPad.get(`${r.id}|${pb.num}|${pb.elemId}`) || '';
+      // A pad rotated with the part no longer keeps its w/h orientation: the
+      // world AABB of a w×h pad turned by θ is (w|cosθ|+h|sinθ|, w|sinθ|+h|cosθ|).
+      // Using the raw w/h judged a 90° SOP pad by its SHORT side and let
+      // neighbours closer than the clearance pass.
+      const rot = ((b.angle || 0) + (pb.padAngle || 0)) * Math.PI / 180;
+      const cos = Math.abs(Math.cos(rot)); const sin = Math.abs(Math.sin(rot));
+      const pw = d.width || 20; const ph = d.height || 20;
       pads.push({
         ref,
         num: String(pb.num),
         net,
         x: G.round(b.x + off.x),
         y: G.round(b.y + off.y),
-        w: d.width || 20,
-        h: d.height || 20,
+        w: G.round(pw * cos + ph * sin),
+        h: G.round(pw * sin + ph * cos),
         hole: typeof pb.hole === 'number' ? pb.hole : pb.hole?.width || null,
         layer: (pb.layerId === 1 && b.layerId === 2 ? 2 : pb.layerId) || 1
       });
     }
+    if (!bodyRect && pads.length) {
+      const mine = pads.filter((p) => p.ref === ref);
+      if (mine.length) bodyRect = G.bboxOfPoints(mine.flatMap((p) => {
+        const r2 = padRect(p);
+        return [[r2.x1, r2.y1], [r2.x2, r2.y1], [r2.x2, r2.y2], [r2.x1, r2.y2]].map(([x, y]) => ({ x, y }));
+      }));
+    }
+    if (bodyRect) footprints.push({ ref, rect: bodyRect, layer: b.layerId || 1 });
   }
 
   const tracks = [];
   const vias = [];
   const pours = [];
+  const regions = [];    // pour/fill copper regions with readable geometry
   const strings = [];
   let outline = null;
+  let outlinePts = null;
+  // POUR/FILL paths are complex polygons: the outer array holds subpaths and
+  // the FIRST one is the outline (the format docs decode path = path[0]).
+  const regionPoly = (path) => {
+    if (!Array.isArray(path) || !path.length) return null;
+    const sub = Array.isArray(path[0]) ? path[0] : path;
+    const pts = P.pathToPoints(sub);
+    return pts.length >= 3 ? pts : null;
+  };
   for (const r of recs) {
     if (r.type === 'LINE' && r.body) {
       tracks.push({
@@ -143,6 +187,12 @@ function pcbGeometry(file) {
       });
     } else if (r.type === 'POUR' && r.body) {
       pours.push({ net: r.body.netName || '', layer: r.body.layerId });
+      const pts = regionPoly(r.body.path);
+      if ((r.body.netName || '') && pts) regions.push({ net: r.body.netName, layer: r.body.layerId || 1, pts });
+    } else if (r.type === 'FILL' && r.body && r.body.netName) {
+      // solid copper of a filled region: same connectivity role as a pour
+      const pts = regionPoly(r.body.path);
+      if (pts) regions.push({ net: r.body.netName, layer: r.body.layerId || 1, pts });
     } else if (r.type === 'STRING' && r.body) {
       strings.push({
         text: String(r.body.text === undefined ? '' : r.body.text),
@@ -153,12 +203,16 @@ function pcbGeometry(file) {
         origin: r.body.origin || 'CENTER_MIDDLE'
       });
     } else if (r.type === 'POLY' && r.body && r.body.polyType === 'BOARD_OUTLINE') {
-      const pts = P.pathToPoints(r.body.path);
+      // the outline appears both flat (builder's rectPath) and wrapped as a
+      // complex polygon (client saves) — decode either
+      const raw = Array.isArray(r.body.path) && Array.isArray(r.body.path[0]) ? r.body.path[0] : r.body.path;
+      const pts = P.pathToPoints(raw);
       const bb = G.bboxOfPoints(pts);
       if (bb) outline = bb;
+      if (pts.length >= 3) outlinePts = pts;
     }
   }
-  return { pads, tracks, vias, pours, strings, outline };
+  return { pads, footprints, tracks, vias, pours, regions, strings, outline, outlinePts };
 }
 
 function segRect(t) {
@@ -182,6 +236,37 @@ function rectGap(a, b) {
 function rectEdgeGap(r, board) {
   const gaps = [r.x1 - board.x1, board.x2 - r.x2, r.y1 - board.y1, board.y2 - r.y2];
   return Math.min(...gaps);
+}
+
+function rectCorners(r) {
+  return [
+    { x: r.x1, y: r.y1 }, { x: r.x2, y: r.y1 },
+    { x: r.x2, y: r.y2 }, { x: r.x1, y: r.y2 }
+  ];
+}
+
+/** Even-odd ray casting; a point on the boundary counts as inside. */
+function pointInPoly(pt, pts) {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]; const b = pts[j];
+    const onSegment = Math.min(a.x, b.x) - 1e-9 <= pt.x && pt.x <= Math.max(a.x, b.x) + 1e-9
+      && Math.min(a.y, b.y) - 1e-9 <= pt.y && pt.y <= Math.max(a.y, b.y) + 1e-9
+      && Math.abs((b.x - a.x) * (pt.y - a.y) - (pt.x - a.x) * (b.y - a.y)) < 1e-6;
+    if (onSegment) return true;
+    if ((a.y > pt.y) !== (b.y > pt.y)
+      && pt.x < (b.x - a.x) * (pt.y - a.y) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** Distance from a segment to a rect: 0 when they touch, else the closest
+ *  rect-corner to the segment. */
+function segRectDist(seg, rect) {
+  const ends = [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }];
+  if (ends.some((p) => G.rectContains(rect, p))) return 0;
+  if (G.segIntersectsRect(seg, rect)) return 0;
+  return Math.min(...rectCorners(rect).map((c) => G.pointSegDist(c, seg)));
 }
 
 // Silk text has no stored bbox: the client renders it from the anchor, so the
@@ -285,9 +370,18 @@ function runDrc(file, opts) {
       const a = copper[i]; const b = copper[j];
       if ((!a.net && !b.net) || (a.net && a.net === b.net)) continue;
       if (!onSameLayer(a, b)) continue;
-      // pads of the SAME footprint are the package's own business — their
-      // spacing comes from the datasheet land pattern, not a routing rule
-      if (a.kind === 'pad' && b.kind === 'pad' && a.ref && a.ref === b.ref) continue;
+      if (a.kind === 'pad' && b.kind === 'pad' && a.ref && a.ref === b.ref) {
+        // The land pattern's INTERNAL spacing is the footprint's business, but
+        // two pads of one footprint OVERLAPPING on different nets is a short —
+        // inline `{auto:...}` / hand-written footprints made that reachable.
+        if (a.net && b.net && a.net !== b.net && G.rectsOverlap(a.rect, b.rect)) {
+          add('D001', `pads ${a.ref}.${a.num} (${a.net}) and ${a.ref}.${b.num} (${b.net}) overlap — the land pattern shorts the two nets`, {
+            a: a.net, b: b.net, at: [Math.round((a.rect.x1 + a.rect.x2) / 2), Math.round((a.rect.y1 + a.rect.y2) / 2)],
+            fix: `fix the land pattern of ${a.ref} in parts[].footprint — its own pads must not touch across nets`
+          });
+        }
+        continue;
+      }
       if (rectGap(a.rect, b.rect) >= rules.clearance - 0.001) continue;
       const gap = Math.max(0, a.track ? trackGap(a.track, b) : b.track ? trackGap(b.track, a)
         : a.via && b.via ? Math.hypot(a.via.x - b.via.x, a.via.y - b.via.y) - (a.via.width + b.via.width) / 2
@@ -299,27 +393,87 @@ function runDrc(file, opts) {
         const mid = { x: (a.rect.x1 + a.rect.x2) / 2, y: (a.rect.y1 + a.rect.y2) / 2 };
         add('D001', `${la} (${a.net}) is ${gap.toFixed(1)} mil from ${lb} (${b.net}) at [${mid.x.toFixed(0)},${mid.y.toFixed(0)}] — min ${rules.clearance}`, {
           a: a.net, b: b.net, at: [Math.round(mid.x), Math.round(mid.y)],
-          fix: a.kind === 'pad' && b.kind === 'pad' && a.ref === b.ref
-            ? `fix the land pattern of ${a.ref} in parts[].footprint — its own pads must clear each other`
-            : `space is tight: move the parts with pcb.place, reroute the segment in pcb.tracks, enlarge board.width/height in design.json, or lower pcb.rules.clearance for fine-pitch parts`
+          fix: `space is tight: move the parts with pcb.place, reroute the segment in pcb.tracks, enlarge board.width/height in design.json, or lower pcb.rules.clearance for fine-pitch parts`
         });
       }
     }
   }
 
-  // D003 — board edge clearance
+  // D003 — board edge clearance, measured against the real OUTLINE POLYGON
+  // when the path is a readable polygon (L-shaped boards and cutouts made the
+  // bbox judgement wrong near the notch). Copper crossing the outline is
+  // reported as outside, copper inside is measured to the nearest edge.
+  const outlineEdges = [];
+  if (geo.outlinePts && geo.outlinePts.length >= 3) {
+    for (let i = 0; i < geo.outlinePts.length; i += 1) {
+      const a = geo.outlinePts[i]; const b = geo.outlinePts[(i + 1) % geo.outlinePts.length];
+      outlineEdges.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+    }
+  }
   for (const c of copper) {
-    const gap = rectEdgeGap(c.rect, board);
-    if (gap < rules.edge - 0.001) {
-      add('D003', `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} is ${gap.toFixed(1)} mil from the board edge — min ${rules.edge}`, {
+    let gap;
+    let outside = false;
+    if (outlineEdges.length) {
+      outside = rectCorners(c.rect).some((p) => !pointInPoly(p, geo.outlinePts));
+      gap = outside ? 0 : Math.min(...outlineEdges.map((e) => segRectDist(e, c.rect)));
+    } else {
+      gap = rectEdgeGap(c.rect, board);
+    }
+    if (outside || gap < rules.edge - 0.001) {
+      add('D003', outside
+        ? `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} crosses the board outline`
+        : `${c.kind}${c.ref ? ` ${c.ref}.${c.num}` : ''} is ${gap.toFixed(1)} mil from the board edge — min ${rules.edge}`, {
         net: c.net, at: [Math.round((c.rect.x1 + c.rect.x2) / 2), Math.round((c.rect.y1 + c.rect.y2) / 2)],
         fix: `move that copper in pcb.tracks / pcb.place, or enlarge board.width/height in design.json, then rebuild`
       });
     }
   }
 
-  // D004 — net connectivity through copper
-  const pouredNets = new Set(geo.pours.map((p) => p.net).filter(Boolean));
+  // D013 — footprint body extents overlapping. Copper spacing cannot catch
+  // two bodies stacked on each other (pads far apart, bodies colliding) —
+  // the first thing a layout review checks. AABB of the rotated PART BBOX.
+  const fps = geo.footprints.slice().sort((a, b) => a.ref.localeCompare(b.ref));
+  for (let i = 0; i < fps.length; i += 1) {
+    for (let j = i + 1; j < fps.length; j += 1) {
+      if (fps[i].ref === fps[j].ref) continue;
+      if (!G.rectsOverlap(fps[i].rect, fps[j].rect)) continue;
+      add('D013', `footprints ${fps[i].ref} and ${fps[j].ref} overlap`, {
+        refs: [fps[i].ref, fps[j].ref],
+        at: [Math.round((Math.max(fps[i].rect.x1, fps[j].rect.x1) + Math.min(fps[i].rect.x2, fps[j].rect.x2)) / 2),
+          Math.round((Math.max(fps[i].rect.y1, fps[j].rect.y1) + Math.min(fps[i].rect.y2, fps[j].rect.y2)) / 2)],
+        fix: `move one of them in pcb.place — parts[].footprint outlines must not intersect`
+      });
+    }
+  }
+
+  // D014 — footprint body outside the board outline (a connector hanging off
+  // the board edge passed every copper rule until now). Judged against the
+  // real outline polygon when readable.
+  if (geo.outlinePts && geo.outlinePts.length >= 3) {
+    for (const fp of fps) {
+      if (rectCorners(fp.rect).every((p) => pointInPoly(p, geo.outlinePts))) continue;
+      add('D014', `footprint ${fp.ref} extends past the board outline`, {
+        ref: fp.ref, at: [Math.round((fp.rect.x1 + fp.rect.x2) / 2), Math.round((fp.rect.y1 + fp.rect.y2) / 2)],
+        fix: `move ${fp.ref} inside board.width/height with pcb.place, or enlarge the board in design.json`
+      });
+    }
+  }
+
+  // D004 — net connectivity through copper. A pour counts as a connection
+  // ONLY where its geometry actually covers same-net pads on a compatible
+  // layer: a border-only POUR, a bottom-layer plane over top-side pads, or a
+  // region that never overlaps the pads used to silence D004 entirely.
+  const NC_RE = /^(NC|DNC\d*|N\/C)$/i;
+  const pourCovered = new Map();   // net -> Set("ref|num") pads inside a pour
+  for (const rg of geo.regions) {
+    for (const p of geo.pads) {
+      if (!p.net || p.net !== rg.net) continue;
+      if (!(p.layer === rg.layer || p.layer === 12 || rg.layer === 12)) continue;
+      if (!pointInPoly({ x: p.x, y: p.y }, rg.pts)) continue;
+      if (!pourCovered.has(p.net)) pourCovered.set(p.net, new Set());
+      pourCovered.get(p.net).add(`${p.ref}|${p.num}`);
+    }
+  }
   if (!placedOnly) {
     const byNet = new Map();
     const group = (net) => {
@@ -327,16 +481,27 @@ function runDrc(file, opts) {
       return byNet.get(net);
     };
     for (const kind of ['pads', 'tracks', 'vias']) {
-      for (const item of geo[kind]) if (item.net && !/^(D?NC\d*)$/i.test(item.net)) group(item.net)[kind].push(item);
+      for (const item of geo[kind]) if (item.net && !NC_RE.test(item.net)) group(item.net)[kind].push(item);
     }
     for (const [net, { pads, tracks, vias }] of byNet) {
-      if (pads.length < 2 || pouredNets.has(net)) continue;
+      if (pads.length < 2) continue;
       const items = [...pads, ...tracks, ...vias];
       const parent = items.map((_, i) => i);
       const find = (i) => {
         while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; }
         return i;
       };
+      // covered pads hang on the same plane: pre-union them before the
+      // track/pad pairing, then the normal grouping proves the REST
+      const covered = pourCovered.get(net);
+      if (covered) {
+        let first = -1;
+        for (let i = 0; i < pads.length; i += 1) {
+          if (!covered.has(`${pads[i].ref}|${pads[i].num}`)) continue;
+          if (first < 0) first = i;
+          else parent[find(i)] = find(first);
+        }
+      }
       const layerOk = (a, b) => a === b || a === 12 || b === 12;
       const ends = (t) => [{ x: t.x1, y: t.y1 }, { x: t.x2, y: t.y2 }];
       const isTrack = (item) => item.x1 !== undefined;
@@ -367,11 +532,13 @@ function runDrc(file, opts) {
 
   // D006 — ground pour. Only judged on boards that HAVE copper (imported or
   // client-saved); a placed-only board from this skill never promises a plane.
-  if (geo.pours.length && !geo.pours.some((p) => p.net === pourNet)) {
+  // A board without the plane net at all (no GND pads) is not asked for one.
+  const hasPlaneNet = geo.pads.some((p) => p.net === pourNet);
+  if (geo.pours.length && hasPlaneNet && !geo.pours.some((p) => p.net === pourNet)) {
     add('D006', `a pour exists but none on net "${pourNet}"`, {
       fix: `the board has pours but none on "${pourNet}" — fix the pour's net in the client, or judge with --pour-net <net>`
     });
-  } else if (!placedOnly && !geo.pours.length && geo.pads.some((p) => p.net === pourNet)) {
+  } else if (!placedOnly && !geo.pours.length && hasPlaneNet) {
     add('D006', 'no copper pour on the board (expected a ground plane)', {
       fix: `add the ground pour in the EasyEDA client (this skill never pours); or record why a plane is not required`
     });

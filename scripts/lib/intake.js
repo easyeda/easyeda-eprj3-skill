@@ -52,8 +52,8 @@ const FIELDS = [
     q: { zh: '有主控吗？型号或系列（如 STM32F103 / ESP32 / 无）',
          en: 'Any MCU? Part or family (STM32F103 / ESP32 / none)?' } },
   { key: 'board.width', tier: 'default', def: null,
-    q: { zh: '板框尺寸（本版自动按封装 bbox 面积 ×1.25 生成，声明值会被忽略；小板以板边安全间距为准，会略大）',
-         en: 'Board size (auto-sized to 1.25× the footprint bbox area; a declared value is ignored; a tiny board may be slightly larger to keep the edge clearance)' } },
+    q: { zh: '板框与层数（本版只采电路定义与机械约束：层数、板框尺寸、固定孔——几何由 AI 在构建前显式给出）',
+         en: 'Board & layers (this version records the circuit definition and mechanical constraints only: layers, board size, mounting holes — geometry is authored explicitly before the build)' } },
   { key: 'board.layers', tier: 'ask', def: 2,
     q: { zh: '层数？（本 skill 不布线不铺铜，层数只是记录；>2 层的布线在客户端完成）',
          en: 'Layer count? (this skill never routes or pours — the number is recorded; the copper happens in the client)' } },
@@ -478,7 +478,7 @@ function renderPlan(plan) {
   const L = [];
   L.push(`方案 ${plan.name}`);
   L.push(`  电源  输入 ${plan.input} → 轨 ${(plan.rails || []).join(' / ') || '—'}（${plan.current_mA} mA）`);
-  L.push(`  板框  自动（封装 bbox 面积 ×1.25，设计里声明的尺寸会被忽略；小板受板边间距约束会略大） · ${plan.layers} 层 · 封装 ${plan.package} · 只布局（布线/铺铜在客户端完成）`);
+  L.push(`  板框  按声明（${plan.layers} 层；几何由 AI 构建前显式给出，见 docs/ai-layout.md） · 封装 ${plan.package} · 交付完整原理图+PCB（铺铜区域由客户端填充并验证）`);
   L.push(`  模块  ${plan.recipes.map((r) => `${r.recipe}(${r.parts})${r.fromCache ? '*' : ''}`).join(' + ') || '无匹配 recipe — 需手写 design'}`);
   // coverage (report §9 P4): typed recipes pick their part by class + roles;
   // fixed-model ones still bake a specific chip in

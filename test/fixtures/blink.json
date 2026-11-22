@@ -1,0 +1,45 @@
+{
+  "name": "blink",
+  "notes": [
+    "回归基线（corpus/eval 用）：2.2.9 契约的最小完整示例——分页前单页、命名网络、电源 flag、双层走线加过孔",
+    "LED 极性约定见 docs/footprint-evidence.md：符号 pin1=A，封装 pad 1（A）在丝印阴极标对侧"
+  ],
+  "board": { "width": 440, "height": 300, "layers": 2 },
+  "powers": { "GND": "down" },
+  "blocks": [ { "title": "BLINK", "parts": ["J1", "R1", "D1"] } ],
+  "parts": [
+    { "id": "J1", "symbol": { "name": "HDR_2P_CTRL", "designator": "J", "pitch": 30, "pins": ["1:CTRL", "2:GND"] },
+      "footprint": { "name": "HDR_2P", "designator": "J", "pads": [[1, -50, 0, 60, 60], [2, 50, 0, 60, 60]], "outline": [-90, -50, 90, 50] },
+      "name": "CTRL", "value": "CTRL", "pins": { "1": "CTRL", "2": "GND" } },
+    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "330R", "pins": { "1": "CTRL", "2": "LED_A" } },
+    { "id": "D1", "symbol": "LED", "footprint": "LED0603", "value": "RED", "polarity": { "1": "+", "2": "-" },
+      "pins": { "1": "LED_A", "2": "GND" } }
+  ],
+  "sch": {
+    "place": { "J1": [300, 300, 0], "R1": [600, 300, 0], "D1": [900, 300, 0] },
+    "wires": [
+      { "net": "CTRL", "points": [[280, 300], [280, 340], [580, 340], [580, 300]] },
+      { "net": "LED_A", "points": [[620, 300], [880, 300]] },
+      { "net": "GND", "points": [[320, 300], [320, 260]] },
+      { "net": "GND", "points": [[920, 300], [920, 260]] }
+    ],
+    "flags": [
+      { "net": "GND", "at": [320, 260], "kind": "down" },
+      { "net": "GND", "at": [920, 260], "kind": "down" }
+    ]
+  },
+  "pcb": {
+    "place": { "J1": [100, 150, 0], "R1": [240, 150, 0], "D1": [350, 150, 0] },
+    "tracks": [
+      { "net": "CTRL", "layer": 1, "width": 10, "points": [[50, 150], [50, 220], [210.34, 220], [210.34, 150]] },
+      { "net": "LED_A", "layer": 1, "width": 10, "points": [[269.66, 150], [269.66, 220], [381.1, 220], [381.1, 150]] },
+      { "net": "GND", "layer": 1, "width": 10, "points": [[150, 150], [150, 80]] },
+      { "net": "GND", "layer": 2, "width": 10, "points": [[150, 80], [318.9, 80]] },
+      { "net": "GND", "layer": 1, "width": 10, "points": [[318.9, 80], [318.9, 150]] }
+    ],
+    "vias": [
+      { "net": "GND", "at": [150, 80], "diameter": 26, "drill": 12 },
+      { "net": "GND", "at": [318.9, 80], "diameter": 26, "drill": 12 }
+    ]
+  }
+}

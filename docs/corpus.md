@@ -38,15 +38,15 @@ open a mutated project by hand).
 A legal entry is either generated
 
 ```json
-{ "name": "build/blink", "key": "blink", "build": "examples/designs/blink.json" }
+{ "name": "build/blink", "key": "blink", "build": "test/fixtures/blink.json" }
 ```
 
 in which case `scripts/build.js` produces it into a temp dir and the run asserts
 the build exits 0 with a clean format and electrical report — or committed:
 
 ```json
-{ "name": "committed/eprj3-example", "key": "client",
-  "dir": "examples/eprj3-example", "formatOnly": true }
+{ "name": "committed/client-sample", "key": "client",
+  "dir": "<a client-saved project>", "formatOnly": true }
 ```
 
 `formatOnly` marks a project this skill did not author. The **format** gate must
@@ -192,7 +192,10 @@ Everything else the corpus once had to record as blind is **closed** in
 | `COMPONENT`/`WIRE` head without `id` | "head has no id" | error |
 | zero-byte container crashing the gates | "document file has no DOCHEAD records" + `netlist/drc/pins` stubs that degrade to findings instead of throwing | error |
 
-The warning-vs-error choice is empirical, not taste: the calibration set is
+The warning-vs-error choice is empirical, not taste: the calibration set was
 the two real client-saved projects on the maintainers' disk (quick-start,
-H610) plus `examples/eprj3-example` — **all must validate with 0
-errors** — and every error-level rule above stays silent on all of them.
+H610) plus the repo's former `examples/eprj3-example` — **all must validate with
+0 errors** — and every error-level rule above stays silent on all of them. The
+committed client samples left the repo in 2.2.10; the calibrated rules stand,
+and a fresh client-saved project can be dropped in as a `formatOnly` entry to
+re-check them.

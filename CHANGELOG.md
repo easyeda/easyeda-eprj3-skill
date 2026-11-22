@@ -5,7 +5,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 Versioning convention: every code/skill change that lands in a commit bumps `package.json` by incrementing **only the third number** (`patch`, e.g. 2.2.3 → 2.2.4) and records it here in the same commit. **One entry per calendar day**: if another update ships the same day, keep only the latest version number and **merge the new content into that day's entry** (no second same-day section). The second number (`minor`) is raised **only when the user explicitly asks**; the first (`major`) never moves without an explicit instruction. Pure documentation changes do not bump.
 
-## [2.2.9] - 2026-11-22
+## [2.2.10] - 2026-11-22
+
+**AI-authored geometry replaces the layout engine (breaking); authoring
+pre-checks; DRC geometry truthfulness; recipe electrical review.**
 
 **AI-authored geometry replaces the layout engine (breaking).** The build no
 longer chooses positions, wires, footprints, tracks or the board size:
@@ -103,6 +106,55 @@ gates.
   "re-run build.js --force"; I006 states that the local checks do not verify
   pair gap/skew/length rather than telling the author to finish it in the
   client.
+- **DRC geometry truthfulness round (engineering review).** A pad rotated with
+  its part now swaps its world w/h (the world AABB of a w×h pad turned θ is
+  `w|cosθ|+h|sinθ| × w|sinθ|+h|cosθ|`) — a 90° SOP pad was being judged by its
+  SHORT side, letting spacing and edge violations pass. Two pads of one
+  footprint overlapping on different nets now report as a shorted land
+  pattern (D001) instead of being skipped as "the package's business" —
+  inline/auto footprints made that reachable. A POUR/FILL region joins pads
+  only where its polygon actually covers same-net pads on a compatible layer:
+  a border-only pour, a wrong-layer plane or a region missing the pads no
+  longer silences D004. New rules: D013 footprint body extents overlap,
+  D014 footprint body outside the board outline. D003 measures against the
+  real outline polygon (crossings reported as such) instead of its bbox, so
+  L-shaped boards and cutouts judge correctly. `pourNet` follows the design's
+  declared ground (first `powers` entry with `down`) instead of hardcoded
+  GND; D006 stays quiet on boards that have no plane net at all; the NC
+  net regex matches `NC_NET` (`N/C` included).
+- **Templates reviewed as circuits (EDA-CLI evidence).** `DIODE` flips to
+  pin 1 = K / pin 2 = A per the official SS34 SMA part (JEDEC DO-214AC:
+  pin 1 = cathode) — the old pin1=A wired every SMA diode backwards; `SMA`
+  gains a cathode silk bar on the pad-1 side; `LED0603` swaps its pads so
+  pad 1 (A) sits on the silk-clear side and the cathode bar marks pad 2 (K),
+  matching the official KT-0603R (C2286). Recipes: `npn-switch-typed` gains
+  the missing base series resistor (1k) + pull-down rewire and becomes a
+  buildable plain recipe (the typed `$device` path is gone in 2.x);
+  `buck-5v` states its 1.24 V reference (and `expect.divider.vref` checks
+  the output rail), drops the impossible 2 A on an L0603 to 0.5 A and flags
+  0603 cap voltage/DC-bias limits; `power-tree` limits SOT23-5 LDOs to
+  100 mA (thermal) and moves the 5 V TVS to SMBJ6.5A; `crystal` load caps
+  corrected to 33 pF for a CL=20 pF crystal; `rs485` documents the 5 V RO
+  level, termination-jumper and fail-safe bias caveats.
+- **Gate details from the review.** `parseValue` accepts the `4k7`/`1k5`/
+  `2R2`/`4n7` shorthand (docs used it; the parser returned null and I005's
+  ratio check silently skipped); I005 accepts `vref`/`vout`/`vtol` and
+  fails a divider built for the wrong reference; unparseable divider values
+  warn instead of skipping.
+- **Docs consistency sweep.** Sheet coordinates are Y-up, 1 unit = 10 mil
+  everywhere (workflow.md claimed Y-down mil and format-reference.md claimed
+  1:1 mil — both corrected); the format-skill prerequisite in workflow.md is
+  a recommendation, not a hard stop; stale `--layout`/auto-board wording
+  removed from `cli.md`, `intake.md`, report and intake strings; dead
+  SKILL.md anchors replaced; examples/ references point at the fixtures.
+- **Corpus re-based on authored fixtures.** `test/fixtures/blink.json` (3
+  parts, flags, 2-layer routing with vias) joins `ai-resistor-link.json` as
+  the corpus/eval baseline; the variants targeting the deleted
+  examples-based blink are rewritten against the new net names (flag-only
+  renames are harmless now that wires name nets — the variants rename the
+  whole drop); the committed-client-sample manifest is gone with the
+  samples; smoke no longer silently skips its examples block; eval cases
+  move to the `ai/*` keys.
 
 ## [2.2.7] - 2026-11-09
 

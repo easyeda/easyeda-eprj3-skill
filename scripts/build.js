@@ -1126,10 +1126,14 @@ function main() {
   if (doPcb) {
     const { runDrc } = require('./lib/drc');
     const dr = design.pcbSpec.rules || {};
+    // the plane net follows the design's declared ground, not a hardcoded GND
+    // (VSS / PGND / 0V boards never got the missing-pour hint before)
+    const pourNet = (Object.entries(design.powers || {}).find(([, dir]) => dir === 'down') || [])[0] || 'GND';
     drc = runDrc(pcbDoc.file, {
       netWidths: design.netWidths || {},
       noConnect: D.noConnectPins(design),
       placedOnly: pcbMode === 'placed-only',
+      pourNet,
       rules: {
         clearance: dr.clearance,
         minTrack: dr.trackWidth,

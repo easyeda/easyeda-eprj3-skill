@@ -1,5 +1,11 @@
 {
   "name": "rs485",
+  "notes": [
+    "MAX485 是 5V 器件，RO 推挽输出接近 5V：3.3V MCU 的 IO 需换 MAX3485/SN65HVD7x 或加电平转换/分压",
+    "120R 终端只在总线两端各焊一个，多点中间节点应做成跳线可选（默认不焊）",
+    "本配方无 fail-safe 偏置：总线空闲时 A/B 电平不定，长总线加 A 上拉 / B 下拉（560R–1k 到 VCC/GND）或选自带 fail-safe 的收发器",
+    "TVS 用 SMBJ6.5CA（双向）更常见于 A/B 差分对；本配方的 SMBJ6.5A 是单向对地，按需替换"
+  ],
   "board": {
     "width": 1600,
     "height": 1000
@@ -193,10 +199,10 @@
       "name": "TVS_A",
       "value": "SMBJ6.5A",
       "role": "shunt",
-      "polarity": { "1": "+", "2": "-" },
+      "polarity": { "1": "-", "2": "+" },
       "pins": {
-        "1": "GND",
-        "2": "RS485_A"
+        "1": "RS485_A",
+        "2": "GND"
       }
     },
     {
@@ -206,10 +212,10 @@
       "name": "TVS_B",
       "value": "SMBJ6.5A",
       "role": "shunt",
-      "polarity": { "1": "+", "2": "-" },
+      "polarity": { "1": "-", "2": "+" },
       "pins": {
-        "1": "GND",
-        "2": "RS485_B"
+        "1": "RS485_B",
+        "2": "GND"
       }
     },
     {

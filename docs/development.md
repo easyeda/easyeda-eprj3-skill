@@ -31,7 +31,6 @@ easyeda-eprj3-skill/
 │   ├── open.js
 │   └── lib/               ← 共享读写模块
 ├── templates/library/     ← 通用预设（符号/封装，无型号）
-├── examples/              ← 示例工程
 ├── docs/                  ← 格式说明
 └── test/                  ← 回归测试
 ```
@@ -119,12 +118,12 @@ node scripts/validate.js --dir ./myboard
 node scripts/open.js open --dir ./myboard
 ```
 
-完整 showcase 见 `examples/blink/`，它演示了如何放置所有内置预设模板。
+可运行的完整示例见 `test/fixtures/blink.json` 与 `test/fixtures/ai-resistor-link.json`（2.2.9 契约的最小 authored 工程）；预设模板的放置形状见 `templates/library/footprint/README.md`。
 
 ## 测试
 
 ```bash
-npm test        # smoke + pipeline + dfm + corpus + depcheck 全链
+npm test        # smoke + pipeline + dfm + depcheck 全链（corpus 单独跑：node test/corpus.js）
 ```
 
 - `node test/smoke.js`：生成临时工程做断言，确认格式符合官方示例约定（条数以 `npm test` 输出为准）。
@@ -139,7 +138,7 @@ npm test        # smoke + pipeline + dfm + corpus + depcheck 全链
 
 ### 1. 新错误模式 → 新检查规则 + 最小复现 case
 
-1. 把触发问题的 design.json 缩到最小，放进 `examples/designs/`（或直接写进 test 断言）。
+1. 把触发问题的 design.json 缩到最小，放进 `test/fixtures/`（或直接写进 test 断言）。
 2. 在 `scripts/lib/{erc,intent,lint,drc}.js` 加一条能抓住它的规则（每个 finding 必须带 `fix` 字段——告诉 agent 怎么改 design）。
 3. 跑 `node scripts/eval.js`：确认新 case 从 FAIL 变 PASS，且 20+ 个旧 case 无回归（`--diff` 对比上次，token/秒数回归同样可见）。
 

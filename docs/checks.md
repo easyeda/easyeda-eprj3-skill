@@ -57,6 +57,11 @@ DOCHEAD frames to `{"type":"DOCHEAD","ticket":1}`.
 | `W002` | warn | IC on a supply with no decoupling cap | add one (0.1 µF per supply pin) — or run autofix |
 | `W003` | warn | net bridges two pins of the same part | usually a typo in `pins` |
 
+> **`E008` 的覆盖范围是有限的**：它只检查在 design 上下文里**声明了方向**
+>（`"num:name:dir"` 引脚 spec 或 `ic` 器件引脚方向）的输出脚冲突。预设两脚
+> 器件、无方向声明的 IC 都不参与——"ERC 通过"不等于"已排除全部电气冲突"，
+> 输出对撼/总线冲突仍需在客户端复核。
+
 `E003` is the important one: it compares the netlist recovered from the files
 against the one the design file asked for, pin by pin. It is what catches a wire
 that visually looks right and electrically is not. The `NC`/`DNC` net names are
@@ -84,22 +89,28 @@ the block is too dense — move the affected symbols/wires or split the block.
 
 | Code | Level | Weight | Meaning |
 | --- | --- | --- | --- |
-| `D001` | error | 12 | copper-to-copper spacing below clearance (different nets) |
+| `D001` | error | 12 | copper-to-copper spacing below clearance (different nets); also two pads of ONE footprint overlapping on different nets — a shorted land pattern |
 | `D002` | error | 8 | track narrower than the minimum (per-net declared widths satisfy their own floor) |
-| `D003` | error | 8 | copper too close to the board edge |
-| `D004` | error | 12 | a net with 2+ pads is not fully routed |
+| `D003` | error | 8 | copper too close to the board edge, or crossing the outline — measured against the real outline polygon when its path has 3+ points |
+| `D004` | error | 12 | a net with 2+ pads is not fully routed; a pour joins pads only where its geometry actually covers them on a compatible layer |
 | `D005` | error | 10 | board outline missing or degenerate |
-| `D006` | warn | 4 | no ground pour |
+| `D006` | warn | 4 | no pour on the declared plane net (the first `powers` entry with `down`, else `GND`) |
 | `D007` | warn | 2 | pad without a net |
 | `D008` | warn | 2 | via geometry out of range |
 | `D009` | error | 6 | via/pad drill below the manufacturing minimum (`minDrill`) |
 | `D010` | warn | 3 | annular ring below the minimum (`minRing`) |
 | `D011` | warn | 2 | silkscreen text overlapping a copper pad (same board side) |
 | `D012` | warn | 2 | same-net track segments meeting at an acute angle (`minAngle`) |
+| `D013` | error | 6 | footprint body extents overlap (rotated-AABB of the footprint bbox) |
+| `D014` | error | 6 | footprint body outside the board outline |
 
-`D001` on two pads of the *same* footprint is ignored (that is the package's land
-pattern), but everything else is enforced. On a board that actually carries
-copper, `D004` skips nets a pour already connects — the plane is what joins them.
+`D001` ignores two pads of the *same* footprint sitting closer than clearance
+(that is the package's land pattern) but still reports them OVERLAPPING on
+different nets — inline `{auto:...}`/hand-written footprints can short two nets
+silently. A POUR/FILL region makes D004 pass only when the polygon actually
+covers same-net pads on the pour's layer (or on through-hole pads): a
+border-only pour, a plane on the wrong layer, or a region that misses the pads
+does not silence anything.
 
 **Copper checks.** The default build writes AI-authored tracks/vias and runs routed DRC, even with an empty track list. D004 requires groups of same-net pads to connect through copper on the appropriate layers; changing layers requires a via or plated pad. For explicitly agreed `pcb.mode: "placed-only"` drafts, D004 and D006 are skipped. Local DRC is a precheck, not a substitute for client DRC and plane verification.
 
@@ -127,19 +138,29 @@ copper, `D004` skips nets a pour already connects — the plane is what joins th
   form an etch wedge that traps acid and thins the insulation. Only segments
   meeting at a shared endpoint are compared, never every pair. A join folded
   back exactly (0°) is overlapping copper and is left to the spacing rules;
-  45° chamfers are legal. Fix (the copper is always client- or import-owned):
-  reroute it as a 45° chamfer/arc in the client, or delete the segment there;
-  if the placement forced the pinch, give more room via `pcb.place` and re-run
-  `build.js --force` before the copper work.
+  45° chamfers are legal — angles ≥ `minAngle` (default 45°), including
+  60°/75° bends, are NOT flagged; the "only 45°" habit is a style, not a rule
+  this checker enforces. Fix: reroute the corner in `pcb.tracks` as a 45°
+  chamfer or an arc (the writer supports polylines only — arcs mean editing in
+  the client); if the placement forced the pinch, give more room via
+  `pcb.place` and rebuild.
 
 Defaults: clearance 10, min track 8, edge 12 mil, min drill 12, min ring 4, min
 angle 45. `build.js` judges placement — and any imported or client-saved copper
 it reviews — against the SAME `pcb.rules` the design declares, so a board that
-declares fine-pitch floors is judged by them, not by these defaults. The three
-DFM thresholds are configurable the same way through `runDrc(file, {rules})` —
-and through the design contract: `pcb.rules.minDrill` / `minRing` / `minAngle`
-are forwarded by `build.js`, so a design that declares a fab floor is judged by
-its own floor, not the default.
+declares fine-pitch floors is judged by them, not by these defaults.
+
+**`pcb.rules` accepts EXACTLY these keys** (verbatim — other keys are ignored,
+and the DRC-internal names `minTrack` / `edge` are NOT accepted):
+
+| `pcb.rules` key | DRC rule | default |
+| --- | --- | --- |
+| `clearance` | D001 / D003 spacing floor | 10 |
+| `trackWidth` | D002 minimum track width | 8 |
+| `edgeClearance` | D003 copper-to-edge | 12 |
+| `minDrill` | D009 minimum drill | 12 |
+| `minRing` | D010 minimum annular ring | 4 |
+| `minAngle` | D012 minimum bend angle | 45 |
 
 ## Netlist — `netcheck.js` (schematic ↔ PCB)
 
@@ -173,8 +194,9 @@ It writes a self-contained package (`schema: eprj3-netlist-audit/1`) holding
 both views, `mechanical` (the tool's diff, the netcheck verdict and advisory
 `suspicions`), the `rubric` to run and the required `verdictSchema`. It always
 exits 0 — it reports, it does not judge. A fresh sub-agent with no inherited
-context runs the rubric and returns `{ok, summary, findings[]}`; the exact loop
-lives in [SKILL.md § Netlist audit](../SKILL.md#netlist-audit--a-fresh-reviewer-not-you).
+context runs the rubric and returns `{ok, summary, findings[]}`; the loop is
+invoked from the AI workflow (`node scripts/netlist.js --dir <project>
+--design design.json --audit`, SKILL.md step 5).
 
 `mechanical.ok` is true only when spec and built agree net by net, no pin sits
 on two nets, no declared pin has vanished from the symbol, NC declarations are

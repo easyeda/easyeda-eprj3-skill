@@ -5,8 +5,9 @@ search, component placement, copper pour,
 netlist extraction and canvas screenshots. The skill ships thin Node scripts
 that open the project through the **LCEDA Pro / EasyEDA Pro CLI** and run the
 client's own `source` / auto APIs; the model calls these scripts instead of
-writing JavaScript. Schematic layout/wiring deliberately stays on the skill's
-own offline engine (the client's schematic auto engine ignores module frames).
+writing JavaScript. Geometry is authored by the AI in `design.json` (see
+[`ai-layout.md`](ai-layout.md)) — the client executes the given coordinates and
+makes no layout or routing decisions of its own.
 
 ## Requirement
 
@@ -51,8 +52,9 @@ and destroys its headless session so batch runs do not leak editor windows.
 
 `build.js` itself drives the client for any part written as `"ic": "<device>"`
 (+ optional `"lcsc"`): `scripts/lib/cli-lib.js` resolves the device geometry
-(`lib_Symbol.getGeometry` / `lib_Footprint.getGeometry`) so the offline engine
-can plan positions, writes the project skeleton, then opens the project and:
+(`lib_Symbol.getGeometry` / `lib_Footprint.getGeometry`) so `build.js --geometry`
+can show real pin/pad coordinates before anything is authored, writes the
+project skeleton, then opens the project and:
 
 - places each official symbol with `sch_SourcePrimitiveComponent.add` (one
   session), then reopens the project in a fresh session — the client only
@@ -63,7 +65,7 @@ can plan positions, writes the project skeleton, then opens the project and:
   no pre-placed instances — so nothing has to be deleted first (4.1.94 leaves
   empty `COMPONENT`/`PAD_NET` shells behind after a delete; a safety net removes
   those if an older project still needs the delete path);
-- moves every footprint to the position the offline engine planned
+- moves every footprint to the authored position in `pcb.place`
   (`pcb_PrimitiveComponent.modify`);
 - places the designator/name rows through the source API
   (`sch_SourcePrimitiveComponent.updateAttribute`, addressed by designator +

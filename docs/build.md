@@ -243,12 +243,19 @@ Placeholders are plain string substitution — no templating engine, no deps.
   "decoupling": true,
   "pairs": [["USB_DP", "USB_DM"]],
   "valueRange": [{ "ref": "R1", "min": "100R", "max": "1k" }],
-  "divider": [{ "input": "VIN", "output": "FB", "top": "R1", "bottom": "R2", "ratio": 0.5, "tol": 0.05 }]
+  "divider": [{ "input": "VIN", "output": "FB", "top": "R1", "bottom": "R2", "ratio": 0.5, "tol": 0.05,
+               "vref": 1.24, "vtol": 0.05 }]
 }
 ```
 
 All fields optional; the gate only runs the rules you declare. `polarity` marks
-are checked even without an `expect` block. Rule codes I001–I006 live in
+are checked even without an `expect` block. In `divider`, `vref` (the
+controller's feedback reference, V) turns the ratio check into a voltage check:
+I005 computes `vout = vref × (top+bottom)/bottom` and compares it against
+`vout` (or the volt number in the `input` rail's name, e.g. "5V" → 5) within
+`vtol` (default 5 %) — a ratio that is self-consistent but built for the wrong
+reference now fails. `valueRange` parses `4k7`/`1k5`/`2R2` shorthand too.
+Rule codes I001–I006 live in
 [`docs/checks.md`](checks.md). `build.js` fails on intent errors just like on
 ERC errors; `--allow-intent` skips the gate. Standalone: `node scripts/intent.js
 --design design.json`.

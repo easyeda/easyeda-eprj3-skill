@@ -1,24 +1,18 @@
 # Workflow
 
-A compact step-by-step the AI agent follows for each user request. The full machine-readable flow is in [`SKILL.md`](../SKILL.md).
+A compact step-by-step for **incrementally editing an existing project** (record-level operations that preserve copper and placement you want to keep). For a full authored build from `design.json`, follow [`SKILL.md`](../SKILL.md) and [`ai-layout.md`](ai-layout.md) instead — this document does not describe that path.
 
-All coordinates are **mil** unless a script's help says otherwise.
+Coordinate systems: schematic sheet records are **Y-up, 1 unit = 10 mil** (A4 frame 1170×825 units, origin bottom-left); PCB records are **mil, Y-up**. Do not mix the scales.
 
-## 0. Prerequisite — read easyeda-pro-format-skill (MANDATORY GATE)
+## 0. Format reference (recommended, not a gate)
 
-Before any other step in this document, the AI agent MUST locate and read the companion **easyeda-pro-format-skill** repo (https://github.com/easyeda/easyeda-format-skill). This skill's scripts encode a subset of the format; the companion repo is the authoritative, machine-checkable spec (per-record field tables under `primitives/`, real record samples under `examples/`, JSON Schemas under `schemas/`). Do **not** generate, edit, or validate any `.eprj3` file based on this skill alone.
+When hand-editing or validating unusual records, consult the companion **easyeda-format** repo (https://github.com/easyeda/easyeda-format-skill — per-record field tables under `primitives/`, real samples under `examples/`, schemas under `schemas/`; ground truth: https://github.com/easyeda/easyeda-eprj3-format). Where this skill's docs, a schema, and a real record disagree, the real record wins. Cross-check mechanically when a copy is available:
 
-1. **Locate** the repo (in order):
-   - `c:\Users\easyeda\.claude\skills\easyeda-pro-format-skill\` (default skill directory)
-   - Any path already registered under that name in the environment
-   - Otherwise: `git clone https://github.com/easyeda/easyeda-format-skill <target-dir>`
-2. **Read** its `SKILL.md`, then the relevant `schemas/*.json`, `primitives/*.md` and `examples/` entries for the record types this session will touch.
-3. **Keep the path** — later cross-checking uses it:
-   ```bash
-   node scripts/tools/audit-format.js --format-skill <path-to-easyeda-pro-format-skill>
-   ```
+```bash
+node scripts/tools/audit-format.js --format-skill <path-to-easyeda-format-skill>
+```
 
-**Hard rule:** if the repo cannot be found or cloned, STOP and tell the user it must be installed before any eprj3 authoring proceeds. Never guess record shapes from memory. Where this skill's docs, a schema, and a real record disagree, the real record wins (ground truth: https://github.com/easyeda/easyeda-eprj3-format).
+Unlike earlier versions this is NOT a hard stop: `validate.js` + the gates catch malformed records on their own.
 
 ## 1. Discover
 
@@ -78,7 +72,7 @@ Inspect or prune with `load-library.js list|show|remove` (`remove` only deletes 
 
 ## 4. Place on schematic
 
-Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 2–8 components each, decoupling caps with their IC — with ≥150 mil gutters between them. Full rules with worked coordinates: [SKILL.md → Layout rules the builder already enforces](../SKILL.md#layout-rules-the-builder-already-enforces).
+Before choosing any coordinate, partition the design into **functional module blocks** (power input, core IC, interface, …) laid out along the signal flow (inputs left/top → outputs right), and enclose every block with an annotation rect + title text (`add-shape rect`, `add-text`). Blocks stay coarse — 2–8 components each, decoupling caps with their IC — with ≥150 mil gutters between them.
 
 `add-symbol.js` is the unified placement entry — it resolves the entry preset-first, then dispatches by kind (`symbol` → component block, `power` → power flag, `port` → net port):
 
@@ -93,7 +87,7 @@ node scripts/add-symbol.js --dir <dir> --sch Schematic1 --sheet P1 \
 
 `--footprint` pairs the symbol with a footprint entry (preset or temp) and the DEVICE doc is composed on the fly — there is no device staging. Each placement embeds the needed SYMBOL/DEVICE docs into the sheet file, so the sheet is self-contained. Power symbols and ports are special devices: the placed COMPONENT carries `DeviceName: null` and the net name lives in `Name` / `Global Net Name` ATTR records.
 
-Coordinates: sheet records are the client's native **Y-down** mil (y grows downward; the builder lays blocks downward from y=0), PCB is Y-up — both on the 10 mil grid. A wire touches a pin only at **exact coordinate equality** — the pin record's `(x, y)` IS the connection point (the client's hotspot; proven against the client-authored sample): RES/CAP/DIODE/LED presets connect at `(±20, 0)` rotated by the placement rotation; power flags/ports at their origin. The pin's drawn line runs from the hotspot inward toward the body. Read exact tips with `pins.js` or `load-library show`. Keep row pitch ≥200 mil so Designator/Name labels don't collide.
+Coordinates: sheet records are **Y-up, 1 unit = 10 mil** (the A4 frame is 1170×825 units; origin bottom-left — positive Y is UP the page), PCB is mil Y-up. A wire touches a pin only at **exact coordinate equality** — the pin record's `(x, y)` IS the connection point (the client's hotspot): RES/CAP/DIODE/LED presets connect at `(±20, 0)` in sheet units rotated by the placement rotation; power flags/ports at their origin. The pin's drawn line runs from the hotspot inward toward the body. Read exact tips with `node scripts/pins.js --dir <dir>` or `build.js --geometry` (`sheetAt`). Keep row pitch ≥200 mil so Designator/Name labels don't collide.
 
 ## 5. Annotate (text & graphics)
 

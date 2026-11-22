@@ -576,18 +576,9 @@ function main() {
     const rt = E.parseRecord(E.formatRecord({ type: 'TEXT', ticket: 1, id: 'x' }, { value: 'A||B' }));
     assert(rt && rt.body.value === 'A||B', "parse/format round-trip survives '||' inside JSON bodies");
 
-    // ---- examples/blink itself validates ----
-    const blinkDir = path.join(ROOT, 'examples', 'blink');
-    if (fs.existsSync(blinkDir)) {
-      const rBlink = run([SCRIPTS + '/validate.js', '--dir', blinkDir]);
-      // This sample has been through the real client (open + save with 4.1.84):
-      // the save re-stamps index.owner_uuid to the editor account and leaves
-      // untouched docs' original client ids — mixed DOCHEAD clients are the
-      // NORMAL state of a round-tripped project, warned, never an error.
-      assert(/^OK \(0 errors/m.test(rBlink.stdout),
-        'examples/blink passes validate (0 errors; client round-trip warnings ok)', rBlink.stdout.trim());
-      realClientInvariants(blinkDir, 'examples/blink');
-    }
+    // The committed client-saved sample (examples/blink) was removed from the
+    // repo in 2.2.10; the client round-trip invariants it proved are recorded in
+    // docs/format-reference.md and re-checkable against any client-saved project.
 
     // ---- declarative pipeline: build a design file end to end ----
     // The record-level checks above prove the primitives; this proves they still

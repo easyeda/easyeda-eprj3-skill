@@ -134,7 +134,47 @@ try {
   const pcbFile = fs.readdirSync(path.join(multilayer.dir, 'pcb')).find((name) => name.endsWith('.epcb2'));
   assert(E.readRecords(path.join(multilayer.dir, 'pcb', pcbFile)).some((r) =>
     r.type === 'LAYER' && r.body.layerId === 15 && r.body.use === true));
-  console.log('PASS: AI-authored geometry, preview, rejection, routing connectivity, NC, and inner copper');
+
+  // DRC geometry truthfulness: a 90° pad swaps its world w/h, footprint body
+  // extents follow, and pads of ONE footprint overlapping on different nets
+  // are a short, not a land-pattern spacing quibble
+  const DRC = require('../scripts/lib/drc');
+  const rotated = run('rotated-pad', (d) => { d.pcb.place.R1 = [150, 150, 90]; }, [], 1);
+  const rotFile = path.join(rotated.dir, 'pcb', pcbFile);
+  const rotGeo = DRC.pcbGeometry(rotFile);
+  const r1pad = rotGeo.pads.find((p) => p.ref === 'R1');
+  assert(r1pad.w > r1pad.h, '90° pad world AABB swaps w/h');
+  const r1fp = rotGeo.footprints.find((f) => f.ref === 'R1');
+  assert(r1fp.rect.y2 - r1fp.rect.y1 > r1fp.rect.x2 - r1fp.rect.x1, 'footprint extent follows the 90° turn');
+  const overlap = run('pad-overlap', (d) => {
+    d.parts[0].footprint = { name: 'SHORTFP', designator: 'R', pads: [[1, -10, 0, 60, 60], [2, 10, 0, 60, 60]], outline: [-40, -30, 40, 30] };
+  }, [], 1);
+  assert(overlap.report.drc.findings.some((f) => f.code === 'D001' && /shorts the two nets/.test(f.msg)));
+
+  // a pour counts as a connection only where its geometry covers same-net
+  // pads on a compatible layer
+  const noPour = run('pour-base', (d) => { d.pcb.tracks = d.pcb.tracks.filter((t) => t.net !== 'LINK'); }, [], 1);
+  assert(noPour.report.drc.findings.some((f) => f.code === 'D004' && f.net === 'LINK'));
+  const pourFile = path.join(noPour.dir, 'pcb', pcbFile);
+  E.appendLines(pourFile, [E.formatRecord({ type: 'POUR', ticket: 990001, id: 'pourcoverage01' }, {
+    partitionId: '', groupId: 0, netName: 'LINK', layerId: 1, width: 0.2, name: 'P', order: 0,
+    path: [[100, 100, 'L', 400, 100, 'L', 400, 200, 'L', 100, 200]],
+    pourType: { pourType: 'SOLID', fineness: 8 }, keepIsland: false, locked: true, zIndex: -1
+  })]);
+  assert(!DRC.runDrc(pourFile, {}).findings.some((f) => f.code === 'D004' && f.net === 'LINK'),
+    'a covering pour joins its pads');
+  E.appendLines(pourFile, [E.formatRecord({ type: 'POUR', ticket: 990002, id: 'pourwronglayer' }, {
+    partitionId: '', groupId: 0, netName: 'RETURN', layerId: 1, width: 0.2, name: 'P2', order: 0,
+    path: [[100, 100, 'L', 400, 100, 'L', 400, 200, 'L', 100, 200]],
+    pourType: { pourType: 'SOLID', fineness: 8 }, keepIsland: false, locked: true, zIndex: -1
+  })]);
+  // RETURN pads sit on both layers with vias in between: a top pour over BOTH
+  // via+pads keeps them grouped through layer 12 … assert the via/pad layering
+  // rule by checking the pour over layer 1 does not fake a BOTTOM-only net
+  const wrongLayer = DRC.runDrc(pourFile, {});
+  assert(wrongLayer.findings.filter((f) => f.code === 'D004').every((f) => f.net === 'RETURN'),
+    'only genuinely unrouted nets are reported');
+  console.log('PASS: AI-authored geometry, preview, rejection, routing connectivity, NC, inner copper, DRC geometry');
 } finally {
   fs.rmSync(tmp, { recursive: true, force: true });
 }

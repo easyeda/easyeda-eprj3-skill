@@ -365,17 +365,29 @@ function main() {
       JSON.stringify(fp.pads.map((p) => [p.x, p.w, p.h])));
   }
 
-  // The shipped 2-pin polarized SYMBOLS share one convention: pin 1 = anode,
-  // designator D — a trap the corpus cannot see (DIODE used to be 1=K + U?).
-  for (const name of ['DIODE', 'LED']) {
-    const entry = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/symbol', `${name}.json`), 'utf8'));
-    const sym = P.parseSymbolEntry(entry);
-    ok(sym.designator === 'D?', `${name} preset designator is D?`, sym.designator);
-    const p1 = sym.pinByNum.get('1');
-    const p2 = sym.pinByNum.get('2');
-    ok(p1 && p1.name === 'A' && p2 && p2.name === 'K', `${name} preset pins are 1=A / 2=K`,
-      `${p1 && p1.name}/${p2 && p2.name}`);
-    ok(sym.graphics && sym.graphics.length > 0, `${name} preset carries diode artwork`);
+  // The shipped 2-pin polarized SYMBOLS follow the official-library evidence
+  // (docs/footprint-evidence.md, measured via the EDA CLI in 2.2.10):
+  //   LED   — pin 1 = A (KT-0603R / C2286: pin1=A, pad1 on the right, silk K bar
+  //           on the left), designator D;
+  //   DIODE — pin 1 = K (SS34 SMA / DO-214AC JEDEC: pin1=cathode, pad1 left).
+  // Swapping either template back breaks assembly against the silk mark.
+  {
+    const led = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/symbol', 'LED.json'), 'utf8'));
+    const ledSym = P.parseSymbolEntry(led);
+    const led1 = ledSym.pinByNum.get('1'); const led2 = ledSym.pinByNum.get('2');
+    ok(ledSym.designator === 'D?' && led1 && led1.name === 'A' && led2 && led2.name === 'K',
+      'LED preset pins are 1=A / 2=K (official C2286)', `${led1 && led1.name}/${led2 && led2.name}`);
+    const dio = JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/symbol', 'DIODE.json'), 'utf8'));
+    const dioSym = P.parseSymbolEntry(dio);
+    const d1 = dioSym.pinByNum.get('1'); const d2 = dioSym.pinByNum.get('2');
+    ok(dioSym.designator === 'D?' && d1 && d1.name === 'K' && d2 && d2.name === 'A',
+      'DIODE preset pins are 1=K / 2=A (official SS34 SMA: pin1=cathode)', `${d1 && d1.name}/${d2 && d2.name}`);
+    const ledFp = P.parseFootprintEntry(JSON.parse(fs.readFileSync(path.join(ROOT, 'templates/library/footprint', 'LED0603.json'), 'utf8')));
+    const ledPad1 = ledFp.pads.find((p) => p.num === '1');
+    const ledPad2 = ledFp.pads.find((p) => p.num === '2');
+    ok(ledPad1 && ledPad1.x > 0 && ledPad2 && ledPad2.x < 0,
+      'LED0603 pad 1 (A) is on the silk-clear side, pad 2 (K) under the cathode bar',
+      JSON.stringify(ledFp.pads.map((p) => [p.num, p.x])));
   }
 
   // The inline footprints in the recipes match the official-library numbers.

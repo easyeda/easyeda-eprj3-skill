@@ -1,9 +1,6 @@
 {
-  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<topdir>/<file stem>' as eval prints them: examples/designs/x → 'examples/x', recipe/x → 'recipe/x', examples/intake/x.req.json → 'intake/x'. Since 1.13 the skill never routes or pours: every case builds the same placement-only deliverable.",
+  "_comment": "Per-case gate thresholds for scripts/eval.js. Keys are '<dir>/<file stem>' as eval prints them: test/fixtures/x → 'ai/x'. Cases are complete authored layouts (2.2.8+ contract); circuit-only recipes are not benchmarked.",
   "_defaults": { "minLint": 85, "minDrc": 80, "maxSeconds": 20 },
-  "examples/blink": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
-  "examples/inline-spec": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
-  "recipe/mounting-holes": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
-  "recipe/ldo-3v3": { "minDrc": 100, "maxSeconds": 10 },
-  "recipe/rs485": { "minLint": 95, "minDrc": 100, "maxSeconds": 10 }
+  "ai/ai-resistor-link": { "minLint": 100, "minDrc": 100, "maxSeconds": 10 },
+  "ai/blink": { "minLint": 100, "minDrc": 95, "maxSeconds": 10 }
 }

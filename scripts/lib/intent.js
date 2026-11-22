@@ -33,8 +33,19 @@ const I_RULES = {
   I008: { level: 'error', weight: 10, text: 'device role binding incomplete, duplicated or conflicting' }
 };
 
-/** "10k" → 10000, "330R" → 330, "100nF" → 1e-7, "4.7uF" → 4.7e-6, "1MΩ" → 1e6. */
+/** "10k" → 10000, "330R" → 330, "100nF" → 1e-7, "4.7uF" → 4.7e-6, "1MΩ" → 1e6,
+ *  plus the digit-between shorthand the build docs use: "4k7" → 4700,
+ *  "1k5" → 1500, "2R2" → 2.2, "4n7" → 4.7e-9. */
 function parseValue(v) {
+  // shorthand first: digit + prefix letter + digit ("4k7"), so it cannot be
+  // swallowed by the plain number form below
+  const short = /^(\d+)([pnuUμµkKMRrgGmM])(\d+)$/.exec(String(v).trim());
+  if (short) {
+    const num = Number(`${short[1]}.${short[3]}`);
+    const scale = { p: 1e-12, n: 1e-9, u: 1e-6, U: 1e-6, 'μ': 1e-6, 'µ': 1e-6, m: 1e-3,
+      R: 1, r: 1, k: 1e3, K: 1e3, M: 1e6, G: 1e9, g: 1e9 };
+    return num * (scale[short[2]] !== undefined ? scale[short[2]] : 1);
+  }
   const m = /^(\d+(?:\.\d+)?)\s*(p|n|u|U|μ|µ|k|K|M|m|R|r|G|g)?\s*(F|f|H|h|Ω|ohm|OHM)?$/.exec(String(v).trim());
   if (!m) return null;
   const num = Number(m[1]);
@@ -247,6 +258,12 @@ function runIntent(d, opts) {
     }
     const rt = parseValue(top.value);
     const rb = parseValue(bottom.value);
+    if (rt === null || rb === null) {
+      // an unparseable resistor value used to skip the ratio check silently
+      addW('I005', `divider ${dv.top}/${dv.bottom}: value "${rt === null ? top.value : bottom.value}" is not parseable — the ratio check was skipped`, {
+        fix: `write the values in engineering notation ("4k7", "10k", "330R") so the ratio check can run`
+      });
+    }
     if (rt !== null && rb !== null && rt > 0) {
       const ratio = rb / (rt + rb);
       const tol = dv.tol === undefined ? 0.05 : dv.tol;
@@ -254,6 +271,20 @@ function runIntent(d, opts) {
         add('I005', `divider ratio ${ratio.toFixed(3)} is outside ${dv.ratio}±${tol} (${dv.top}=${top.value}, ${dv.bottom}=${bottom.value})`, {
           fix: `recompute the resistor pair: ratio = bottom/(top+bottom) — aim for ${dv.ratio}`
         });
+      }
+      // A correct ratio does NOT prove the output voltage: the check needs the
+      // reference the divider feeds. "vref": 1.24 with a 0.8 V-ref controller
+      // and a "5V" rail used to pass at the same ratio while making 3.2 V.
+      if (dv.vref !== undefined) {
+        const vout = dv.vref * (rt + rb) / rb;
+        const named = Number((/^(\d+(?:\.\d+)?)\s*V/i.exec(String(dv.input || '')) || [])[1]);
+        const expected = dv.vout !== undefined ? dv.vout : named;
+        checks.push({ id: 'dividerVref', vout: Number(vout.toFixed(3)), expected: expected ?? null });
+        if (Number.isFinite(expected) && Math.abs(vout - expected) > (dv.vtol === undefined ? 0.05 : dv.vtol) * expected) {
+          add('I005', `divider makes ${vout.toFixed(2)} V (vref ${dv.vref} V × 1/ratio) but rail "${dv.input}" is ~${expected} V`, {
+            fix: `recompute the pair for the controller's REAL reference: ratio = vref/vout — bottom = top·vref/(vout−vref)`
+          });
+        }
       }
     }
   }

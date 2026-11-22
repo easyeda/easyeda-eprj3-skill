@@ -15,8 +15,12 @@ pitch 标准）。已提交数据的来源按以下优先级记录：
    到本 skill 的 mil/Y-up）。各表行中的 LCSC 编号即出处引用。
 2. **JEDEC / IPC-7351B 标准推导**：无官方样例时按标准公式计算，并在表中标注
    "推导、官方样例待补"。
-3. **随仓库提交的客户端实测工程**（`examples/eprj3-example`，官方
-   quick-start + H610 真机保存）作为格式基准。
+3. **EDA 客户端在线查询**（2.x 起的实时来源）：`node scripts/eda.js pins --lcsc
+   Cxxxx` 取官方符号引脚表，`scripts/lib/cli-lib.js resolveDevices` 取官方封装
+   焊盘/包围盒——模板极性与引脚序的仲裁以此为准（DIODE/LED 极性 2.2.10 即据此
+   改正，见上表）。历史依据：曾随仓库提交的客户端实测工程
+   （`examples/eprj3-example`，官方 quick-start + H610 真机保存）已于 2.2.10
+   前从仓库移除，其格式结论沉淀在 [format-reference.md](format-reference.md)。
 
 规则：修改 [fp-auto.js](../scripts/lib/fp-auto.js) 家族尺寸或新增 IC 条目时，
 必须同步更新本表与 [test/dfm.js](../test/dfm.js) 断言（同一提交内）——只改
@@ -58,7 +62,8 @@ pitch 标准）。已提交数据的来源按以下优先级记录：
 
 | 预设 | 约定 | 来源 |
 | --- | --- | --- |
-| `DIODE`、`LED` | **pin 1 = A（阳极）、pin 2 = K（阴极）**，designator `D?`，均带二极管图形（三角+阴极杠，LED 另有发光箭头） | 1.14.0 统一（此前 DIODE 是 1=K + `U?`，与 LED 矛盾） |
+| `DIODE` | **pin 1 = K（阴极，左）、pin 2 = A（阳极，右）**，designator `D?`，带二极管图形（三角+阴极杠）。与 SMA 封装 pad 1（左）对齐 | **官方库实测（2.2.10，EDA CLI）**：SS34（C9900023345，SMA_L4.3-W2.6）符号 pin1=K 在左、封装 pad1 在左 x=−94.6，即 JEDEC SMA(DO-214AC) 的 pin1=阴极惯例。1.14–2.2.9 曾是 pin1=A，与官方及 JEDEC 相反——照旧布线会把 SMA 二极管装反 |
+| `LED` | **pin 1 = A（阳极）、pin 2 = K（阴极）**，designator `D?`，带发光箭头 | 官方库实测（2.2.10，EDA CLI）：KT-0603R（C2286）符号 pin1=A 在右、pin2=K 在左，封装 pad1 在右 x=+29.5。`LED0603` 封装已同步把 pad 1（A）放右侧、丝印阴极竖线（x=−19.69）留在 pad 2（K）侧——此前丝印阴极标贴在 A 侧，照丝印装配会反装 |
 | `RES` `CAP` `IND` | 1/2 脚对称 | 经典无源符号 |
 | 电源标志 `GND` `AGND` `PGND` `VCC` `5V` | 以原点为连接点（引线长 0） | 真机客户端样例捕获 |
 | `PORT_IN/OUT/BI`、`OFFPAGE_*` | 以原点为连接点 | 真机客户端样例捕获 |

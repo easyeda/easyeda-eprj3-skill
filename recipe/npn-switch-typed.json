@@ -1,30 +1,63 @@
 {
   "name": "npn-switch-typed",
   "type": "switch.low_side",
-  "bind": {
-    "device": {
-      "class": "transistor.npn",
-      "requiredRoles": ["C", "B", "E"]
-    }
+  "notes": [
+    "R2 (1k) 是基极限流电阻：CTRL 高电平经它进基极，缺了它会直接灌基极、拉垮驱动源甚至烧管；驱动电流 ≈ (VCTRL−0.7)/1k，负载电流 ≤ β×Ib 的一半留裕量",
+    "R1 (10k) 是基极下拉：CTRL 悬空时保证关断；它与 R2 分压不影响导通阈值",
+    "Q1 用通用 NPN 引脚序（1=B 2=C 3=E，SOT-23 常见序）；换具体型号（如 MMBT3904）时以数据手册引脚序为准并改 pinoutSource"
+  ],
+  "board": {
+    "width": 1200,
+    "height": 800
   },
-  "ports": {
-    "LOAD": "C",
-    "CTRL": "B",
-    "GND": "E"
+  "sheet": {
+    "schematic": "Schematic1",
+    "name": "P1"
   },
   "powers": {
     "GND": "down"
   },
+  "blocks": [
+    {
+      "title": "NPN LOW-SIDE SWITCH",
+      "parts": ["R2", "R1", "Q1"]
+    },
+    {
+      "title": "CTRL + LOAD PORT",
+      "parts": ["J1"]
+    }
+  ],
   "parts": [
-    { "id": "Q1", "$device": true, "name": "NPN" },
-    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "10k", "pins": { "1": "CTRL", "2": "GND" } },
-    { "id": "J1",
-      "symbol": { "name": "HDR_2P_LOAD", "designator": "J", "pitch": 30, "pins": ["1:LOAD", "2:GND"] },
-      "footprint": { "name": "HDR_2P_LOAD", "designator": "J",
-        "pads": [[1, -50, 0, 60, 60], [2, 50, 0, 60, 60]],
-        "outline": [-90, -50, 90, 50] },
+    {
+      "id": "Q1",
+      "symbol": {
+        "name": "NPN_SOT23_3P",
+        "designator": "Q",
+        "pitch": 30,
+        "pins": ["1:B", "2:C", "3:E"]
+      },
+      "footprint": {
+        "name": "SOT23_3",
+        "designator": "Q",
+        "pads": [[1, -37.5, -95, 35, 60], [2, 37.5, -95, 35, 60], [3, 0, 95, 35, 60]],
+        "outline": [-60, -60, 60, 60]
+      },
+      "name": "NPN",
+      "value": "MMBT3904 类",
+      "pinoutSource": "通用 NPN 示例符号（1=B 2=C 3=E，SOT-23 常见序，非特定型号）；换具体型号以数据手册为准",
+      "pins": { "1": "BASE", "2": "LOAD", "3": "GND" }
+    },
+    { "id": "R1", "symbol": "RES", "footprint": "R0603", "value": "10k", "name": "BASE_PULLDOWN", "pins": { "1": "BASE", "2": "GND" } },
+    { "id": "R2", "symbol": "RES", "footprint": "R0603", "value": "1k", "name": "BASE_SERIES", "pins": { "1": "CTRL", "2": "BASE" } },
+    {
+      "id": "J1",
+      "symbol": { "name": "HDR_3P_LOAD", "designator": "J", "pitch": 30, "pins": ["1:LOAD", "2:GND", "3:CTRL"] },
+      "footprint": { "name": "HDR_3P_LOAD", "designator": "J",
+        "pads": [[1, -100, 0, 60, 60], [2, 0, 0, 60, 60], [3, 100, 0, 60, 60]],
+        "outline": [-140, -50, 140, 50] },
       "name": "LOAD_PORT",
       "value": "LOAD",
-      "pins": { "1": "LOAD", "2": "GND" } }
+      "pins": { "1": "LOAD", "2": "GND", "3": "CTRL" }
+    }
   ]
 }

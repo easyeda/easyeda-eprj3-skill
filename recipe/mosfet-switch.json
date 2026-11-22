@@ -92,10 +92,10 @@
       "footprint": "SMA",
       "name": "FLYBACK",
       "value": "SS34",
-      "polarity": { "1": "+", "2": "-" },
+      "polarity": { "1": "-", "2": "+" },
       "pins": {
-        "1": "DRAIN",
-        "2": "12V"
+        "1": "12V",
+        "2": "DRAIN"
       }
     },
     {

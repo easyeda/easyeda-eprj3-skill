@@ -58,9 +58,7 @@ generation and origin, and `profile.owner.uuid` in local (offline) projects may
 hold a filesystem path instead of a uuid (measured in the wild). Never parse
 them assuming one form; the format skill's own `t-doc-head` says the same.
 
-**Client round-trip facts** (our `examples/blink` and
-`examples/eprj3-example` opened + saved in the real client 4.1.84,
-commit 77e2680 — byte-level ground truth):
+**Client round-trip facts** (measured on the repo's former `examples/blink` and `examples/eprj3-example` — real client 4.1.84 saves, commit 77e2680; the sample projects were later removed from the repo, the measured conclusions stand):
 - The save stamps fresh `version`/`updateTime` on every document it touches and
   may re-key touched docs' `client` to the editing installation's id, while
   untouched embedded docs keep their original hash — **mixed DOCHEAD.client
@@ -117,7 +115,7 @@ The **SCH_PAGE main doc** opens with page META and the placed A4 frame, then one
 {"type":"ATTR",...}||{...,"key":"Reuse Block"|"Group ID"|"Footprint"|"Relevance",...}|
 ```
 
-`rotation` is degrees CCW; symbol units map 1:1 onto page mil (a pin placed at symbol `(20,0)` rotation 180 lands 20 mil right of the component origin on the page).
+`rotation` is degrees CCW. **Sheet coordinates are Y-up and one sheet unit is 10 mil** (the A4 frame is 1170×825 units = 11700×8250 mil, origin bottom-left): a pin at symbol `(20,0)` rotation 0 lands 200 mil right of the component origin on the page. PCB records are plain mil. Do not mix the two scales — authored schematic geometry (`sch.place`/`sch.wires`) uses sheet units, `pcb.place`/`pcb.tracks` use mil.
 
 ### Power symbol block
 

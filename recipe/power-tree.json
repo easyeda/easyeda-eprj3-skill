@@ -1,5 +1,10 @@
 {
   "name": "power-tree",
+  "notes": [
+    "SOT23-5 LDO θJA≈200–250°C/W：5V→1.8V@100mA 结温升约 +74°C，>100mA 必须换 SOT-89/SOT-223 或 buck，否则热保护",
+    "SMBJ6.5A 的 VRWM=6.5V，5V 总线正常工作点远离钳位拐点（SMBJ5.0A 的 VRWM 恰好 5V，会误钳位）；SMBJ 实为 SMB/DO-214AA 封装，SMA 是占位，落地时换 SMB",
+    "SS34 串在 5V 通路压降约 0.45V（随电流 0.3–0.5V）：\"5V\" 轨实际 ≈4.5V，下游按 4.5V 校验；对压降敏感改 P-MOS 防反接"
+  ],
   "board": {
     "width": 1600,
     "height": 1000
@@ -101,10 +106,10 @@
       "footprint": "SMA",
       "name": "REVERSE_PROT",
       "value": "SS34",
-      "polarity": { "1": "+", "2": "-" },
+      "polarity": { "1": "-", "2": "+" },
       "pins": {
-        "1": "VIN_5V",
-        "2": "5V"
+        "1": "5V",
+        "2": "VIN_5V"
       }
     },
     {
@@ -112,12 +117,12 @@
       "symbol": "DIODE",
       "footprint": "SMA",
       "name": "TVS_5V",
-      "value": "SMBJ5.0A",
+      "value": "SMBJ6.5A",
       "role": "shunt",
-      "polarity": { "1": "+", "2": "-" },
+      "polarity": { "1": "-", "2": "+" },
       "pins": {
-        "1": "GND",
-        "2": "5V"
+        "1": "5V",
+        "2": "GND"
       }
     },
     {
@@ -212,7 +217,7 @@
         ]
       },
       "name": "LDO_3V3",
-      "value": "3V3/300mA",
+      "value": "3V3/100mA",
       "pins": {
         "1": "5V",
         "2": "GND",
@@ -313,7 +318,7 @@
         ]
       },
       "name": "LDO_1V8",
-      "value": "1V8/300mA",
+      "value": "1V8/100mA",
       "pins": {
         "1": "5V",
         "2": "GND",
