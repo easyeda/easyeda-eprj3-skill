@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.2.11] - 2026-11-22
+
+**布线恢复两条客户端路径：`eda.js route` 调客户端自动布线；`eda.js run` 执行 AI 自写的布线脚本（读焊盘/网络详情，`pcb_PrimitiveLine/Via.create` 画铜）。与 `pcb.tracks` 显式声明三选一，写完均过本地 routed DRC 复核。**
+
 ## [2.2.10] - 2026-11-22
 
 **AI 显式布局布线取代自动引擎（breaking）；写盘前连通性预检；DRC 按真实几何判定；模板电路按官方库勘误。**

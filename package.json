@@ -1,6 +1,6 @@
 {
   "name": "easyeda-eprj3-skill",
-  "version": "2.2.10",
+  "version": "2.2.11",
   "description": "EasyEDA Pro project authoring and checks for AI-authored schematic and PCB placement and routing.",
   "main": "scripts/lib/eprj3.js",
   "repository": {

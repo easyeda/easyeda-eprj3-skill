@@ -5,8 +5,8 @@
  *
  * Every command opens the project in the LCEDA Pro / EasyEDA Pro client
  * (headless), runs client-side source/auto APIs inside the editor command
- * space, and prints one JSON envelope. The model calls these scripts; it does
- * not write JS itself.
+ * space, and prints one JSON envelope. The model calls these scripts; the one
+ * exception is `run`, which executes an AI-authored script inside the client.
  *
  *   node scripts/eda.js doctor
  *   node scripts/eda.js search --q "ESP32-S3" [--limit 10] [--page 1]
@@ -16,6 +16,15 @@
  *   node scripts/eda.js sch-drc --dir <project>
  *   node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch|pcb] [--page 1]
  *   node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 (PCB data units, mil) [--layers 1,2] [--no-save]
+ *   node scripts/eda.js route --dir <project> [--no-save]          — client auto-routing (pcb_Document.autoRouting)
+ *   node scripts/eda.js run --dir <project> --file <script.js> [--args '{"json"}'] [--pcb] [--save]
+ *     — execute an AI-authored script inside the client session (routing,
+ *       bespoke placement, bulk edits). The file is the body of an async
+ *       function: top-level `await` works, `return` sets the result,
+ *       `__CLI__.args` holds --args JSON, `eda` is the API root, and the
+ *       READY_HELPER helpers (waitReady/pagesOf/pcbsOf) are pre-defined.
+ *       --pcb opens the first PCB document first; --save saves PCB+schematic
+ *       after the script.
  *
  * Requires the client V4.1.94+ (source APIs 4.1.83+). `--cli <path>` overrides
  * discovery; `LCEDA_PRO_CLI` / `EASYEDA_PRO_CLI` env vars also work.
@@ -374,6 +383,68 @@ return out;
   });
 }
 
+/** Client auto-routing: pcb_Document.autoRouting() on the project's PCB. */
+function cmdRoute(args) {
+  withProject(args, (info, session) => {
+    const timeout = Number(args.timeout) || 900000;
+    const code = `
+${READY_HELPER}
+const pcbs = await pcbsOf();
+if (!pcbs.length) throw new Error('no PCB in this project');
+await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
+await new Promise((r) => setTimeout(r, 1500));
+const out = { pcb: pcbs[0].name, routed: false, saved: false };
+try {
+  out.result = await eda.pcb_Document.autoRouting();
+  out.routed = true;
+} catch (e) { out.routeErr = String(e && e.message || e); }
+if (${!args['no-save']}) { await eda.pcb_Document.save(); out.saved = true; }
+return out;
+`;
+    print(CLI.invoke(info.bin, session, code, { timeout }));
+  });
+}
+
+/** Execute an AI-authored script inside the client session — the escape hatch
+ *  for routing/placement/bulk-edit logic the declarative contract does not
+ *  cover. The file is the body of an async function: top-level `await` works,
+ *  `return` sets the JSON result, `__CLI__.args` carries --args, and the
+ *  READY_HELPER helpers plus `eda` (the API root) are in scope. */
+function cmdRun(args) {
+  withProject(args, (info, session) => {
+    if (!args.file) throw new Error('--file <script.js> is required');
+    const file = path.resolve(args.file);
+    if (!fs.existsSync(file)) throw new Error(`script not found: ${file}`);
+    const userCode = fs.readFileSync(file, 'utf8');
+    let parsedArgs = {};
+    if (args.args) {
+      try { parsedArgs = JSON.parse(args.args); } catch (e) { throw new Error(`--args must be JSON: ${e.message}`); }
+    }
+    const prelude = `${READY_HELPER}
+const __args = ${JSON.stringify(parsedArgs)};
+`;
+    const code = args.pcb ? `${prelude}
+const pcbs = await pcbsOf();
+if (!pcbs.length) throw new Error('no PCB in this project');
+await eda.dmt_EditorControl.openDocument(pcbs[0].uuid);
+await new Promise((r) => setTimeout(r, 1500));
+` + userCode : prelude + userCode;
+    const out = CLI.invoke(info.bin, session, code, { timeout: Number(args.timeout) || 600000 });
+    if (args.save) {
+      const saveCode = `${READY_HELPER}
+const out = { saved: [] };
+const pcbs = await pcbsOf();
+if (pcbs.length) { await eda.pcb_Document.save(); out.saved.push(pcbs[0].name); }
+const pages = await pagesOf();
+if (pages.length) { try { await eda.sch_Document.save(); out.saved.push('schematic'); } catch (e) { out.saveSchErr = String(e && e.message || e); } }
+return out;
+`;
+      out.savedDocs = CLI.invoke(info.bin, session, saveCode, { timeout: 120000 });
+    }
+    print(out);
+  });
+}
+
 function cmdSchDrc(args) {
   if (!args.dir) throw new Error('--dir <project folder> is required');
   const CLI_LIB = require('./lib/cli-lib');
@@ -438,7 +509,9 @@ const COMMANDS = {
   netlist: cmdNetlist,
   'sch-drc': cmdSchDrc,
   screenshot: cmdScreenshot,
-  pour: cmdPour
+  pour: cmdPour,
+  route: cmdRoute,
+  run: cmdRun
 };
 
 function main() {

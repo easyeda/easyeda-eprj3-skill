@@ -44,6 +44,8 @@ All commands print one JSON envelope (`{ ok, value, error }`).
 | `node scripts/eda.js sch-drc --dir <project>` | run the client's schematic DRC; print counts and every violation (rule, net, designator/pin) | `sch_Drc.check` |
 | `node scripts/eda.js screenshot --dir <project> --out <dir> [--doc sch\|pcb] [--page N]` | write PNGs of every schematic page, or the PCB canvas | `sch_ManufactureData.getPngFile`, `dmt_EditorControl.getCurrentRenderedAreaImage` |
 | `node scripts/eda.js pour --dir <project> --net GND --outline x1,y1,x2,y2 --layers 1,2` | create copper pour borders **and rebuild their fill**; `--outline` is in PCB data units (mil; the board rectangle is the board-outline path in the `.epcb2`) | `pcb_PrimitivePour.create` + `rebuildCopperRegion` |
+| `node scripts/eda.js route --dir <project> [--no-save]` | run the client's **auto-router** on the PCB (`pcb_Document.autoRouting`) and save | `pcb_Document.autoRouting` |
+| `node scripts/eda.js run --dir <project> --file <script.js> [--args '{"json"}'] [--pcb] [--save]` | execute an **AI-authored script** inside the headless client session (routing, bespoke placement, bulk edits). The file is the body of an async function: top-level `await` works, `return` sets the JSON result, `__CLI__.args` holds `--args`, `eda` is the API root, `waitReady`/`pagesOf`/`pcbsOf` helpers are pre-defined; `--pcb` opens the PCB document first, `--save` saves PCB + schematic afterwards | everything (`pcb_PrimitiveLine.create`, `pcb_PrimitiveVia.create`, `pcb_PrimitivePad.getAll`, …) |
 
 `--keep` keeps the session open (debugging); by default every command closes
 and destroys its headless session so batch runs do not leak editor windows.
@@ -160,6 +162,47 @@ Client-side limitations (4.1.94):
   client-imported boards: the import writes one PAD_NET per real pad, and the
   empty-shell records 4.1.94 used to leave behind are gone (see above), so the
   pin-by-pin diff is meaningful instead of counting phantom pads.
+
+## Routing paths
+
+Three ways to put copper on the board — all of them end in the same local
+re-check (`node scripts/drc.js --dir <p>` in routed mode, `netcheck.js`):
+
+1. **Authored tracks (declarative).** `pcb.tracks` / `pcb.vias` in
+   `design.json` — the build writes them as records. Deterministic and
+   re-reviewable; the default for AI-authored boards.
+2. **Client auto-routing.** `node scripts/eda.js route --dir <p>` runs
+   `pcb_Document.autoRouting()` headless and saves. The routed copper is NOT
+   in `design.json` — a `build.js --force` rebuild loses it, so keep a client
+   copy or re-run the router afterwards.
+3. **AI-authored routing script.** The AI reads the board detail it needs
+   (pad positions, nets, outline — e.g. `pcb_PrimitivePad.getAll()`,
+   `pcb_PrimitiveComponent.getAll()`), computes the routes itself, and draws
+   them through `pcb_PrimitiveLine.create(net, layer, x1, y1, x2, y2, width)`
+   and `pcb_PrimitiveVia.create(net, x, y, drill, diameter)`. Execute it with:
+
+   ```bash
+   node scripts/eda.js run --dir <p> --file route.js --pcb --save \
+     --args '{"layer":2,"width":10}'
+   ```
+
+   ```js
+   // route.js — body of an async function; this example chains the two pads
+   // of one footprint on layer 1 with an orthogonal two-segment route
+   const width = __args.width || 10;
+   const pads = await eda.pcb_PrimitivePad.getAll(1, "NET");
+   pads.sort((p, q) => p.getState_X() - q.getState_X());
+   const [a, b] = pads;
+   const midX = (a.getState_X() + b.getState_X()) / 2;
+   await eda.pcb_PrimitiveLine.create("NET", 1, a.getState_X(), a.getState_Y(), midX, a.getState_Y(), width);
+   await eda.pcb_PrimitiveLine.create("NET", 1, midX, a.getState_Y(), midX, b.getState_Y(), width);
+   await eda.pcb_PrimitiveLine.create("NET", 1, midX, b.getState_Y(), b.getState_X(), b.getState_Y(), width);
+   return { routed: 3, pads: [a.getState_PadNumber(), b.getState_PadNumber()] };
+   ```
+
+After any of the three, the local DRC runs in routed mode and judges the
+copper that is actually on the board (D001 spacing, D004 connectivity, …);
+findings loop back the same way authored-track findings do.
 
 ## Version check
 
