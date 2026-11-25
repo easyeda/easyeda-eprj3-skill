@@ -23,6 +23,8 @@
     "intent": "node scripts/intent.js",
     "autofix": "node scripts/autofix.js",
     "drc": "node scripts/drc.js",
+    "padcheck": "node scripts/padcheck.js",
+    "audit3d": "node scripts/audit3d.js",
     "lint-layout": "node scripts/lint-layout.js",
     "pins": "node scripts/pins.js",
     "init": "node scripts/init.js",

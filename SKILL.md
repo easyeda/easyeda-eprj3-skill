@@ -27,6 +27,8 @@ description: Create, edit, and verify EasyEDA Pro / 嘉立创EDA专业版 .eprj3
 | 器件体重叠/出板框（D013/D014，AABB） | 3D 干涉、装配空间、结构禁布 |
 | 设计意图：极性、分压比+vref、差分对存在性（I001–I008） | 差分对间距/等长/阻抗、载流能力、压降、功耗与热 |
 
+补充：`scripts/padcheck.js` 与 `scripts/audit3d.js` 是独立的 sign-off gate，覆盖客户端 DRC 不报的**同网不同器件焊盘重叠**与 **PCB 器件 3D 实体碰撞**；前者解析 `.epcb2`，后者导出 STEP + FreeCAD。它们仍不替代整机装配（盒盖/底盘/螺丝）检查。详见 `docs/checks.md`。
+
 **已知限制**（写进交付说明，不要隐瞒）：`pcb.place` 只能摆顶层（底层贴装需在客户端翻转）；`pcb.tracks` 只支持正交/折线，无圆弧与泪滴；D012 只拦 <45°（60°/75° 合法）；底面器件的焊盘坐标未做镜像换算——有底层件的板以客户端 DRC 为准；铺铜由 AI 规划区域、客户端填充并验证。
 
 **布线路径**（三选一，写出的铜都过同一本地 DRC 复核）：① `pcb.tracks`/`pcb.vias` 显式声明（首选，可复现、可评审）；② `node scripts/eda.js route --dir <p>` 客户端自动布线；③ 自己编写布线脚本经 `node scripts/eda.js run --dir <p> --file route.js --pcb --save` 在客户端执行（`pcb_PrimitivePad.getAll` 读焊盘详情，`pcb_PrimitiveLine.create`/`pcb_PrimitiveVia.create` 画铜，`__CLI__.args` 传参）——注意 ②③ 写出的铜不在 `design.json` 里，`--force` 重建会丢失，交付前先跑 `drc.js`（routed 模式）确认连通与间距。
