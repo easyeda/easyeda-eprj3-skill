@@ -1,5 +1,9 @@
 # Changelog
 
+## [Unreleased]
+
+**新增两个独立 sign-off gate：`padcheck.js` 用真实多边形检查同网不同器件焊盘重叠、pad-via/hole/mask/body/板边/内部挖槽；`audit3d.js` 导出 STEP 并用 FreeCAD 做器件实体精确碰撞。对应 easyeda-api-skill#29/#30。**
+
 ## [2.2.11] - 2026-11-22
 
 **布线恢复两条客户端路径：`eda.js route` 调客户端自动布线；`eda.js run` 执行 AI 自写的布线脚本（读焊盘/网络详情，`pcb_PrimitiveLine/Via.create` 画铜）。与 `pcb.tracks` 显式声明三选一，写完均过本地 routed DRC 复核。**

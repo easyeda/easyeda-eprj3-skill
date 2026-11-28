@@ -162,6 +162,64 @@ and the DRC-internal names `minTrack` / `edge` are NOT accepted):
 | `minRing` | D010 minimum annular ring | 4 |
 | `minAngle` | D012 minimum bend angle | 45 |
 
+## Sign-off gates — `padcheck.js` / `audit3d.js`
+
+These two gates are deliberately **outside** the client DRC. They cover two
+sign-off holes reported in easyeda-api-skill:
+[#29](https://github.com/easyeda/easyeda-api-skill/issues/29) (same-net pads of
+different components touching/overlapping are not reported) and
+[#30](https://github.com/easyeda/easyeda-api-skill/issues/30) (2D DRC green does
+not mean the 3D bodies do not collide).
+
+```bash
+node scripts/padcheck.js --dir <p> [--pcb <title|file>] [--json] [--strict]
+node scripts/audit3d.js  --dir <p> [--pcb <title|file>] [--freecad <path>] [--strict] [--json]
+```
+
+### `padcheck.js` — true-polygon pad/via/hole/mask/body gate
+
+Parses the client-written `.epcb2` directly (no session). It builds real pad,
+via, drill and component-body polygons and checks:
+
+| Code | Level | Meaning |
+| --- | --- | --- |
+| `SAME_NET_OVERLAP` | error | same-net pads of **different components** overlap |
+| `SHORT` | error | different-net pads overlap |
+| `PAD_VIA` | error | via copper overlaps a different-net pad, or gap < 0.15 mm |
+| `HOLE_PAD` / `HOLE_HOLE` | error | drill intersects copper / drill-to-drill < 0.30 mm |
+| `MASK_MERGE` / `MASK_DAM` | error / warn | solder-mask openings merge / dam < 0.10 mm |
+| `BODY` | error | pad or open via under a component body (layer 48) |
+| `EDGE` / `HOLE_EDGE` / `CUTOUT` | error / warn | copper/drill outside or too close to the board outline, or inside/too close to an internal board cutout |
+| `TRACK_CLEAR` | error / warn | different-net track gap < 6 mil / < 0.20 mm |
+| `INTRA` | error / warn | same-component pad gap < 3 mil / < 5 mil |
+
+Run it after layout, after routing, after copper pour, and before Gerber export.
+`--strict` also fails on warnings. This is what catches #29 even when
+`eda.pcb_Drc.check()` returns `[]`.
+
+**Internal cutouts are supported.** Every closed contour on the board-outline
+layer is parsed; the largest is the board outline, the rest are cutouts. Copper
+or a drill inside a cutout is an error, and copper within 0.10 mm / 0.20 mm of a
+cutout edge is an error/warning. This is needed for parts that hang through the
+board (e.g. a relief slot for the 0402 parts on the underside of an ESP32-S3
+SuperMini module).
+
+### `audit3d.js` — STEP component-body collision gate
+
+Exports the PCB STEP through the client (`pcb_ManufactureData.get3DFile`) and
+runs `scripts/audit3d.py` with FreeCAD (`freecadcmd`; override with
+`--freecad`). It maps STEP solids to designators by component position, reports
+missing 3D models, then does AABB pre-filter + exact `BRepAlgoAPI_Common` for
+every component pair.
+
+- **Error**: a component has no 3D solid; or exact intersection volume > 0.001 mm³.
+- **Warning**: height anomaly, part outside the board, or unmapped solid; `--strict` makes these fail too.
+- If FreeCAD is not installed, the command still writes `board.step` and
+  `pads.json` under `<project>/.tmp/audit3d/` and exits 2.
+
+This is what catches #30. It is not a substitute for a full mechanical assembly
+check (cover, chassis, screws); it checks the PCB's own component models.
+
 ## Netlist — `netcheck.js` (schematic ↔ PCB)
 
 `build.js` runs this comparison after every build and stores it in
