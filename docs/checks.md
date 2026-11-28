@@ -189,13 +189,20 @@ via, drill and component-body polygons and checks:
 | `HOLE_PAD` / `HOLE_HOLE` | error | drill intersects copper / drill-to-drill < 0.30 mm |
 | `MASK_MERGE` / `MASK_DAM` | error / warn | solder-mask openings merge / dam < 0.10 mm |
 | `BODY` | error | pad or open via under a component body (layer 48) |
-| `EDGE` / `HOLE_EDGE` | error / warn | copper/drill outside or too close to the board outline |
+| `EDGE` / `HOLE_EDGE` / `CUTOUT` | error / warn | copper/drill outside or too close to the board outline, or inside/too close to an internal board cutout |
 | `TRACK_CLEAR` | error / warn | different-net track gap < 6 mil / < 0.20 mm |
 | `INTRA` | error / warn | same-component pad gap < 3 mil / < 5 mil |
 
 Run it after layout, after routing, after copper pour, and before Gerber export.
 `--strict` also fails on warnings. This is what catches #29 even when
 `eda.pcb_Drc.check()` returns `[]`.
+
+**Internal cutouts are supported.** Every closed contour on the board-outline
+layer is parsed; the largest is the board outline, the rest are cutouts. Copper
+or a drill inside a cutout is an error, and copper within 0.10 mm / 0.20 mm of a
+cutout edge is an error/warning. This is needed for parts that hang through the
+board (e.g. a relief slot for the 0402 parts on the underside of an ESP32-S3
+SuperMini module).
 
 ### `audit3d.js` — STEP component-body collision gate
 

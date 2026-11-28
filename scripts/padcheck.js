@@ -248,7 +248,7 @@ for (const d of docs) {
 
 const comps = [], desig = {}, padnet = {};
 const boardPads = [], vias = [], tracks = [];
-let outlinePath = null;
+const outlinePaths = [];
 for (const [h, b] of pcbDoc.recs) {
   if (h.type === 'COMPONENT') {
     let dev = null;
@@ -261,7 +261,7 @@ for (const [h, b] of pcbDoc.recs) {
   } else if (h.type === 'PAD') boardPads.push(b);
   else if (h.type === 'VIA') vias.push(b);
   else if (h.type === 'LINE') tracks.push({ id: h.id, ref: 'TRK#' + h.id.slice(0, 6), net: b.netName || '', layer: b.layerId, x1: Number(b.startX) * MIL, y1: Number(b.startY) * MIL, x2: Number(b.endX) * MIL, y2: Number(b.endY) * MIL, w: (Number(b.width) || 0) * MIL });
-  else if (h.type === 'POLY' && b.layerId === 11) outlinePath = b.path;
+  else if (h.type === 'POLY' && b.layerId === 11 && Array.isArray(b.path)) outlinePaths.push(b.path);
 }
 
 // ---------- build objects ----------
@@ -354,10 +354,16 @@ const viaObjs = vias.map(v => {
     poly: circlePoly(cx, cy, dia / 2, 24), bbox: null, hole: circlePoly(cx, cy, hd / 2, 24), mask };
 }).map(v => ({ ...v, bbox: bbox(v.poly) }));
 
-// ---------- board edge ----------
-const outline = outlinePath && outlinePath[0] === 'R'
-  ? roundedRectPoly(outlinePath[1] * MIL, outlinePath[2] * MIL, outlinePath[3] * MIL, outlinePath[4] * MIL, (outlinePath[6] || 0) * MIL, 16)
-  : null;
+// ---------- board edge / cutouts ----------
+function outlinePoly(path) {
+  if (!Array.isArray(path) || !path.length) return null;
+  if (path[0] === 'R') return roundedRectPoly(path[1] * MIL, path[2] * MIL, path[3] * MIL, path[4] * MIL, (path[6] || 0) * MIL, 16);
+  try { return pathPoly(path).map(p => ({ x: p.x * MIL, y: p.y * MIL })); } catch (e) { return null; }
+}
+const outlinePolys = outlinePaths.map(outlinePoly).filter(Boolean);
+let outline = null;
+for (const p of outlinePolys) if (!outline || Math.abs(area(p)) > Math.abs(area(outline))) outline = p;
+const cutouts = outlinePolys.filter(p => p !== outline);
 const outlineBBox = outline ? bbox(outline) : null;
 
 // ---------- checks ----------
@@ -472,21 +478,34 @@ function boundaryGap(a, b) {
   return d;
 }
 if (outline) {
+  const edgeTargets = [{ poly: outline, name: 'board outline', outer: true }]
+    .concat(cutouts.map(c => ({ poly: c, name: 'board cutout', outer: false })));
   for (const p of solid.concat(viaObjs)) {
-    const poly = p.poly;
-    let outside = false;
-    for (const pt of poly) if (!pointInPoly(pt, outline)) { outside = true; break; }
-    const g = outside ? 0 : boundaryGap(poly, outline);
-    if (outside) E('EDGE', `copper outside board outline`, p, null, { gap: g });
-    else if (g < EDGE_ERR) E('EDGE', `copper-to-board-edge ${fmt(g)}mm`, p, null, { gap: g });
-    else if (g < EDGE_WARN) W('EDGE', `copper-to-board-edge ${fmt(g)}mm`, p, null, { gap: g });
+    for (const t of edgeTargets) {
+      let anyIn = false, allIn = true;
+      for (const pt of p.poly) { if (pointInPoly(pt, t.poly)) anyIn = true; else allIn = false; }
+      if (t.outer ? !allIn : anyIn) {
+        const msg = t.outer ? 'copper outside board outline' : 'copper inside board cutout';
+        E(t.outer ? 'EDGE' : 'CUTOUT', msg, p, null, { gap: 0, outline: t.name });
+        continue;
+      }
+      const g = boundaryGap(p.poly, t.poly);
+      if (g < EDGE_ERR) E(t.outer ? 'EDGE' : 'CUTOUT', `copper-to-${t.name} ${fmt(g)}mm`, p, null, { gap: g });
+      else if (g < EDGE_WARN) W(t.outer ? 'EDGE' : 'CUTOUT', `copper-to-${t.name} ${fmt(g)}mm`, p, null, { gap: g });
+    }
   }
   for (const h of allHoles) {
-    let outside = false;
-    for (const pt of h.poly) if (!pointInPoly(pt, outline)) { outside = true; break; }
-    const g = outside ? 0 : boundaryGap(h.poly, outline);
-    if (outside) E('HOLE_EDGE', `drill outside board outline`, h, null, { gap: g });
-    else if (g < HOLE_HOLE) W('HOLE_EDGE', `drill-to-board-edge ${fmt(g)}mm`, h, null, { gap: g });
+    for (const t of edgeTargets) {
+      let anyIn = false;
+      for (const pt of h.poly) if (pointInPoly(pt, t.poly)) { anyIn = true; break; }
+      if (t.outer ? !anyIn : anyIn) {
+        const msg = t.outer ? 'drill outside board outline' : 'drill inside board cutout';
+        E('HOLE_EDGE', msg, h, null, { gap: 0, outline: t.name });
+        continue;
+      }
+      const g = boundaryGap(h.poly, t.poly);
+      if (g < HOLE_HOLE) W('HOLE_EDGE', `drill-to-${t.name} ${fmt(g)}mm`, h, null, { gap: g });
+    }
   }
 }
 // component body keepout (layer 48 bodies transformed to board coords)

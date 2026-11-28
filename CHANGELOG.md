@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-**新增两个独立 sign-off gate：`padcheck.js` 用真实多边形检查同网不同器件焊盘重叠、pad-via/hole/mask/body/板边；`audit3d.js` 导出 STEP 并用 FreeCAD 做器件实体精确碰撞。对应 easyeda-api-skill#29/#30。**
+**新增两个独立 sign-off gate：`padcheck.js` 用真实多边形检查同网不同器件焊盘重叠、pad-via/hole/mask/body/板边/内部挖槽；`audit3d.js` 导出 STEP 并用 FreeCAD 做器件实体精确碰撞。对应 easyeda-api-skill#29/#30。**
 
 ## [2.2.11] - 2026-11-22
 
